@@ -45,7 +45,7 @@ Parts 2–8 are the house style and architecture. Change them only on purpose, s
 | justice | Courts & police | ⚖ | #ffd166 | static | today | sites + drive-time columns + route pulses | OpenStreetMap / OSRM | ODbL |
 | treaties | Treaties & reserves | ◈ | #e9c46a | static | 1871–1906 | tinted areas + bright parcels | ISC Historic Treaties; NRCan CLSS | OGL – Canada |
 | fires | Wildfires | 🔥 | #ff8a3d | time | 1959 → 2025 | flare then scar (area-true circles) | NRCan CNFDB points | OGL – Canada |
-| tornadoes | Tornadoes | 🌪 | #9ad8ff | time (monthly) | 1980 → 2009 | funnel flare then dot; track lines | ECCC National Tornado Database | OGL – Canada |
+| tornadoes | Tornadoes | 🌪 | #9ad8ff | time (monthly) | 1980 → today (gap 2010–2016) | funnel flare then dot; track lines (estimated ends faint) | ECCC National Tornado Database; Northern Tornadoes Project | OGL – Canada; CC BY-NC 4.0 |
 | rivers | River floods | ≋ | #4cc9f0 | time | 1912 → 2025 | columns vs. normal | ECCC HYDAT | OGL – Canada |
 | climate | Climate | 🌡 | #f25f5c | time | 1886 → 2020 | station colour + stripes | ECCC AHCCD | OGL – Canada |
 | normals | Climate normals | ☀ | #c5e86c | static | 1981–2010 | columns with chips | ECCC normals | OGL – Canada |

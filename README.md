@@ -14,7 +14,7 @@ It is an exploration tool, not legal, safety or real-estate advice.
 | | ⚖ Courts & police | static | as mapped today | Courthouses, police stations and correctional centres; drive time from each place to its nearest court and police, with the routes |
 | | ◈ Treaties & reserves | static | treaties 1871–1906 | The six numbered treaty areas that cover the province and 826 reserve parcels |
 | History | 🔥 Wildfires | timeline | 1959 → 2025 | 27,542 reported fires flaring as they start; each leaves a scar circle the size of the area it burned |
-| | 🌪 Tornadoes | timeline (monthly) | 1980 → 2009 | 529 verified tornadoes, coloured by Fujita rating, with track lines where known |
+| | 🌪 Tornadoes | timeline (monthly) | 1980 → today | 529 verified tornadoes from Environment Canada (1980–2009) and 174 from the Northern Tornadoes Project (2017 →), coloured by rating, with track lines; no open record covers 2010–2016 |
 | | ≋ River floods | timeline | 1912 → 2025 | Each gauge's annual peak against its normal peak |
 | | 🌡 Climate | timeline | 1886 → 2020 | Homogenized station temperatures as anomalies; warming stripes |
 | Places & living | ◍ Population | timeline | 2001 → 2025 | Population of each place, coloured by five-year growth |
@@ -52,7 +52,7 @@ Stages, in run order: `province places fires tornadoes rivers climate normals po
 | Courts & police | OpenStreetMap (`amenity=courthouse`, `police`, `prison`) via Overpass; drive times from the OSRM demo router | ODbL |
 | Treaties & reserves | Indigenous Services Canada, *Historic Treaties* (ArcGIS REST); NRCan Canada Lands Survey System, *Aboriginal Lands of Canada Legislative Boundaries* | OGL – Canada |
 | Wildfires | NRCan CWFIS, Canadian National Fire Database (fire points) | OGL – Canada |
-| Tornadoes | ECCC, Canadian National Tornado Database: Verified Events 1980–2009 | OGL – Canada |
+| Tornadoes | ECCC, Canadian National Tornado Database: Verified Events 1980–2009; Northern Tornadoes Project (Western University), Event Summaries feature service, 2017 → | OGL – Canada; CC BY-NC 4.0 (non-commercial; this atlas is) |
 | River floods | ECCC HYDAT annual peaks via `api.weather.gc.ca` | OGL – Canada |
 | Climate, normals | ECCC AHCCD and Canadian Climate Normals via `api.weather.gc.ca` | OGL – Canada |
 | Population | Statistics Canada Table 17-10-0155-01 (census subdivisions) | Statistics Canada Open Licence |
@@ -63,12 +63,12 @@ Stages, in run order: `province places fires tornadoes rivers climate normals po
 - **Crime** is reported by police service, not by town. Small towns' municipal RCMP series stop in 2011; after that the atlas uses the rural detachment of the same name, which also covers the surrounding area, including nearby First Nations. Northern detachments cover small populations, so their index swings hard on a few incidents. A high index in a service hub partly reflects people who come in from outside.
 - **Courts and police** come from OpenStreetMap, which is incomplete here. Where Statistics Canada lists a place with its own current municipal police service but nothing is mapped near its centre, the atlas counts police as "in town" and says so. Provincial Court circuit points held in halls or band offices are mostly unmapped.
 - **Hospitals** are Statistics Canada's 2020 list. Rural emergency departments have had temporary closures since.
-- **Fire scars** are circles of the right area, not real perimeters. Tornado counts depend on who was there to see them; the Northern Tornadoes Project's records since 2017 aren't included yet.
+- **Fire scars** are circles of the right area, not real perimeters. Tornado counts depend on who or what was there to spot them. The two tornado records use different scales (Fujita to 2009, Enhanced Fujita from 2017), nothing open covers 2010–2016, and NTP track ends are estimated from length and direction.
 - **Treaty boundaries** are Canada's depiction; First Nations' understanding of their territories and of the treaty promises can differ.
 
 ## Next layers worth adding
 
 - Incident-level crime from Table 35-10-0182-01 (impaired driving, break-ins, by service).
-- Northern Tornadoes Project events (2017 →), and Saskatchewan's own wildfire perimeters if they become open.
+- Saskatchewan's own wildfire perimeters if they become open; NTP's 1980–2023 historical set (needs a Western University account).
 - Courts of King's Bench and Provincial Court locations from an official list, if one is published openly.
 - Drought (AAFC Canadian Drought Monitor), internet (ISED), and the explainer film from the blueprint.

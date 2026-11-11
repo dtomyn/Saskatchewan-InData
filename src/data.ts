@@ -9,7 +9,8 @@ export type Muni = {
 /** lon, lat, t (fractional year), hectares, cause (0 lightning, 1 human, 2 unknown), name (big fires only) */
 export type FirePoint = [number, number, number, number, number, string?];
 /** lon, lat, t, Fujita (null unrated), end lon, end lat, track m, width m, deaths, injuries, damage $K, nearest community */
-export type TornadoRow = [number, number, number, number | null, number | null, number | null, number | null, number | null, number, number, number | null, string | null];
+/** …, source (0 ECCC 1980–2009 on the Fujita scale, 1 Northern Tornadoes Project 2017 → on the Enhanced Fujita scale), flags (bit 0 default EF0, bit 1 estimated end point) */
+export type TornadoRow = [number, number, number, number | null, number | null, number | null, number | null, number | null, number, number, number | null, string | null, 0 | 1, number];
 
 export type RiverStation = {
   id: string; name: string; lon: number; lat: number; area: number; median: number;
@@ -53,7 +54,7 @@ export type Data = {
   outline: GeoJSON.Feature | null;
   munis: Muni[];
   fires: { points: FirePoint[]; source: string } | null;
-  tornadoes: { rows: TornadoRow[]; source: string } | null;
+  tornadoes: { rows: TornadoRow[]; source: string; sources?: { name: string; from: number; to: number; scale: string }[] } | null;
   rivers: { stations: RiverStation[]; source: string } | null;
   climate: { stations: ClimateStation[]; source: string; baselinePeriod: string } | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;

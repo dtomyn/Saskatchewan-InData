@@ -76,14 +76,27 @@ const SOURCES: Source[] = [
     },
   },
   {
-    id: 'tornadoes', key: 'tornadoes', name: 'Tornadoes', color: '#9ad8ff', group: 'Hazards',
+    id: 'tornadoes', key: 'tornadoes', name: 'Tornadoes to 2009', color: '#9ad8ff', group: 'Hazards',
     owner: 'Environment and Climate Change Canada', title: 'Canadian National Tornado Database: Verified Events (1980–2009)', url: 'https://open.canada.ca/data/en/dataset/fd3355a7-ae34-4df7-b477-07306182db69',
     endpoint: 'data-donnees.az.ec.gc.ca/api/file · GIS_CAN_VerifiedTornadoes_1980-2009.csv', licence: OGL_CA,
     gives: 'Every verified tornado: where and when it touched down, its Fujita rating, deaths, injuries and damage.',
-    read: (d) => d.tornadoes && { n: d.tornadoes.rows.length, what: `${fmt.int(d.tornadoes.rows.length)} Saskatchewan tornadoes` },
+    read: (d) => { const rows = (d.tornadoes?.rows ?? []).filter((r) => r[12] === 0); return rows.length ? { n: rows.length, what: `${fmt.int(rows.length)} Saskatchewan tornadoes` } : null; },
     rings: (d) => {
       const n: Record<number, number> = {};
-      for (const r of d.tornadoes?.rows ?? []) { const y = Math.floor(r[2]); n[y] = (n[y] ?? 0) + 1; }
+      for (const r of d.tornadoes?.rows ?? []) if (r[12] === 0) { const y = Math.floor(r[2]); n[y] = (n[y] ?? 0) + 1; }
+      const f = norm(n, (v, m) => Math.sqrt(v / m));
+      return Object.fromEntries(Object.keys(n).map((y) => [y, { v: f(+y), label: `${n[+y]} tornado${n[+y] === 1 ? '' : 'es'}` }]));
+    },
+  },
+  {
+    id: 'tornadoes', key: 'tornadoes', name: 'Tornadoes since 2017', color: '#7cc4ff', group: 'Hazards',
+    owner: 'Northern Tornadoes Project, Western University', title: 'NTP Event Summaries (open data hub)', url: 'https://ntpopendata-westernu.opendata.arcgis.com/',
+    endpoint: 'services.arcgis.com/rGKxabTU9mcXMw7k · NTP_Event_Summaries_stakeholder/FeatureServer', licence: 'CC BY-NC 4.0',
+    gives: 'Every tornado the project has investigated, found from reports, radar, satellite and drone imagery: Enhanced Fujita rating, track length and width, direction.',
+    read: (d) => { const rows = (d.tornadoes?.rows ?? []).filter((r) => r[12] === 1); return rows.length ? { n: rows.length, what: `${fmt.int(rows.length)} Saskatchewan tornadoes` } : null; },
+    rings: (d) => {
+      const n: Record<number, number> = {};
+      for (const r of d.tornadoes?.rows ?? []) if (r[12] === 1) { const y = Math.floor(r[2]); n[y] = (n[y] ?? 0) + 1; }
       const f = norm(n, (v, m) => Math.sqrt(v / m));
       return Object.fromEntries(Object.keys(n).map((y) => [y, { v: f(+y), label: `${n[+y]} tornado${n[+y] === 1 ? '' : 'es'}` }]));
     },
@@ -165,6 +178,7 @@ const DERIVED = [
   ['Fire scars', 'are circles with the same area as each fire’s reported size, centred where it started; they are not the fire’s real shape.'],
   ['Crime by place', 'uses each place’s own police service; northern villages with no municipal series use their rural RCMP detachment, which covers a wider area, and the report says so.'],
   ['Police in town', 'OpenStreetMap misses many police buildings here, so a place Statistics Canada lists with its own municipal police service (a city force or a municipal RCMP detachment) counts as having police in town when none is mapped within 6 km of its centre.'],
+  ['Tornado track ends', 'for Northern Tornadoes Project events are estimated here from the start point, track length and direction of motion it publishes; mapped end points from Environment Canada are used as they are.'],
   ['Hospitals', 'are the ODHF rows whose type or name says hospital; health centres and clinics are shown but not counted as the nearest hospital.'],
   ['Borrowed stations', 'a place without its own sunshine or climate station uses the nearest one (sunshine within 150 km), and its report names it.'],
   ['Treaty of a place', 'is the treaty area its centre falls in, as Indigenous Services Canada maps it.'],

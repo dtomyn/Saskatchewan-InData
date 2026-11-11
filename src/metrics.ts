@@ -26,7 +26,7 @@ export type TownMetrics = {
   hospital: CareTrip | null; // nearest hospital proper by road
   fires25km: number; // fires started within 25 km since 1990
   burnedHa50km: number; // area burned by fires that started within 50 km since 1990
-  tornadoes50km: number; // verified tornadoes within 50 km, 1980–2009
+  tornadoes50km: number; // tornadoes on record within 50 km (ECCC 1980–2009, Northern Tornadoes Project 2017 →)
   treaty: string | null; // the numbered treaty area the town centre is in
   climate: { name: string; dist: number; meanTemp: number; precip: number | null; trend: number | null } | null;
   river: { name: string; dist: number; floodShare: number; record: { year: string; ratio: number } } | null;
@@ -198,7 +198,7 @@ export const CRITERIA: Criterion[] = [
   { id: 'court', label: 'Court nearby', hint: 'Shorter drive to the nearest courthouse (circuit court points not counted)', value: (t) => mins(t.court), higherIsBetter: false, defaultWeight: 1 },
   { id: 'hospital', label: 'Close to a hospital', hint: 'Shorter drive to the nearest hospital', value: (t) => mins(t.hospital), higherIsBetter: false, defaultWeight: 3 },
   { id: 'fire', label: 'Low wildfire exposure', hint: 'Fewer fires started within 25 km since 1990', value: (t) => t.fires25km, higherIsBetter: false, defaultWeight: 1 },
-  { id: 'tornado', label: 'Fewer tornadoes', hint: 'Fewer verified tornadoes within 50 km, 1980–2009 (counts depend on who was there to see them)', value: (t) => t.tornadoes50km, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'tornado', label: 'Fewer tornadoes', hint: 'Fewer tornadoes on record within 50 km (1980–2009 and 2017 on; counts depend on who or what was there to spot them)', value: (t) => t.tornadoes50km, higherIsBetter: false, defaultWeight: 0 },
   { id: 'warm', label: 'Milder', hint: 'Higher mean annual temperature (1991+, nearest long-record station)', value: (t) => t.climate?.meanTemp ?? null, higherIsBetter: true, defaultWeight: 1 },
   { id: 'sun', label: 'Sunnier', hint: 'More bright-sunshine hours a year (nearest station that measures it, within 150 km)', value: (t) => t.feels.sun?.v ?? null, higherIsBetter: true, defaultWeight: 1 },
   { id: 'snow', label: 'Less snow & frost', hint: 'Fewer frost days + cm of snowfall a year (30-yr normals)', value: (t) => (t.feels.frostDays && t.feels.snow ? t.feels.frostDays.v + t.feels.snow.v : null), higherIsBetter: false, defaultWeight: 0 },

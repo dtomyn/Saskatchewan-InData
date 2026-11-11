@@ -57,7 +57,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     <h3>Hazards &amp; climate</h3>
     <div class="metric-grid">
       ${metric('Wildfires nearby', '#ff8a3d', fmt.int(t.fires25km), `started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km)} burned within 50 km`)}
-      ${metric('Tornadoes', '#9ad8ff', fmt.int(t.tornadoes50km), 'verified within 50 km, 1980–2009')}
+      ${metric('Tornadoes', '#9ad8ff', fmt.int(t.tornadoes50km), 'on record within 50 km, 1980–2009 and 2017 on')}
       ${metric('Climate', '#f25f5c', t.climate ? `${t.climate.meanTemp.toFixed(1)} °C` : na, t.climate ? `mean since 1991${t.climate.precip ? ` · ${Math.round(t.climate.precip)} mm/yr` : ''} · ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)` : '')}
     </div>
     ${feelsRow(t, data, metric, na)}
