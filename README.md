@@ -19,7 +19,7 @@ It is an exploration tool, not legal, safety or real-estate advice.
 | | 🌡 Climate | timeline | 1886 → 2020 | Homogenized station temperatures as anomalies; warming stripes |
 | Places & living | ◍ Population | timeline | 2001 → 2025 | Population of each place, coloured by five-year growth |
 | | ✚ Hospital access | static | 2020 list | Hospitals and health centres; drive time to the nearest hospital |
-| | ⛺ Camping & rec | static | today | Provincial, national and regional parks and rec sites; campgrounds; drive time to the nearest campground |
+| | ⛺ Camping & rec | static | today | Parks and rec sites; every campground as a flickering campfire; **Weekend Reach** (pick a place, watch an ignition wave light every campground within 1–4 h by road, counted against the median place); park report cards (fire history, climate, closest place by road) |
 | | ☀ Climate normals | static | 1981–2010 | Sunshine, rain and snow days, frost days, snowfall |
 
 Plus, as in Island Atlas: a **Town Report** for each of the 62 places (crime, the drive to court / police / hospital / campground, parks nearby, hazards, climate), a **Town Finder** that ranks places by weighted criteria (presets: Balanced, Safety first, Growing family, Quiet & small), curated **historic events** (Treaty 4 and 6, the Riel trial, the Regina Cyclone, the 2011 Souris flood, the 2015 northern fires), and a **Data & sources** view drawn as an aspen round.
@@ -65,6 +65,7 @@ Stages, in run order: `province places fires tornadoes rivers climate normals po
 - **Crime** is reported by police service, not by town. Small towns' municipal RCMP series stop in 2011; after that the atlas uses the rural detachment of the same name, which also covers the surrounding area, including nearby First Nations. Northern detachments cover small populations, so their index swings hard on a few incidents. A high index in a service hub partly reflects people who come in from outside.
 - **Courts and police** come from OpenStreetMap, which is incomplete here. Where Statistics Canada lists a place with its own current municipal police service but nothing is mapped near its centre, the atlas counts police as "in town" and says so. Provincial Court circuit points held in halls or band offices are mostly unmapped.
 - **Hospitals** are Statistics Canada's 2020 list. Rural emergency departments have had temporary closures since.
+- **Weekend Reach** uses one OSRM table per place to every drivable campground within 400 km, kept if within 4 h. The rolling ring on the map is only a guide; the arcs are the drive times.
 - **Campgrounds** outside the national parks come from OpenStreetMap and can be missing; Parks Canada's individual campsites are grouped into campgrounds. Provincial park campgrounds have no open point dataset, so OSM stands in. Seasons and closures are not in the data.
 - **Fire scars** are circles of the right area, not real perimeters. Tornado counts depend on who or what was there to spot them. The two tornado records use different scales (Fujita to 2009, Enhanced Fujita from 2017), nothing open covers 2010–2016, and NTP track ends are estimated from length and direction.
 - **Treaty boundaries** are Canada's depiction; First Nations' understanding of their territories and of the treaty promises can differ.

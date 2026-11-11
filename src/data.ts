@@ -68,6 +68,9 @@ export type Camping = {
   parks: Park[]; camps: Camp[];
   /** each place's nearest campground you can drive to (not backcountry) */
   towns: Record<string, Trip[]>;
+  /** Weekend Reach: per place, [camp index, drive minutes] for every drivable campground within `reachMax`, nearest first */
+  reach: Record<string, [number, number][]>;
+  reachRouted: boolean; reachMax: number;
 };
 
 export type Data = {

@@ -1129,6 +1129,14 @@ export const CURATED_EVENTS: TimedEvent[] = [
     layers: ['tornadoes'],
   },
   {
+    t: 1927.2, layer: '*', kind: 'Parks', title: '1927 — Prince Albert National Park is created',
+    body: 'Canada sets aside Prince Albert National Park in the boreal forest north of Prince Albert in 1927: Saskatchewan’s first national park and still its largest park of any kind.',
+    lon: -106.2, lat: 53.95, zoom: 8,
+    sections: [{ title: 'Grey Owl’s cabin', text: 'The writer and conservationist Grey Owl lived at Ajawaan Lake in the park from 1931 until his death in 1938; his cabin is still reached by trail or canoe. Turn on Camping & rec to see the park’s campgrounds and light the campfires from Prince Albert.' }],
+    sources: [{ label: 'Prince Albert National Park (Wikipedia)', url: 'https://en.wikipedia.org/wiki/Prince_Albert_National_Park' }],
+    layers: ['camping'],
+  },
+  {
     t: 2011.45, layer: '*', kind: 'Flood', title: '2011 — The Souris River floods',
     body: 'A wet spring and heavy June rains send the Souris River to record flows; Roche Percée and low-lying parts of Estevan flood, and the flood carries on downstream into North Dakota.',
     lon: -102.8, lat: 49.12, zoom: 9,

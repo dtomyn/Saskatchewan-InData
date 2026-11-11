@@ -833,12 +833,48 @@ const SOURCES = {
     const driveable = camps.map((c, i) => ({ ...c, i })).filter((c) => c.kind !== 'backcountry');
     const d = await driveTimes(places, driveable, 'camp', { keep: 1 });
     const towns = Object.fromEntries(Object.entries(d.towns).map(([k, v]) => [k, v.map((t) => ({ ...t, f: driveable[t.f].i }))]));
+
+    // --- Weekend reach: from each place, the drive to every campground within REACH_MIN, in one OSRM table call per place
+    // (the demo server takes up to 100 coordinates, so the 99 nearest in a straight line are the candidates; the farthest
+    // of those is checked against REACH_MIN so a place never silently loses campgrounds it could reach)
+    const REACH_MIN = 240;
+    const reach = {};
+    let reachRouted = d.routed, clipped = 0;
+    const hash = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+    for (const p of places) {
+      // nothing more than 4 h away can be closer than ~400 km in a straight line
+      const near = driveable.map((c) => ({ c, d: distKm(p.lon, p.lat, c.lon, c.lat) })).filter((n) => n.d <= 400).sort((a, b) => a.d - b.d);
+      let rows = null;
+      if (reachRouted) {
+        try {
+          rows = [];
+          // pages of 99 destinations, nearest first, until a page's farthest campground is already out of reach
+          for (let at = 0; at < near.length; at += 99) {
+            const page = near.slice(at, at + 99);
+            const coords = [p, ...page.map((n) => n.c)].map((x) => `${x.lon},${x.lat}`).join(';');
+            const tb = await osrm(`campreach-${p.key.replace(/ /g, '_')}-${hash(coords)}`, `${OSRM}/table/v1/driving/${coords}?sources=0&annotations=duration`);
+            if (tb.code !== 'Ok') throw new Error(tb.message ?? tb.code);
+            const got = page.map((n, j) => [n.c.i, tb.durations[0][j + 1] == null ? null : Math.round(tb.durations[0][j + 1] / 60)]);
+            rows.push(...got.filter((r) => r[1] != null && r[1] <= REACH_MIN));
+            if (!got.some((r) => r[1] != null && r[1] <= REACH_MIN)) break;
+            if (at + 99 < near.length) clipped++;
+          }
+        } catch (e) { log(`  reach: OSRM unavailable (${e.message}); straight-line reach from here on`); reachRouted = false; rows = null; }
+      }
+      // without routing, a rough reach: 80 km/h along a road 1.3× the straight line
+      rows ??= near.map((n) => [n.c.i, Math.round((n.d * 1.3) / 80 * 60)]).filter((r) => r[1] <= REACH_MIN);
+      reach[p.key] = rows.sort((a, b) => a[1] - b[1]);
+    }
+    const medReach = Object.values(reach).map((r) => r.filter((x) => x[1] <= 120).length).sort((a, b) => a - b);
+    log(`  reach: median place has ${medReach[medReach.length >> 1]} campgrounds within 2 h (${clipped} extra table pages for places with more than 99 candidates)`);
+
     await writeOut('camping', {
       source: 'Government of Saskatchewan, Ministry of Parks, Culture and Sport: ParksAsTitled (provincial and national parks, recreation sites, historic sites, regional parks); Parks Canada, Accommodation and Facilities (Open Government Licence – Canada); OpenStreetMap contributors (tourism=camp_site, caravan_site; ODbL)',
       routing: d.routed ? 'OSRM (router.project-osrm.org) on OpenStreetMap roads, typical free-flow driving' : 'straight-line',
       routingSource: d.routed ? 'Drive times: OSRM demo server, © OpenStreetMap contributors (ODbL)' : null,
       asOf: new Date().toISOString().slice(0, 10),
-      parks, camps, towns,
+      reachRouted, reachMax: REACH_MIN,
+      parks, camps, towns, reach,
     });
   },
 

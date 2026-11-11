@@ -778,6 +778,13 @@ async function boot() {
   window.addEventListener('atlas:layer', (e) => { const id = (e as CustomEvent).detail; const l = byId[id]; if (!l?.available) return; focus(id); if (!l.static) setTime(l.range[1]); });
   // a layer's own list opening one of its features (Floodplains' study list)
   window.addEventListener('atlas:event', (e) => { const ev = (e as CustomEvent).detail as AtlasEvent; if (ev?.title) openEvent(ev); });
+  // a layer asking the camera to frame something (Weekend Reach framing the campgrounds a place can reach)
+  window.addEventListener('atlas:fly', (e) => {
+    const b = (e as CustomEvent).detail?.bounds as [[number, number], [number, number]] | undefined;
+    if (!b) return;
+    const right = $('panel').classList.contains('collapsed') ? 60 : Math.min(440, $('panel').offsetWidth + 40);
+    map.fitBounds(b, { padding: { top: 90, bottom: 150, left: 60, right }, maxZoom: 9, pitch: 50, bearing: map.getBearing(), duration: 1800, essential: true });
+  });
   window.addEventListener('atlas:town', (e) => { const k = (e as CustomEvent).detail; if (data.munis.some((m) => m.key === k)) openTown(k); });
   if (location.hash === '#sources') showSources();
   for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));

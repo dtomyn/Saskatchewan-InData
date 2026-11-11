@@ -51,7 +51,7 @@ Parts 2–8 are the house style and architecture. Change them only on purpose, s
 | normals | Climate normals | ☀ | #c5e86c | static | 1981–2010 | columns with chips | ECCC normals | OGL – Canada |
 | population | Population | ◍ | #3ecf8e | time | 2001 → 2025 | place columns (colour = 5-yr growth) | StatCan 17-10-0155-01 | StatCan Open Licence |
 | hospitals | Hospital access | ✚ | #6c8cff | static | 2020 list | sites + drive-time columns | StatCan ODHF; OSRM | OGL – Canada; ODbL |
-| camping | Camping & rec | ⛺ | #59d18c | static | today | park polygons + campground points + drive-time columns | Sask. PCS ParksAsTitled; Parks Canada; OSM; OSRM | OGL – Canada; ODbL |
+| camping | Camping & rec | ⛺ | #59d18c | static | today | park polygons + flickering campfires + drive-time columns; Weekend Reach ignition wave (arcs to every campground within 1–4 h, live count vs the median place, camera framed via `atlas:fly`); park report cards | Sask. PCS ParksAsTitled; Parks Canada; OSM; OSRM | OGL – Canada; ODbL |
 
 Menu groups: Base map (`province`) · Justice & safety (`crime justice treaties`) · History on the timeline (`fires tornadoes rivers climate`) · Places & living (`population hospitals camping normals`).
 
@@ -347,6 +347,8 @@ Rules, all in two functions (`setLayerOn(id, on)` for the switch, `focus(id)` fo
 - **Hover** anything for a tooltip; **click** a place dot → Place Report.
 - **A report can open a layer** ("See a century of logging on the map"): it dispatches `atlas:layer` with the layer id; main focuses it and, for a time layer, jumps to the end of its range (today), where the story the report summarised ends.
 - **A layer's panel list can open one of its features** (Floodplains' study list): it dispatches `atlas:event` with an `AtlasEvent` (the same one `describe` returns for a click on the map), and main opens it with `openEvent`, so the list and the map lead to the same details panel.
+- **A layer can frame the camera** (Weekend Reach): it dispatches `atlas:fly` with `{ bounds: [[w, s], [e, n]] }` and main fits the map to it, leaving room for the side panel.
+- **A report can start a layer's own action** ("Light the campfires" in the Town Report): it dispatches `atlas:reach` with the place key; the camping layer focuses itself through `atlas:layer`, then starts its wave.
 
 ### 5.4 Place Report and Finder
 

@@ -2,6 +2,7 @@
 import { Data, fmt } from './data';
 import { lineChart } from './charts';
 import { esc } from './html';
+import { startReach, campsWithin } from './camping';
 import { CRITERIA, CareTrip, TownMetrics, rankTowns, townMetrics } from './metrics';
 
 const STORE_KEY = 'living-skies-atlas:weights';
@@ -56,7 +57,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
       ${data.camping ? metric('Campground', '#59d18c', t.camp ? tripV(t.camp) : na, t.camp ? tripSub(t.camp) : 'none reachable by road') : ''}
       ${data.camping ? metric('Parks nearby', '#59d18c', String(t.parks50km), 'provincial, national and regional parks and rec sites within 50 km') : ''}
     </div>
-    ${data.camping ? `<div class="tr-falls" style="margin-top:8px">${link('camping', '⛺ Camping &amp; rec on the map')}</div>` : ''}
+    ${data.camping ? `<div class="tr-falls" style="margin-top:8px">${campsWithin(data, key, 120) != null ? `<button class="tr-fall tr-reach" type="button">🔥 Light the campfires: ${campsWithin(data, key, 120)} campgrounds within 2 h ›</button>` : ''}${link('camping', '⛺ Camping &amp; rec on the map')}</div>` : ''}
     <h3>Hazards &amp; climate</h3>
     <div class="metric-grid">
       ${metric('Wildfires nearby', '#ff8a3d', fmt.int(t.fires25km), `started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km)} burned within 50 km`)}
@@ -70,6 +71,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${t.csi != null ? '<h3>Crime Severity Index</h3><div id="tr-crime"></div>' : ''}
     <p class="note">Distances are from the town centre. Crime figures come from the police service that covers the place; hazard counts describe history, not a forecast.</p>`;
   el.querySelector('.close-x')!.addEventListener('click', opts.onClose);
+  el.querySelector('.tr-reach')?.addEventListener('click', () => startReach(key));
   el.querySelectorAll<HTMLElement>('[data-layer]').forEach((b) => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('atlas:layer', { detail: b.dataset.layer }))));
 
   requestAnimationFrame(() => {
