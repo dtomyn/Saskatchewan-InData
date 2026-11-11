@@ -1,0 +1,50 @@
+{
+  "province": {
+    "ok": true,
+    "updated": "2026-11-10T23:49:53.325Z"
+  },
+  "places": {
+    "ok": true,
+    "updated": "2026-11-10T23:49:53.379Z"
+  },
+  "fires": {
+    "ok": true,
+    "updated": "2026-11-10T23:49:54.566Z"
+  },
+  "tornadoes": {
+    "ok": true,
+    "updated": "2026-11-10T23:49:56.459Z"
+  },
+  "population": {
+    "ok": true,
+    "updated": "2026-11-10T23:49:23.480Z"
+  },
+  "crime": {
+    "ok": true,
+    "updated": "2026-11-10T23:49:27.956Z"
+  },
+  "treaties": {
+    "ok": true,
+    "updated": "2026-11-10T23:50:07.048Z"
+  },
+  "rivers": {
+    "ok": true,
+    "updated": "2026-11-10T23:50:25.017Z"
+  },
+  "climate": {
+    "ok": true,
+    "updated": "2026-11-10T23:50:27.223Z"
+  },
+  "normals": {
+    "ok": true,
+    "updated": "2026-11-10T23:50:28.837Z"
+  },
+  "justice": {
+    "ok": true,
+    "updated": "2026-11-10T23:57:58.417Z"
+  },
+  "hospitals": {
+    "ok": true,
+    "updated": "2026-11-11T00:04:26.034Z"
+  }
+}

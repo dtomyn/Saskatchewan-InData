@@ -1,0 +1,9 @@
+node_modules
+dist
+.cache
+*.tmp.mjs
+.claude/
+.venv/
+video/out/
+__pycache__/
+

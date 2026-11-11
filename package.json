@@ -1,0 +1,38 @@
+{
+  "name": "living-skies-atlas",
+  "private": true,
+  "version": "1.0.0",
+  "description": "An animated WebGL atlas of Saskatchewan: crime and justice, wildfires, tornadoes, floods, climate, population and access to courts, police and hospitals.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "data": "node scripts/fetch-data.mjs"
+  },
+  "dependencies": {
+    "@deck.gl/aggregation-layers": "^9.4.1",
+    "@deck.gl/core": "^9.4.1",
+    "@deck.gl/extensions": "^9.4.1",
+    "@deck.gl/geo-layers": "^9.4.1",
+    "@deck.gl/layers": "^9.4.1",
+    "@deck.gl/mapbox": "^9.4.1",
+    "d3": "^7.9.1",
+    "maplibre-gl": "^6.16.0"
+  },
+  "devDependencies": {
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "@types/d3": "^7.4.3",
+    "fflate": "^0.8.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "overrides": {
+    "@loaders.gl/compression": {
+      "fflate": "^0.7.5"
+    },
+    "texture-compressor": {
+      "image-size": "^2.0.3"
+    }
+  }
+}
