@@ -1,0 +1,22 @@
+{
+  "name": "Living Skies Atlas",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+  "forwardPorts": [5173, 4175],
+  "portsAttributes": {
+    "5173": { "label": "Vite dev server", "onAutoForward": "openBrowser" },
+    "4175": { "label": "Vite preview" }
+  },
+  "mounts": [
+    "source=living-skies-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+  "postCreateCommand": "sudo chown node:node node_modules && npm ci",
+  "customizations": {
+    "vscode": {
+      "extensions": ["editorconfig.editorconfig"],
+      "settings": {
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "files.eol": "\n"
+      }
+    }
+  }
+}

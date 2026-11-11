@@ -34,6 +34,8 @@ npm run build      # type-check + static build into dist/
 
 `public/data/` is committed, so the app runs without the pipeline.
 
+**Dev container:** open the folder in VS Code and choose *Reopen in Container* (needs Docker and the Dev Containers extension). It uses Node 22, runs `npm ci` on creation, keeps `node_modules` in a named volume, and forwards port 5173, so `npm run dev` works as above.
+
 ## Refreshing the data
 
 ```bash
