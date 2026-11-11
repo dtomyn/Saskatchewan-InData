@@ -53,7 +53,10 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     <div class="metric-grid">
       ${metric('Population', '#3ecf8e', t.pop ? fmt.int(t.pop) : na, t.popYear ? `1 July ${t.popYear}${t.popGrowth5y != null ? ` · ${fmt.signed(t.popGrowth5y * 100, 0)}% in 5 yrs` : ''}` : '')}
       ${metric('Region', '#3ecf8e', esc(m.rd), t.treaty ? `in the ${esc(t.treaty)} area` : '')}
+      ${data.camping ? metric('Campground', '#59d18c', t.camp ? tripV(t.camp) : na, t.camp ? tripSub(t.camp) : 'none reachable by road') : ''}
+      ${data.camping ? metric('Parks nearby', '#59d18c', String(t.parks50km), 'provincial, national and regional parks and rec sites within 50 km') : ''}
     </div>
+    ${data.camping ? `<div class="tr-falls" style="margin-top:8px">${link('camping', '⛺ Camping &amp; rec on the map')}</div>` : ''}
     <h3>Hazards &amp; climate</h3>
     <div class="metric-grid">
       ${metric('Wildfires nearby', '#ff8a3d', fmt.int(t.fires25km), `started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km)} burned within 50 km`)}

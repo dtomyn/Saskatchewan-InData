@@ -51,8 +51,9 @@ Parts 2–8 are the house style and architecture. Change them only on purpose, s
 | normals | Climate normals | ☀ | #c5e86c | static | 1981–2010 | columns with chips | ECCC normals | OGL – Canada |
 | population | Population | ◍ | #3ecf8e | time | 2001 → 2025 | place columns (colour = 5-yr growth) | StatCan 17-10-0155-01 | StatCan Open Licence |
 | hospitals | Hospital access | ✚ | #6c8cff | static | 2020 list | sites + drive-time columns | StatCan ODHF; OSRM | OGL – Canada; ODbL |
+| camping | Camping & rec | ⛺ | #59d18c | static | today | park polygons + campground points + drive-time columns | Sask. PCS ParksAsTitled; Parks Canada; OSM; OSRM | OGL – Canada; ODbL |
 
-Menu groups: Base map (`province`) · Justice & safety (`crime justice treaties`) · History on the timeline (`fires tornadoes rivers climate`) · Places & living (`population hospitals normals`).
+Menu groups: Base map (`province`) · Justice & safety (`crime justice treaties`) · History on the timeline (`fires tornadoes rivers climate`) · Places & living (`population hospitals camping normals`).
 
 ### 1.4 Historic events
 
@@ -60,9 +61,9 @@ Treaty 4 (1874.71), Treaty 6 (1876.64), the Riel trial and execution in Regina (
 
 ### 1.5 Place Report and Finder
 
-Report rows: Crime Severity, Violent crime, Crimes solved, Courthouse, Police, Hospital, Population, Region / treaty, Wildfires nearby, Tornadoes, Climate, climate normals.
+Report rows: Crime Severity, Violent crime, Crimes solved, Courthouse, Police, Hospital, Population, Region / treaty, Campground, Parks nearby, Wildfires nearby, Tornadoes, Climate, climate normals.
 
-Finder criteria (default weight): Low crime (3), Low violent crime (2), Crimes get solved (1), Police nearby (1), Court nearby (1), Close to a hospital (3), Low wildfire exposure (1), Fewer tornadoes (0), Milder (1), Sunnier (1), Less snow & frost (0), Growing (2), Services & amenities (2). Presets: Balanced, Safety first, Growing family, Quiet & small.
+Finder criteria (default weight): Low crime (3), Low violent crime (2), Crimes get solved (1), Police nearby (1), Court nearby (1), Close to a hospital (3), Close to camping (0), Low wildfire exposure (1), Fewer tornadoes (0), Milder (1), Sunnier (1), Less snow & frost (0), Growing (2), Services & amenities (2). Presets: Balanced, Safety first, Growing family, Quiet & small.
 
 ### 1.6 Deep finder
 

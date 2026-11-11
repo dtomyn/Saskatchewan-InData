@@ -50,6 +50,26 @@ export type Justice = {
 export type Treaty = { name: string; label: string; year: number; end: number | null; polys: [number, number][][][] };
 export type Reserve = { name: string; c: [number, number]; km2: number; polys: [number, number][][][] };
 
+/** A park or recreation site boundary (Saskatchewan Ministry of Parks, Culture and Sport). `sub`: a provincial park's class. */
+export type Park = {
+  name: string; type: 'national' | 'provincial' | 'recreation' | 'historic' | 'regional'; sub?: string | null; by?: string; web?: string;
+  c: [number, number]; ha: number; polys: [number, number][][][];
+};
+/**
+ * A campground: Parks Canada's campsites grouped into campgrounds (`src` 'pc', `sites` counted) or an OpenStreetMap camp site
+ * (`src` 'osm', `sites` only where mappers gave a capacity). `p`: index of the park it lies in.
+ */
+export type Camp = {
+  name: string; kind: 'campground' | 'backcountry' | 'group' | 'rv'; sites?: number; otentik?: number;
+  op?: string; power?: boolean; fee?: boolean; web?: string; lon: number; lat: number; src: 'pc' | 'osm'; osm?: string; p?: number;
+};
+export type Camping = {
+  source: string; routing: string; routingSource: string | null; asOf: string;
+  parks: Park[]; camps: Camp[];
+  /** each place's nearest campground you can drive to (not backcountry) */
+  towns: Record<string, Trip[]>;
+};
+
 export type Data = {
   outline: GeoJSON.Feature | null;
   munis: Muni[];
@@ -63,6 +83,7 @@ export type Data = {
   hospitals: { facilities: Facility[]; towns: Record<string, Trip[]>; source: string; routing: string; routingSource: string | null } | null;
   justice: Justice | null;
   treaties: { treaties: Treaty[]; reserves: Reserve[]; source: string } | null;
+  camping: Camping | null;
   manifest: Record<string, { ok: boolean; updated?: string; lastError?: string }>;
 };
 
@@ -79,7 +100,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, rivers, climate, normals, population, crime, hospitals, justice, treaties, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, rivers, climate, normals, population, crime, hospitals, justice, treaties, camping, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -92,6 +113,7 @@ export async function loadAll(): Promise<Data> {
     load<Data['hospitals']>('hospitals'),
     load<Justice>('justice'),
     load<Data['treaties']>('treaties'),
+    load<Camping>('camping'),
     load<Data['manifest']>('manifest'),
   ]);
   return {
@@ -108,6 +130,7 @@ export async function loadAll(): Promise<Data> {
     hospitals: hospitals?.facilities?.length ? hospitals : null,
     justice: justice?.sites?.length ? justice : null,
     treaties: treaties?.treaties?.length || treaties?.reserves?.length ? treaties : null,
+    camping: camping?.parks?.length || camping?.camps?.length ? camping : null,
     manifest: manifest ?? {},
   };
 }

@@ -10,6 +10,7 @@ import { NormalVar, provinceAnomalies, slope, townMetrics } from './metrics';
 import { tornadoLayer } from './tornado';
 import { justiceLayer } from './justice';
 import { treatiesLayer } from './treaties';
+import { campingLayer } from './camping';
 import { esc } from './html';
 
 
@@ -1179,5 +1180,5 @@ function provinceLayer(data: Data): AtlasLayer {
 }
 
 export function buildLayers(data: Data): AtlasLayer[] {
-  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), riversLayer(data), climateLayer(data), normalsLayer(data), populationLayer(data), hospitalsLayer(data)];
+  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), riversLayer(data), climateLayer(data), normalsLayer(data), populationLayer(data), hospitalsLayer(data), campingLayer(data)];
 }

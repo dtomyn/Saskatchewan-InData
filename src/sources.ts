@@ -163,12 +163,20 @@ const SOURCES: Source[] = [
     read: (d) => d.hospitals && { n: d.hospitals.facilities.length + sum(Object.values(d.hospitals.towns).map((t) => t.length)), what: `${d.hospitals.facilities.length} facilities, ${fmt.int(sum(Object.values(d.hospitals.towns).map((t) => t.length)))} routed drives` },
     rings: (d) => (d.hospitals ? { 2020: { v: 1, label: `${d.hospitals.facilities.length} facilities as compiled in 2020` } } : {}),
   },
+  {
+    id: 'camping', key: 'camping', name: 'Camping & rec', color: '#59d18c', group: 'People & places',
+    owner: 'Sask. Parks, Culture and Sport · Parks Canada · OpenStreetMap', title: 'ParksAsTitled (park, recreation site and regional park boundaries); Parks Canada Accommodation and Facilities; tourism=camp_site, caravan_site', url: 'https://open.canada.ca/data/en/dataset/65f14e41-c6c7-512e-e231-aa1079978b12',
+    endpoint: 'gis.saskatchewan.ca … ParksAsTitled/MapServer · services2.arcgis.com … vw_Accommodation_Hebergement_V2_FGP · overpass-api.de · router.project-osrm.org', licence: `${OGL_CA}; OSM and routes ODbL`,
+    gives: 'Where the parks and campgrounds are, and the drive from each place to its nearest campground.',
+    read: (d) => d.camping && { n: d.camping.parks.length + d.camping.camps.length, what: `${d.camping.parks.length} parks and sites, ${fmt.int(d.camping.camps.length)} campgrounds and campsites` },
+    rings: (d) => (d.camping ? { [NOW]: { v: 1, label: `${d.camping.camps.length} campgrounds as mapped on ${d.camping.asOf}` } } : {}),
+  },
 ];
 
 const BARK: BarkSource[] = [
   { name: 'Province outline', key: 'province', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: provinces and territories', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'The outline every layer is clipped to.' },
   { name: 'Place names', key: 'places', owner: 'Natural Resources Canada', title: 'Canadian Geographical Names Database (geonames API)', url: 'https://natural-resources.canada.ca/earth-sciences/geography/geographical-names-board-canada', licence: OGL_CA, gives: 'Where each of the atlas’s places is. The list of names itself is typed into scripts/places.mjs.', read: (d) => `${d.munis.length} places located` },
-  { name: 'Roads', key: 'hospitals', owner: 'OpenStreetMap contributors · OSRM', title: 'OSRM demo router on OpenStreetMap roads', url: 'https://www.openstreetmap.org/copyright', licence: 'ODbL', gives: 'The road routes and free-flow drive times to the nearest hospital, courthouse and police station.' },
+  { name: 'Roads', key: 'hospitals', owner: 'OpenStreetMap contributors · OSRM', title: 'OSRM demo router on OpenStreetMap roads', url: 'https://www.openstreetmap.org/copyright', licence: 'ODbL', gives: 'The road routes and free-flow drive times to the nearest hospital, courthouse, police station and campground.' },
   { name: 'Basemap', owner: 'CARTO · OpenStreetMap contributors', title: 'Dark Matter vector basemap', url: 'https://carto.com/attributions', licence: 'ODbL / CARTO terms', gives: 'The dark map, place names and roads under every layer.' },
   { name: 'Terrain', owner: 'Mapzen · AWS Open Data', title: 'Terrain Tiles (terrarium)', url: 'https://registry.opendata.aws/terrain-tiles/', licence: 'Open, with attribution', gives: 'The shaded relief: the Cypress Hills, the Missouri Coteau, the river valleys and the Shield.' },
 ];
@@ -180,6 +188,7 @@ const DERIVED = [
   ['Police in town', 'OpenStreetMap misses many police buildings here, so a place Statistics Canada lists with its own municipal police service (a city force or a municipal RCMP detachment) counts as having police in town when none is mapped within 6 km of its centre.'],
   ['Tornado track ends', 'for Northern Tornadoes Project events are estimated here from the start point, track length and direction of motion it publishes; mapped end points from Environment Canada are used as they are.'],
   ['Hospitals', 'are the ODHF rows whose type or name says hospital; health centres and clinics are shown but not counted as the nearest hospital.'],
+  ['Campgrounds', 'in the national parks are Parks Canada’s individual campsites, grouped here into campgrounds (sites within 1.5 km of each other with the same campground code); a campground mapped in both Parks Canada’s data and OpenStreetMap is shown once, with Parks Canada’s site count.'],
   ['Borrowed stations', 'a place without its own sunshine or climate station uses the nearest one (sunshine within 150 km), and its report names it.'],
   ['Treaty of a place', 'is the treaty area its centre falls in, as Indigenous Services Canada maps it.'],
   ['Town Finder scores', 'are this atlas’s own blend of the numbers above, weighted by you.'],

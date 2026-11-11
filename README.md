@@ -2,7 +2,7 @@
 
 *Saskatchewan's safety, justice and land, in open data.*
 
-A static, animated 3D map of Saskatchewan built on the same framework as [Island Atlas](https://github.com/dtomyn/HouseShopping-VancouverIsland) (Vancouver Island). It combines a **justice & public-safety** view (crime severity, courts, police, corrections, treaties and reserves) with the hazards and services that matter when choosing where to live (wildfires, tornadoes, river floods, climate, population, hospital access).
+A static, animated 3D map of Saskatchewan built on the same framework as [Island Atlas](https://github.com/dtomyn/HouseShopping-VancouverIsland) (Vancouver Island). It combines a **justice & public-safety** view (crime severity, courts, police, corrections, treaties and reserves) with the hazards and services that matter when choosing where to live (wildfires, tornadoes, river floods, climate, population, hospital access, parks and camping).
 
 It is an exploration tool, not legal, safety or real-estate advice.
 
@@ -19,9 +19,10 @@ It is an exploration tool, not legal, safety or real-estate advice.
 | | 🌡 Climate | timeline | 1886 → 2020 | Homogenized station temperatures as anomalies; warming stripes |
 | Places & living | ◍ Population | timeline | 2001 → 2025 | Population of each place, coloured by five-year growth |
 | | ✚ Hospital access | static | 2020 list | Hospitals and health centres; drive time to the nearest hospital |
+| | ⛺ Camping & rec | static | today | Provincial, national and regional parks and rec sites; campgrounds; drive time to the nearest campground |
 | | ☀ Climate normals | static | 1981–2010 | Sunshine, rain and snow days, frost days, snowfall |
 
-Plus, as in Island Atlas: a **Town Report** for each of the 62 places (crime, the drive to court / police / hospital, hazards, climate), a **Town Finder** that ranks places by weighted criteria (presets: Balanced, Safety first, Growing family, Quiet & small), curated **historic events** (Treaty 4 and 6, the Riel trial, the Regina Cyclone, the 2011 Souris flood, the 2015 northern fires), and a **Data & sources** view drawn as an aspen round.
+Plus, as in Island Atlas: a **Town Report** for each of the 62 places (crime, the drive to court / police / hospital / campground, parks nearby, hazards, climate), a **Town Finder** that ranks places by weighted criteria (presets: Balanced, Safety first, Growing family, Quiet & small), curated **historic events** (Treaty 4 and 6, the Riel trial, the Regina Cyclone, the 2011 Souris flood, the 2015 northern fires), and a **Data & sources** view drawn as an aspen round.
 
 ## Getting started
 
@@ -40,7 +41,7 @@ npm run data                    # every stage
 npm run data crime justice      # selected stages
 ```
 
-Stages, in run order: `province places fires tornadoes rivers climate normals population crime treaties justice hospitals`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice` and `hospitals` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
+Stages, in run order: `province places fires tornadoes rivers climate normals population crime treaties justice hospitals camping`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice`, `hospitals` and `camping` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
 
 ## Data sources
 
@@ -57,12 +58,14 @@ Stages, in run order: `province places fires tornadoes rivers climate normals po
 | Climate, normals | ECCC AHCCD and Canadian Climate Normals via `api.weather.gc.ca` | OGL – Canada |
 | Population | Statistics Canada Table 17-10-0155-01 (census subdivisions) | Statistics Canada Open Licence |
 | Hospital access | Statistics Canada, Open Database of Healthcare Facilities (v1, 2020); OSRM drive times | OGL – Canada; ODbL |
+| Camping & rec | Saskatchewan Ministry of Parks, Culture and Sport, ParksAsTitled boundaries; Parks Canada Accommodation and Facilities; OpenStreetMap `tourism=camp_site`/`caravan_site`; OSRM drive times | OGL – Canada; ODbL |
 
 ## Caveats
 
 - **Crime** is reported by police service, not by town. Small towns' municipal RCMP series stop in 2011; after that the atlas uses the rural detachment of the same name, which also covers the surrounding area, including nearby First Nations. Northern detachments cover small populations, so their index swings hard on a few incidents. A high index in a service hub partly reflects people who come in from outside.
 - **Courts and police** come from OpenStreetMap, which is incomplete here. Where Statistics Canada lists a place with its own current municipal police service but nothing is mapped near its centre, the atlas counts police as "in town" and says so. Provincial Court circuit points held in halls or band offices are mostly unmapped.
 - **Hospitals** are Statistics Canada's 2020 list. Rural emergency departments have had temporary closures since.
+- **Campgrounds** outside the national parks come from OpenStreetMap and can be missing; Parks Canada's individual campsites are grouped into campgrounds. Provincial park campgrounds have no open point dataset, so OSM stands in. Seasons and closures are not in the data.
 - **Fire scars** are circles of the right area, not real perimeters. Tornado counts depend on who or what was there to spot them. The two tornado records use different scales (Fujita to 2009, Enhanced Fujita from 2017), nothing open covers 2010–2016, and NTP track ends are estimated from length and direction.
 - **Treaty boundaries** are Canada's depiction; First Nations' understanding of their territories and of the treaty promises can differ.
 

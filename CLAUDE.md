@@ -12,7 +12,7 @@ npm run build             # tsc --noEmit + vite build: the only automated check 
 npm run data [stage…]     # rebuild public/data/*.json from the original sources
 ```
 
-Data stages (in run order): `province places fires tornadoes rivers climate normals population crime treaties justice hospitals`. `places` writes `municipalities.json`, which `justice` and `hospitals` read. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`. `public/data/` is committed.
+Data stages (in run order): `province places fires tornadoes rivers climate normals population crime treaties justice hospitals camping`. `places` writes `municipalities.json`, which `justice`, `hospitals` and `camping` read. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`. `public/data/` is committed.
 
 ## Rules for this repo
 
@@ -27,7 +27,7 @@ Same shape as Island Atlas:
 
 - **`src/main.ts`** owns state (`visible`, `focused` — `'province'` means none active — `timeLayer`, `mode: layer | town | finder | event`), the frame loop, the layer menu (`setLayerOn`, `focus`, `clearMap`), click routing and the timeline. `?film` exposes `window.atlas`.
 - **`src/layers.ts`**: the `AtlasLayer` contract, shared helpers (exported for the layer modules), and the fires, rivers, climate, normals, population, crime and hospitals layers, `CURATED_EVENTS`, the base `province` layer and `buildLayers()`.
-- **`src/justice.ts`** (Courts & police), **`src/treaties.ts`** (Treaties & reserves), **`src/tornado.ts`** (Tornadoes): one layer each.
+- **`src/justice.ts`** (Courts & police), **`src/treaties.ts`** (Treaties & reserves), **`src/camping.ts`** (Camping & rec), **`src/tornado.ts`** (Tornadoes): one layer each.
 - **`src/metrics.ts`**: `townMetrics(data)` per place and the Town Finder `CRITERIA` / `rankTowns`. **`src/panels.ts`**: Town Report and Town Finder. **`src/sources.ts`**: the Data & sources view. **`src/events.ts`**: the event/feature panel.
 - **`src/data.ts`**: `loadAll()`, the JSON types, formatters.
 - **`scripts/fetch-data.mjs`**: one async function per stage in `SOURCES`; helpers for caching, OGC API, ArcGIS REST, Overpass (with mirrors) and OSRM drive times (`driveTimes`).

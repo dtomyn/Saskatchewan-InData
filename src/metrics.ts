@@ -1,6 +1,7 @@
 // Derived, per-place statistics shared by the Town Report and the Town Finder.
 import { Data, Muni, NormalsStation, km } from './data';
 import { nearestJustice } from './justice';
+import { nearestCamp } from './camping';
 
 /** A climate-normal value borrowed from the nearest station that reports it. */
 export type NormalPick = { v: number; name: string; dist: number };
@@ -24,6 +25,8 @@ export type TownMetrics = {
   court: CareTrip | null; // nearest courthouse by road (OpenStreetMap)
   policeStation: CareTrip | null; // nearest police station or detachment by road
   hospital: CareTrip | null; // nearest hospital proper by road
+  camp: CareTrip | null; // nearest campground you can drive to (Parks Canada or OpenStreetMap)
+  parks50km: number; // parks, recreation sites and regional parks whose centre is within 50 km
   fires25km: number; // fires started within 25 km since 1990
   burnedHa50km: number; // area burned by fires that started within 50 km since 1990
   tornadoes50km: number; // tornadoes on record within 50 km (ECCC 1980–2009, Northern Tornadoes Project 2017 →)
@@ -162,6 +165,9 @@ export function townMetrics(data: Data): TownMetrics[] {
     const jt = (kind: 'court' | 'police'): CareTrip | null => { const n = nearestJustice(data, m.key, kind); return n ? { name: n.site.name, city: n.site.city, min: n.min, km: n.km, inferred: n.inferred } : null; };
     const fac = data.hospitals?.facilities ?? [];
     const htrip = data.hospitals?.towns[m.key]?.[0];
+    const ct = nearestCamp(data, m.key);
+    const cpark = ct?.camp.p != null ? data.camping!.parks[ct.camp.p].name : null;
+    const parks50km = (data.camping?.parks ?? []).filter((p) => p.type !== 'historic' && km(m.lon, m.lat, p.c[0], p.c[1]) <= 50).length;
 
     return {
       muni: m, pop, popYear, popGrowth5y,
@@ -170,6 +176,8 @@ export function townMetrics(data: Data): TownMetrics[] {
       court: jt('court'),
       policeStation: jt('police'),
       hospital: htrip ? { name: fac[htrip.f].name, city: fac[htrip.f].city, min: htrip.min, km: htrip.km } : null,
+      camp: ct ? { name: ct.camp.name, city: cpark, min: ct.min, km: ct.km } : null,
+      parks50km,
       fires25km, burnedHa50km, tornadoes50km, treaty, climate, river, feels,
     };
   });
@@ -197,6 +205,7 @@ export const CRITERIA: Criterion[] = [
   { id: 'police', label: 'Police nearby', hint: 'Shorter drive to the nearest police station or RCMP detachment', value: (t) => mins(t.policeStation), higherIsBetter: false, defaultWeight: 1 },
   { id: 'court', label: 'Court nearby', hint: 'Shorter drive to the nearest courthouse (circuit court points not counted)', value: (t) => mins(t.court), higherIsBetter: false, defaultWeight: 1 },
   { id: 'hospital', label: 'Close to a hospital', hint: 'Shorter drive to the nearest hospital', value: (t) => mins(t.hospital), higherIsBetter: false, defaultWeight: 3 },
+  { id: 'camping', label: 'Close to camping', hint: 'Shorter drive to the nearest campground (provincial, national, regional or private)', value: (t) => mins(t.camp), higherIsBetter: false, defaultWeight: 0 },
   { id: 'fire', label: 'Low wildfire exposure', hint: 'Fewer fires started within 25 km since 1990', value: (t) => t.fires25km, higherIsBetter: false, defaultWeight: 1 },
   { id: 'tornado', label: 'Fewer tornadoes', hint: 'Fewer tornadoes on record within 50 km (1980–2009 and 2017 on; counts depend on who or what was there to spot them)', value: (t) => t.tornadoes50km, higherIsBetter: false, defaultWeight: 0 },
   { id: 'warm', label: 'Milder', hint: 'Higher mean annual temperature (1991+, nearest long-record station)', value: (t) => t.climate?.meanTemp ?? null, higherIsBetter: true, defaultWeight: 1 },
