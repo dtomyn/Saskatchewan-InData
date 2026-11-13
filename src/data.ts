@@ -3,6 +3,8 @@
 /** A place in the atlas: a city, town or northern village. `rd` is a coarse region (South, Central, North). */
 export type Muni = {
   key: string; name: string; rd: string; kind: string; lon: number; lat: number;
+  /** 1: the 62 places in scripts/places.mjs; 2: every other city, town, village and northern community (`csd`: its CSD uid) */
+  tier?: 1 | 2; csd?: string;
   note?: string; areas?: { crime?: string; pop?: string };
 };
 
@@ -67,7 +69,7 @@ export type JusticeSite = { kind: 'court' | 'police' | 'corrections'; name: stri
 export type Justice = {
   source: string; routing: string; routingSource: string | null; asOf: string;
   sites: JusticeSite[];
-  towns: Record<string, { court: Trip[]; police: Trip[] }>;
+  towns: Record<string, { court: Trip[]; police: Trip[] }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { court: Trip[]; police: Trip[] }>;
 };
 
 export type Treaty = { name: string; label: string; year: number; end: number | null; polys: [number, number][][][] };
@@ -106,7 +108,7 @@ export type CensusHousing = {
 };
 /** CMHC Rental Market Survey for a surveyed centre (its CMA or CA): average 1- and 2-bedroom rents and the vacancy rate (%) by year. */
 export type RentSeries = { centre: string; r1: Record<string, number>; r2: Record<string, number>; vac?: Record<string, number>; vacArea?: string };
-export type Housing = { source: string; rentSource: string; prov: CensusHousing; census: Record<string, CensusHousing>; rent: Record<string, RentSeries> };
+export type Housing = { source: string; rentSource: string; prov: CensusHousing; census: Record<string, CensusHousing>; rent: Record<string, RentSeries>; /** every census subdivision, by CSD uid */ csd?: Record<string, CensusHousing> };
 /** One place's row in the Mill Rate Survey: its name and status there (C, T, NT, NV), uniform municipal mill rate, residential
  *  mill rate factor (if not 1), factored residential rate, residential school levy ÷ assessment (mills), base / minimum tax in
  *  use, and (when the census gives a median home value) that value and the indicative annual tax on it. `x`: not comparable. */
@@ -123,7 +125,7 @@ export type NeedSite = [number, number, number, string | null, string];
 export type Needs = {
   source: string; areaSource: string; asOf: string; kinds: string[]; slackKm: number; fallbackKm: number;
   sites: NeedSite[];
-  towns: Record<string, { n: number[]; how: 'csd' | 'radius'; csd?: string; r?: number }>;
+  towns: Record<string, { n: number[]; how: 'csd' | 'radius'; csd?: string; r?: number }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { n: number[]; how: 'csd' | 'radius'; r?: number }>;
   /** the municipal limits each place was counted in */
   areas: Record<string, [number, number][][][]>;
 };
@@ -139,7 +141,9 @@ export type Jobs = {
   prov: CensusJobs & { ur: Record<string, number>; er: Record<string, number>; pr: Record<string, number> };
   regions: JobsRegion[];
   /** per place: `r` its LFS region (index into `regions`), `csd` the census subdivision behind the census figures */
-  towns: Record<string, CensusJobs & { r: number | null; csd?: string }>;
+  towns: Record<string, CensusJobs & { r: number | null; csd?: string }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { r: number | null }>;
+  /** every census subdivision, by CSD uid */
+  csd?: Record<string, CensusJobs>;
 };
 
 /** Workday Reach: the drive between every pair of places. `min[i][j]` is minutes from place `keys[i]` to place `keys[j]`. */
@@ -166,7 +170,7 @@ export type Schools = {
   /** per place: `n` schools any family can attend inside the town limits (as Daily needs counts them); the nearest by road
    * elementary (`e`), high (`h`) and French-language or French immersion (`f`) school (`f` indexes `schools`), and
    * post-secondary site (`p`, indexes `pse`) */
-  towns: Record<string, { n: number; e?: Trip; h?: Trip; f?: Trip; p?: Trip }>;
+  towns: Record<string, { n: number; e?: Trip; h?: Trip; f?: Trip; p?: Trip }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { n: number; e?: Trip; h?: Trip; f?: Trip; p?: Trip }>;
 };
 
 /**
@@ -186,7 +190,7 @@ export type NetTown = {
 export type Internet = {
   source: string; licence: string; asOf: string; tiers: string[];
   prov: { hh: number; f50: number | null; w50: number | null; lte: number | null };
-  hexes: NetHex[]; towns: Record<string, NetTown>;
+  hexes: NetHex[]; towns: Record<string, NetTown>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, NetTown>;
 };
 
 /**
@@ -209,7 +213,28 @@ export type Community = {
   /** per place: the census profile, its census subdivision, and places of worship in town by religion (`pw`, by `religions`) */
   towns: Record<string, Partial<CommunityCensus> & { csd?: string; pw: number[] }>;
   sites: WorshipSite[];
+  /** every census subdivision, by CSD uid (top three birthplaces and languages) */
+  csd?: Record<string, Partial<CommunityCensus>>;
 };
+
+/**
+ * A census subdivision (2021): `id` its 7-digit uid, `n` name, `t` Statistics Canada's type code (CY, T, VL, RM, IRI…,
+ * named in `Subdivisions.types`), `c` a label point, `km2` land area, `pop`/`pop16` population 2021/2016, `dw` private
+ * dwellings, `ne` an incompletely enumerated reserve or settlement (2021), `k` the atlas place key when it is one of the
+ * places in scripts/places.mjs, `s` the key of a small community (tier 2), `p` its outline (simplified). Values Statistics Canada suppressed are left out.
+ */
+export type Subdivision = { id: string; n: string; t: string; c: [number, number]; km2: number | null; pop?: number; pop16?: number; dw?: number; ne?: 1; k?: string; s?: string; p: [number, number][][][] };
+/** A 2021 census tract in the Regina or Saskatoon metropolitan area: `out` outside the city limits; census values (suppressed ones left out). */
+export type Tract = {
+  id: string; city: string; out?: 1; c: [number, number]; km2: number;
+  pop?: number; pop16?: number; value?: number; rentCost?: number; inc?: number; hh?: number; stir30?: number; owners?: number; renters?: number;
+  hhPop?: number; imm?: number; rec?: number; indTot?: number; ind?: number;
+  p: [number, number][][][];
+};
+/** A city's own neighbourhood outline (Regina subdivisions, Saskatoon neighbourhoods): names only, no figures joined. */
+export type Hood = { city: string; n: string; p: [number, number][][][] };
+export type Tracts = { source: string; censusSource: string; tracts: Tract[]; hoods?: Hood[]; hoodSources?: Record<string, { source: string; licence: string; licenceUrl: string }> };
+export type Subdivisions = { source: string; censusSource: string; types: Record<string, string>; csds: Subdivision[] };
 
 /**
  * A settlement or language office: IRCC's list (`src: 'ircc'`) or the province's typed list (`'sk'`, at its town's centre:
@@ -239,7 +264,7 @@ export type Doctors = {
   disruptions: null; disruptionsUrl: string; slackKm: number; fallbackKm: number;
   sites: DoctorSite[];
   /** per place: clinics (`nc`) and pharmacies (`np`) in town; the nearest clinic (`c`) and pharmacy (`p`) by road, indexing `sites`; `h`: no clinic mapped in town but a hospital is (inferred: its doctors practise there) */
-  towns: Record<string, { nc: number; np: number; c?: Trip; p?: Trip; h?: { n: string; min: number | null; km: number; lon: number; lat: number } }>;
+  towns: Record<string, { nc: number; np: number; c?: Trip; p?: Trip; h?: { n: string; min: number | null; km: number; lon: number; lat: number } }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { nc: number; np: number; c?: Trip; p?: Trip; h?: { n: string; min: number | null; km: number; lon: number; lat: number } }>;
 };
 
 /**
@@ -255,7 +280,7 @@ export type Childcare = {
   spaces: null; asOf: string; slackKm: number; fallbackKm: number;
   centres: ChildcareCentre[]; homes: ChildcareHomes[];
   /** per place: centres (`nc`), homes (`nh`) and facilities taking infants (`ni`) in town; the nearest centre (`c`, indexing `centres`) and the nearest licensed care of any kind (`a`: `h` 1 indexes `homes`, else `centres`) */
-  towns: Record<string, { nc: number; nh: number; ni: number; c?: Trip; a?: Trip & { h: 0 | 1 } }>;
+  towns: Record<string, { nc: number; nh: number; ni: number; c?: Trip; a?: Trip & { h: 0 | 1 } }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { nc: number; nh: number; ni: number; c?: Trip; a?: Trip & { h: 0 | 1 } }>;
 };
 
 /** A ~4 km hexagon: [lon, lat, active wells, suspended wells, abandoned wells, oil & gas facilities]. */
@@ -324,7 +349,7 @@ export type Radon = {
   prov: { n: number; hi: number; vhi: number; med: number | null };
   regions: RadonArea[]; fsas: RadonArea[];
   /** per place: its health region (`r`, indexing `regions`), its postal areas (`f`) and their pooled tests (`fn`, `fhi` at or above the guideline) */
-  towns: Record<string, { r: number; f: string[]; fn?: number; fhi?: number }>;
+  towns: Record<string, { r: number; f: string[]; fn?: number; fhi?: number }>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, { r: number; f: string[]; fn?: number; fhi?: number }>;
 };
 
 /** Light & dark (computed): day length per place on three dates (`d`: sunrise to sunset; `c`: civil dawn to dusk, hours),
@@ -346,7 +371,7 @@ export type Light = {
   cells: [number, number, number, number, number][];
   /** a year of day length (one value a week from 1 January) at each whole degree of latitude */
   curves: { lat: number; y: number[] }[];
-  towns: Record<string, LightTown>;
+  towns: Record<string, LightTown>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, LightTown>;
 };
 
 /** An airport with scheduled passenger service (OurAirports' flag), placed by OpenStreetMap; `road` 0 = fly-in (not a drive target); `size` 2 large, 1 medium, 0 small. */
@@ -373,7 +398,7 @@ export type Transit = {
 export type Drought = {
   source: string; sourceUrl: string; serviceUrl: string; licence: string; licenceUrl: string;
   grid: { x0: number; y1: number; px: number; w: number; h: number; bounds: number[] };
-  months: string[]; maps: string[]; share: number[][]; towns: Record<string, string>;
+  months: string[]; maps: string[]; share: number[][]; towns: Record<string, string>; /** the tier-2 communities (stage `small`; trips there are straight lines, min null) */ small?: Record<string, string>;
 };
 
 // ---- Right now: the live files in public/data/now/ (not committed; rebuilt hourly by .github/workflows/live.yml).
@@ -416,6 +441,12 @@ export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAi
 export type Data = {
   outline: GeoJSON.Feature | null;
   munis: Muni[];
+  /** tier 2: every other city, town, village, resort village and northern community (municipalities.json, `tier: 2`) */
+  small: Muni[];
+  /** every census subdivision (cities to rural municipalities and reserves), or null */
+  subdivisions: Subdivisions | null;
+  /** census tracts inside Regina and Saskatoon, or null */
+  tracts: Tracts | null;
   fires: { points: FirePoint[]; source: string; perimeters?: BurnPerimeter[]; perimeterSource?: string; perimeterUrl?: string; perimeterYears?: [number, number] | null; licence?: string; licenceUrl?: string } | null;
   tornadoes: { rows: TornadoRow[]; source: string; sources?: { name: string; from: number; to: number; scale: string }[] } | null;
   hail: { rows: HailRow[]; source: string; sources?: { name: string; from: number; to: number }[] } | null;
@@ -430,7 +461,7 @@ export type Data = {
   floods: Floods | null;
   population: { munis: Record<string, PopSeries>; source: string } | null;
   crime: Crime | null;
-  hospitals: { facilities: Facility[]; towns: Record<string, Trip[]>; source: string; routing: string; routingSource: string | null } | null;
+  hospitals: { facilities: Facility[]; towns: Record<string, Trip[]>; small?: Record<string, Trip[]>; source: string; routing: string; routingSource: string | null } | null;
   justice: Justice | null;
   treaties: { treaties: Treaty[]; reserves: Reserve[]; source: string } | null;
   camping: Camping | null;
@@ -490,7 +521,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -527,6 +558,8 @@ export async function loadAll(): Promise<Data> {
     load<Transit>('transit'),
     load<Crops>('crops'),
     load<Power>('power'),
+    load<Subdivisions>('subdivisions'),
+    load<Tracts>('tracts'),
     load<Data['manifest']>('manifest'),
   ]);
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
@@ -537,7 +570,10 @@ export async function loadAll(): Promise<Data> {
     : [null, null, null, null, null, null];
   return {
     outline,
-    munis: munis ?? [],
+    munis: (munis ?? []).filter((m) => (m.tier ?? 1) === 1),
+    small: (munis ?? []).filter((m) => m.tier === 2),
+    subdivisions: subdivisions?.csds?.length ? subdivisions : null,
+    tracts: tracts?.tracts?.length ? tracts : null,
     fires: fires?.points?.length ? fires : null,
     tornadoes: tornadoes?.rows?.length ? tornadoes : null,
     hail: hail?.rows?.length ? hail : null,

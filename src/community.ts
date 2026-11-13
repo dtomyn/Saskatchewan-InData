@@ -11,6 +11,7 @@ import type { CommunityCensus, Data, WorshipSite } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
 
 export const COMMUNITY_COLOR = '#f0a6ca';
 
@@ -95,6 +96,8 @@ export function communityLayer(data: Data): AtlasLayer {
       if (focusedId === 'community') {
         const m = measure();
         const r = ramp(m.max);
+        // every census subdivision tinted by the same share; a suppressed share is left clear
+        out.push(...csdTint('community', data, (s) => share(C?.csd?.[s.id], m.n, m.of), (v) => rgb(r(v)), target));
         out.push(...townColumns('community', data.munis, (x) => val(x.key), (v) => 2500 + Math.sqrt(Math.min(v, m.max) / m.max) * 60000, (v) => rgb(r(v), 235), 0, `${selected}${target}`));
       }
       out.push(new ScatterplotLayer<WorshipSite>({
@@ -114,7 +117,7 @@ export function communityLayer(data: Data): AtlasLayer {
         el.insertAdjacentHTML('beforeend', `<div class="unavail">${l.unavailable}</div>`);
         return { update() {} };
       }
-      el.insertAdjacentHTML('beforeend', `<p class="lede">A new place feels less new when someone nearby shares your language, your food or your faith. This layer shows who already lives in each place, from the 2021 census: people who came to Canada from elsewhere and where they were born, the languages spoken at home, French speakers and Indigenous identity. Columns show the share you pick; dots are places of worship, by religion. It is here to help you find community, not to rank people or places by who lives there.</p>
+      el.insertAdjacentHTML('beforeend', `<p class="lede">A new place feels less new when someone nearby shares your language, your food or your faith. This layer shows who already lives in each place, from the 2021 census: people who came to Canada from elsewhere and where they were born, the languages spoken at home, French speakers and Indigenous identity. Columns show the share you pick, and the whole province is tinted by it, census subdivision by census subdivision (rural municipalities and reserves included; click one for its census report); dots are places of worship, by religion. It is here to help you find community, not to rank people or places by who lives there.</p>
         <div class="chips" style="margin:2px 0 10px">${MEASURES.map((m) => `<button class="chip${m.id === target ? ' on' : ''}" data-k="${m.id}" style="--c:${color}">${m.chip}</button>`).join('')}</div>`);
       const rows = data.munis.flatMap((m) => { const p = placeCommunity(data, m.key); return p ? [{ m, p }] : []; });
       const P = C.prov;
@@ -149,9 +152,20 @@ export function communityLayer(data: Data): AtlasLayer {
         ${sourceLine(`${C.source}. ${C.worshipSource}, ${C.asOf}.`)}`);
       return { update() {} };
     },
+    click: csdClick,
+    describe(info) {
+      const s = csdOf(info);
+      if (s) return csdReport(data, s, 'community');
+      return describeSite(info);
+    },
     tooltip(info) {
       const id = info.layer?.id ?? '';
       if (!info.object || !id.startsWith('community')) return null;
+      const s = csdOf(info);
+      if (s) {
+        const c = C?.csd?.[s.id], m = measure();
+        return csdTooltip(data, s, [[m.chip, c ? pctText(c, m.n, m.of) : missing(s)], ...(c?.birth?.length ? [['Born in', c.birth.map((b) => esc(b[0])).join(', ')] as [string, string]] : [])]);
+      }
       if (id === 'community-sites') {
         const s = info.object as WorshipSite;
         const r = rel(C, s[2]);
@@ -164,7 +178,8 @@ export function communityLayer(data: Data): AtlasLayer {
       const m = measure();
       return `<b>${esc(o.m.name)}</b><br><span class="tk">${m.chip}</span> <span class="tv">${pctText(p, m.n, m.of)}</span>${p.birth.length ? `<br><span class="tk">Born in: ${p.birth.slice(0, 3).map((b) => esc(b[0])).join(', ')}</span>` : ''}${p.lang.length ? `<br><span class="tk">Home languages: ${p.lang.slice(0, 3).map((b) => esc(b[0])).join(', ')}</span>` : ''}<br><span class="tk">Click for town report</span>`;
     },
-    describe(info) {
+  };
+  function describeSite(info: Parameters<NonNullable<AtlasLayer['describe']>>[0]): ReturnType<NonNullable<AtlasLayer['describe']>> {
       if (info.layer?.id !== 'community-sites') return null;
       const s = info.object as WorshipSite;
       const r = rel(C, s[2]);
@@ -178,7 +193,6 @@ export function communityLayer(data: Data): AtlasLayer {
         stats: p ? [{ v: String(total), l: `places of worship mapped in ${town}` }, { v: pctText(p, 'imm', 'hhPop'), l: `of ${town}’s residents are immigrants` }] : [],
         sources: [{ label: 'OpenStreetMap', url: `https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[s[5][0]] ?? 'node'}/${s[5].slice(1)}` }],
       };
-    },
-  };
+  }
   return l;
 }

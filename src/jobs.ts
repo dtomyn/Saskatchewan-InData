@@ -9,6 +9,7 @@ import { Data, Jobs, JobsRegion, fmt, interpYearly } from './data';
 import { lineChart, rampCSS } from './charts';
 import { AtlasLayer, NO_DEPTH, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
 import { esc } from './html';
+import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
 
 type MeasureKey = 'ur' | 'er';
 type Measure = { key: MeasureKey; chip: string; label: string; ramp: d3.ScaleSequential<string> };
@@ -54,6 +55,8 @@ export function jobsLayer(data: Data): AtlasLayer {
   const rPolys: Poly[] = regions.flatMap((reg, r) => reg.polys.map((poly) => ({ r, poly })));
   let cur = MEASURES[0];
   let shownTime = y1;
+  /** what tints the map: the LFS regions' rate, or every census subdivision's median household income */
+  let tint: 'region' | 'csd' = 'region';
   const at = (r: number, t: number) => interpYearly(regions[r]?.[cur.key], Math.min(t, y1 + 0.99));
 
   const l: AtlasLayer = {
@@ -67,22 +70,24 @@ export function jobsLayer(data: Data): AtlasLayer {
     build({ time, selected, focusedId }) {
       shownTime = time;
       const focused = focusedId === 'jobs';
+      const byCsd = tint === 'csd' && !!data.subdivisions;
       const out: Layer[] = [
+        ...(byCsd ? csdTint('jobs', data, (s) => J?.csd?.[s.id]?.inc ?? null, (v) => rgb(INCOME(v)), 'inc', focused) : []),
         new PolygonLayer<Poly>({
           id: 'jobs-base',
           data: rPolys,
           getPolygon: (d) => d.poly,
-          getFillColor: (d) => { const v = at(d.r, time); return v == null ? [120, 130, 150, 30] : rgb(cur.ramp(v), focused ? 120 : 80); },
+          getFillColor: (d) => { if (byCsd) return [0, 0, 0, 0]; const v = at(d.r, time); return v == null ? [120, 130, 150, 30] : rgb(cur.ramp(v), focused ? 120 : 80); },
           getLineColor: [230, 240, 255, 150],
           lineWidthUnits: 'pixels',
           getLineWidth: 1.2,
-          pickable: true,
+          pickable: !byCsd,
           parameters: NO_DEPTH,
-          updateTriggers: { getFillColor: [time, cur.key, focused] },
+          updateTriggers: { getFillColor: [time, cur.key, focused, byCsd] },
         } as any),
         ...townColumns('jobs', data.munis, (m) => towns[m.key]?.inc ?? null, (v) => Math.max(0, v - 30000) * 0.9, (v) => rgb(INCOME(v), 235), time, `${selected}`),
       ];
-      if (focused)
+      if (focused && !byCsd)
         out.push(new TextLayer<JobsRegion>({
           id: 'jobs-labels',
           data: regions,
@@ -111,7 +116,7 @@ export function jobsLayer(data: Data): AtlasLayer {
         return { update() {} };
       }
       el.insertAdjacentHTML('beforeend', `<p class="lede">Statistics Canada’s Labour Force Survey estimates, every year, how many people have work in each of Saskatchewan’s economic regions. The regions are tinted by the chosen rate and change with the timeline. Columns are each place’s median household income from the 2021 census: taller and brighter is higher.</p>
-        <div class="chips" style="margin:2px 0 10px">${MEASURES.map((m) => `<button class="chip" data-m="${m.key}" style="--c:${color}">${m.chip}</button>`).join('')}</div>`);
+        <div class="chips" style="margin:2px 0 10px">${MEASURES.map((m) => `<button class="chip" data-m="${m.key}" style="--c:${color}">${m.chip}</button>`).join('')}${data.subdivisions && J.csd ? `<button class="chip" data-tint="csd" style="--c:${color}" title="Tint every census subdivision by its median household income (2020)">Income by subdivision</button>` : ''}</div>`);
       const hero = heroStats(el, 4);
       const chartTitle = el.appendChild(mk('h3'));
       const chartBox = el.appendChild(mk('div'));
@@ -137,10 +142,12 @@ export function jobsLayer(data: Data): AtlasLayer {
       const drawRamp = () => {
         const [a, b] = cur.ramp.domain();
         const [ia, ib] = INCOME.domain();
-        rampBox.innerHTML = `<h3>Region colour: ${esc(cur.chip.toLowerCase())}</h3>
+        rampBox.innerHTML = (tint === 'csd'
+          ? `<p class="note">The map is tinted by each census subdivision’s median household income (2020), on the column scale below: rural municipalities, villages and reserves included. A subdivision whose income Statistics Canada suppressed is left clear. Click one for its census report.</p>`
+          : `<h3>Region colour: ${esc(cur.chip.toLowerCase())}</h3>
           <div class="ramp" style="background:${rampCSS((t) => cur.ramp(a + t * (b - a)))}"></div>
-          <div class="ramp-labels"><span>${a}%</span><span>${(a + b) / 2}%</span><span>${b}%+</span></div>
-          <h3>Column: median household income, 2020</h3>
+          <div class="ramp-labels"><span>${a}%</span><span>${(a + b) / 2}%</span><span>${b}%+</span></div>`)
+          + `<h3>${tint === 'csd' ? 'Tint and column' : 'Column'}: median household income, 2020</h3>
           <div class="ramp" style="background:${rampCSS((t) => INCOME(ia + t * (ib - ia)))}"></div>
           <div class="ramp-labels"><span>${fmt.money(ia)}</span><span>${fmt.money((ia + ib) / 2)}</span><span>${fmt.money(ib)}+</span></div>`;
       };
@@ -149,11 +156,20 @@ export function jobsLayer(data: Data): AtlasLayer {
       list.innerHTML = `<h3>Median household income, 2020 · highest first</h3>
         <ol class="rank-list">${rows.map(([k, t], i) => `<li data-key="${esc(k)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(nm(k))}</span><br><span class="rd">${topIndustries(J, t.ind, 2).map((s) => `${esc(s.name)} ${s.pct.toFixed(0)}%`).join(' · ')}</span></span><span><div class="bar"><i style="width:${Math.round((t.inc! / max) * 100)}%;background:${color}"></i></div><div class="bar-v">${fmt.money(t.inc!)}</div></span></li>`).join('')}</ol>`;
       list.addEventListener('click', (e) => { const k = (e.target as HTMLElement).closest('li')?.dataset.key; if (k) window.dispatchEvent(new CustomEvent('atlas:town', { detail: k })); });
+      const tintBtn = el.querySelector<HTMLButtonElement>('[data-tint]');
       el.querySelector('.chips')!.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('[data-tint]')) {
+          tint = tint === 'csd' ? 'region' : 'csd';
+          tintBtn?.classList.toggle('on', tint === 'csd');
+          drawRamp();
+          return;
+        }
         const k = (e.target as HTMLElement).closest<HTMLElement>('[data-m]')?.dataset.m;
         const m = MEASURES.find((x) => x.key === k);
         if (!m) return;
         cur = m;
+        tint = 'region';
+        tintBtn?.classList.remove('on');
         set = drawChart();
         drawRamp();
         el.querySelectorAll<HTMLButtonElement>('[data-m]').forEach((b) => b.classList.toggle('on', b.dataset.m === cur.key));
@@ -172,10 +188,17 @@ export function jobsLayer(data: Data): AtlasLayer {
         },
       };
     },
+    click: csdClick,
+    describe(info) { const s = csdOf(info); return s ? csdReport(data, s, 'jobs') : null; },
     tooltip(info) {
       const o: any = info.object;
       const id = info.layer?.id ?? '';
       if (!o || !id.startsWith('jobs')) return null;
+      const s = csdOf(info);
+      if (s) {
+        const c = J?.csd?.[s.id];
+        return csdTooltip(data, s, [['Median household income', c?.inc != null ? fmt.money(c.inc) : missing(s)], ['Unemployment, May 2021', c?.cur != null ? pct(c.cur) : missing(s)]]);
+      }
       const row = (k: string, v: string) => `<br><span class="tk">${k}</span> <span class="tv">${v}</span>`;
       const y = Math.min(Math.max(Math.floor(shownTime), y0), y1);
       if (id === 'jobs-base') {

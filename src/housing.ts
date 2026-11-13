@@ -9,6 +9,7 @@ import { Data, fmt, interpYearly } from './data';
 import { lineChart, rampCSS } from './charts';
 import { AtlasLayer, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
 import { esc } from './html';
+import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
 
 type MeasureKey = 'value' | 'rentCost' | 'stir30' | 'market' | 'tax';
 type Measure = { key: MeasureKey; chip: string; label: string; fmt: (v: number) => string; lowFirst: boolean };
@@ -68,13 +69,17 @@ export function housingLayer(data: Data): AtlasLayer {
     range: [y0, y1 + 0.99],
     available: !!h,
     unavailable: 'Statistics Canada’s census profile could not be downloaded when this copy of the data was built. Run <code>npm run data housing</code>, then reload.',
-    build({ time, selected }) {
+    build({ time, selected, focusedId }) {
       shownTime = time;
       const k = cur.key;
+      // every census subdivision tinted by the same census measure (market rent and property tax are the places' own)
+      const tint = k === 'value' || k === 'rentCost' || k === 'stir30'
+        ? csdTint('housing', data, (s) => h?.csd?.[s.id]?.[k] ?? null, (v) => rgb(RAMPS[k](v)), k, focusedId === 'housing')
+        : [];
       const colorOf = k === 'market'
         ? (_v: number, m: { key: string }) => { const vac = interpYearly(rent[m.key]?.vac, time); return vac == null ? rgb('#c9b8a8', 230) : rgb(RAMPS.market(vac), 240); }
         : (v: number) => rgb(RAMPS[k](v), 240);
-      return townColumns('housing', data.munis, (m) => valueAt(m.key, time), HEIGHT[k], colorOf, time, `${selected}${k}`);
+      return [...tint, ...townColumns('housing', data.munis, (m) => valueAt(m.key, time), HEIGHT[k], colorOf, time, `${selected}${k}`)];
     },
     spark: () => ys.map((x) => ({ x, y: meanRent(x) ?? 0 })),
     events: () => [],
@@ -85,7 +90,7 @@ export function housingLayer(data: Data): AtlasLayer {
         el.insertAdjacentHTML('beforeend', `<div class="unavail">${l.unavailable}</div>`);
         return { update() {} };
       }
-      el.insertAdjacentHTML('beforeend', `<p class="lede">The 2021 census asked every household what its home is worth and what it pays to live there. Columns show the chosen measure for each place; <b>Market rent</b> follows CMHC’s survey of purpose-built rentals in the ${rentKeys.length} centres it covers, year by year, coloured by how hard it is to find a vacancy. <b>Property tax</b> applies each place’s ${tax ? tax.year : ''} residential mill rate to its median home.</p>
+      el.insertAdjacentHTML('beforeend', `<p class="lede">The 2021 census asked every household what its home is worth and what it pays to live there. Columns show the chosen measure for each place, and the whole province is tinted by it, census subdivision by census subdivision (rural municipalities, villages and reserves included; click one for its census report); <b>Market rent</b> follows CMHC’s survey of purpose-built rentals in the ${rentKeys.length} centres it covers, year by year, coloured by how hard it is to find a vacancy. <b>Property tax</b> applies each place’s ${tax ? tax.year : ''} residential mill rate to its median home.</p>
         <div class="chips" style="margin:2px 0 10px">${MEASURES.map((m) => `<button class="chip" data-m="${m.key}" style="--c:${color}">${m.chip}</button>`).join('')}</div>`);
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Average two-bedroom rent, CMHC surveyed centres</h3>`);
@@ -97,7 +102,7 @@ export function housingLayer(data: Data): AtlasLayer {
       const rampBox = el.appendChild(mk('div'));
       const list = el.appendChild(mk('div'));
       el.insertAdjacentHTML('beforeend', `
-        <p class="note">Census figures are for each place’s own census subdivision (the city, town or northern village, not its rural municipality); Lloydminster counts only its Saskatchewan side. Dwelling values are what owners said their home would sell for, in 2021. Shelter costs include rent or mortgage, property tax, condo fees and utilities. The 30 % share counts owner and renter households with income, off farms and reserves. Statistics Canada rounds counts and suppresses figures for the smallest places.</p>
+        <p class="note">Census figures are for each place’s own census subdivision (the city, town or northern village, not its rural municipality); Lloydminster counts only its Saskatchewan side. Dwelling values are what owners said their home would sell for, in 2021. Shelter costs include rent or mortgage, property tax, condo fees and utilities. The 30 % share counts owner and renter households with income, off farms and reserves. Statistics Canada rounds counts and suppresses figures for the smallest places: a suppressed subdivision is left untinted and reads “—”, never zero. A rural municipality surrounds its towns and villages but excludes them; reserves are their own subdivisions, and a reserve not fully counted in 2021 reads “not enumerated”.</p>
         <p class="note">CMHC rents are October averages for two-bedroom units in purpose-built row and apartment buildings of three or more units, over the whole census metropolitan area or agglomeration named after the place (Saskatoon’s includes Warman and Martensville, for example); they are shown only on that place. Secondary rentals (basement suites, rented houses) are not surveyed. Lloydminster’s vacancy rate covers both the Saskatchewan and Alberta sides. Weyburn and the smaller towns are not surveyed.</p>
         ${tax ? `<p class="note"><b>Property tax</b> is indicative, not a bill: median home value (Census 2021) × ${Math.round(tax.pov * 100)} % (the residential <a href="${tax.povSource}" target="_blank" rel="noopener">percentage of value</a>) × (the place’s residential municipal mill rate + the provincial residential education mill rate, ${tax.edu.toFixed(2)} in ${tax.year}) ÷ 1000. The municipal rate is the uniform mill rate times the residential mill rate factor, as reported in the ${tax.year} Mill Rate Survey. Assessed value is not market value (the 2021 revaluation values homes as of January 1, 2019) and the census value is the owner’s own guess. Base tax and minimum tax (used by most towns), library levies and special levies are not added, so many bills are higher. Lloydminster is assessed under its own charter and has no estimate; Cumberland House and Sandy Bay reported no rate.</p>${sourceLine(tax.source)}` : ''}
         ${sourceLine(h.source)}${sourceLine(h.rentSource)}`);
@@ -144,9 +149,17 @@ export function housingLayer(data: Data): AtlasLayer {
         },
       };
     },
+    click: csdClick,
+    describe(info) { const s = csdOf(info); return s ? csdReport(data, s, 'housing') : null; },
     tooltip(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('housing')) return null;
+      const s = csdOf(info);
+      if (s) {
+        const c = h?.csd?.[s.id];
+        const f = (v: number | undefined, fm: (v: number) => string) => (v != null ? fm(v) : missing(s));
+        return csdTooltip(data, s, [[cur.label.replace(/, 2021$/, ''), f(c?.[cur.key as 'value'], cur.fmt)], ...(cur.key !== 'value' ? [['Median home value', f(c?.value, fmt.money)] as [string, string]] : [])]);
+      }
       const c = census[o.m.key];
       const r = rent[o.m.key];
       const y = Math.min(Math.floor(shownTime), y1);

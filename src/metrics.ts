@@ -160,14 +160,16 @@ export function driveMin(data: Data, from: string, to: string): number | null {
 /** The workplace, if one is set and is one of the atlas's places. */
 export const workplace = (data: Data) => (work.key && data.commute && data.munis.some((m) => m.key === work.key) ? work.key : null);
 
-let cache: TownMetrics[] | null = null;
+const caches = new WeakMap<Data, TownMetrics[]>();
 let cacheData: Data | null = null;
 
+/** Per-place metrics for every place in `data.munis` (the 62, or the 62 and the small communities in `smallView`). */
 export function townMetrics(data: Data): TownMetrics[] {
-  if (cache) return cache;
   cacheData = data;
+  const hit = caches.get(data);
+  if (hit) return hit;
   const nowYear = new Date().getFullYear();
-  cache = data.munis.map((m) => {
+  const cache = data.munis.map((m) => {
     // population
     const ps = data.population?.munis[m.key];
     let pop: number | null = null, popYear: number | null = null, popGrowth5y: number | null = null;
@@ -286,6 +288,7 @@ export function townMetrics(data: Data): TownMetrics[] {
       drought: placeDrought(data, m.key),
     };
   });
+  caches.set(data, cache);
   return cache;
 }
 
@@ -299,6 +302,8 @@ export type Criterion = {
   value: (t: TownMetrics) => number | null;
   higherIsBetter: boolean;
   defaultWeight: number;
+  /** a drive time: small communities (tier 2) have straight lines only, so they are skipped, never compared */
+  drive?: boolean;
 };
 
 const mins = (t: CareTrip | null) => (t ? t.min ?? t.km : null);
@@ -307,10 +312,10 @@ export const CRITERIA: Criterion[] = [
   { id: 'safety', label: 'Low crime', hint: 'Lower Crime Severity Index (latest year, own police service)', value: (t) => t.csi, higherIsBetter: false, defaultWeight: 3 },
   { id: 'violent', label: 'Low violent crime', hint: 'Lower Violent Crime Severity Index', value: (t) => t.vcsi, higherIsBetter: false, defaultWeight: 2 },
   { id: 'solved', label: 'Crimes get solved', hint: 'Higher weighted clearance rate: the share of crime police solve, weighted by seriousness', value: (t) => t.clear, higherIsBetter: true, defaultWeight: 1 },
-  { id: 'police', label: 'Police nearby', hint: 'Shorter drive to the nearest police station or RCMP detachment', value: (t) => mins(t.policeStation), higherIsBetter: false, defaultWeight: 1 },
-  { id: 'court', label: 'Court nearby', hint: 'Shorter drive to the nearest courthouse (circuit court points not counted)', value: (t) => mins(t.court), higherIsBetter: false, defaultWeight: 1 },
-  { id: 'hospital', label: 'Close to a hospital', hint: 'Shorter drive to the nearest hospital', value: (t) => mins(t.hospital), higherIsBetter: false, defaultWeight: 3 },
-  { id: 'camping', label: 'Close to camping', hint: 'Shorter drive to the nearest campground (provincial, national, regional or private)', value: (t) => mins(t.camp), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'police', drive: true, label: 'Police nearby', hint: 'Shorter drive to the nearest police station or RCMP detachment', value: (t) => mins(t.policeStation), higherIsBetter: false, defaultWeight: 1 },
+  { id: 'court', drive: true, label: 'Court nearby', hint: 'Shorter drive to the nearest courthouse (circuit court points not counted)', value: (t) => mins(t.court), higherIsBetter: false, defaultWeight: 1 },
+  { id: 'hospital', drive: true, label: 'Close to a hospital', hint: 'Shorter drive to the nearest hospital', value: (t) => mins(t.hospital), higherIsBetter: false, defaultWeight: 3 },
+  { id: 'camping', drive: true, label: 'Close to camping', hint: 'Shorter drive to the nearest campground (provincial, national, regional or private)', value: (t) => mins(t.camp), higherIsBetter: false, defaultWeight: 0 },
   { id: 'buy', label: 'Affordable to buy', hint: 'Lower median value of owned dwellings (Census 2021)', value: (t) => t.homeValue, higherIsBetter: false, defaultWeight: 0 },
   { id: 'tax', label: 'Lower property tax', hint: 'Lower indicative annual property tax on the place’s 2021 census median home: value × 80 % × (residential municipal + education mill rate) ÷ 1000, from the latest Mill Rate Survey. Base tax, minimum tax and library levies are left out', value: (t) => t.propTax?.tax ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'rent', label: 'Affordable to rent', hint: 'Lower median monthly shelter cost paid by renters (Census 2021: rent plus utilities)', value: (t) => t.rentCost, higherIsBetter: false, defaultWeight: 0 },
@@ -325,18 +330,18 @@ export const CRITERIA: Criterion[] = [
   { id: 'sun', label: 'Sunnier', hint: 'More bright-sunshine hours a year (nearest station that measures it, within 150 km)', value: (t) => t.feels.sun?.v ?? null, higherIsBetter: true, defaultWeight: 1 },
   { id: 'snow', label: 'Less snow & frost', hint: 'Fewer frost days + cm of snowfall a year (30-yr normals)', value: (t) => (t.feels.frostDays && t.feels.snow ? t.feels.frostDays.v + t.feels.snow.v : null), higherIsBetter: false, defaultWeight: 0 },
   { id: 'growth', label: 'Growing', hint: 'Faster population growth over the last five years', value: (t) => t.popGrowth5y, higherIsBetter: true, defaultWeight: 2 },
-  { id: 'commute', label: 'Short commute', hint: 'Shorter drive to the place you work (set “I work in…” above; off until you do)', value: (t) => { const w = cacheData && workplace(cacheData); return w ? driveMin(cacheData!, t.muni.key, w) : null; }, higherIsBetter: false, defaultWeight: 0 },
-  { id: 'school', label: 'School nearby', hint: 'Shorter drive to the nearest high school (or K-12 school) any family can attend (Ministry of Education list)', value: (t) => mins(t.schools?.h ?? null), higherIsBetter: false, defaultWeight: 0 },
-  { id: 'french', label: 'French schooling', hint: 'Shorter drive to the nearest Fransaskois school or school with a French immersion program', value: (t) => mins(t.schools?.f ?? null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'commute', drive: true, label: 'Short commute', hint: 'Shorter drive to the place you work (set “I work in…” above; off until you do)', value: (t) => { const w = cacheData && workplace(cacheData); return w ? driveMin(cacheData!, t.muni.key, w) : null; }, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'school', drive: true, label: 'School nearby', hint: 'Shorter drive to the nearest high school (or K-12 school) any family can attend (Ministry of Education list)', value: (t) => mins(t.schools?.h ?? null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'french', drive: true, label: 'French schooling', hint: 'Shorter drive to the nearest Fransaskois school or school with a French immersion program', value: (t) => mins(t.schools?.f ?? null), higherIsBetter: false, defaultWeight: 0 },
   { id: 'internet', label: 'Fast internet', hint: 'More of the homes in town offered fixed internet at 50/10 Mbps or better, wired or fixed wireless (ISED National Broadband Data: offered, not measured)', value: (t) => t.internet?.f50 ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'diverse', label: 'Diverse community', hint: 'More of the people in town are immigrants (Census 2021: immigrants as a share of people in private households), so a newcomer is more likely to find others who made the same move. It measures where people were born, nothing else', value: (t) => t.community?.immShare ?? null, higherIsBetter: true, defaultWeight: 0 },
-  { id: 'newcomer', label: 'Newcomer services nearby', hint: 'Shorter drive to the nearest settlement agency (IRCC-funded, or on the province’s settlement list): free help to settle, find work and get credentials recognised', value: (t) => mins(t.newcomer?.s ?? null), higherIsBetter: false, defaultWeight: 0 },
-  { id: 'clinic', label: 'Clinic nearby', hint: 'Shorter drive to the nearest medical clinic, doctor’s office or primary health care centre (Saskatchewan Health Authority sites in Statistics Canada’s ODHF, and OpenStreetMap). A clinic nearby is not a doctor taking new patients', value: (t) => (t.doctors?.c ? t.doctors.c.min ?? t.doctors.c.km : null), higherIsBetter: false, defaultWeight: 0 },
-  { id: 'childcare', label: 'Childcare nearby', hint: 'Shorter drive to the nearest licensed child care centre (Ministry of Education list). Licensed is not the same as a space being open: waitlists are common', value: (t) => (t.childcare?.c ? t.childcare.c.min ?? t.childcare.c.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'newcomer', drive: true, label: 'Newcomer services nearby', hint: 'Shorter drive to the nearest settlement agency (IRCC-funded, or on the province’s settlement list): free help to settle, find work and get credentials recognised', value: (t) => mins(t.newcomer?.s ?? null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'clinic', drive: true, label: 'Clinic nearby', hint: 'Shorter drive to the nearest medical clinic, doctor’s office or primary health care centre (Saskatchewan Health Authority sites in Statistics Canada’s ODHF, and OpenStreetMap). A clinic nearby is not a doctor taking new patients', value: (t) => (t.doctors?.c ? t.doctors.c.min ?? t.doctors.c.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'childcare', drive: true, label: 'Childcare nearby', hint: 'Shorter drive to the nearest licensed child care centre (Ministry of Education list). Licensed is not the same as a space being open: waitlists are common', value: (t) => (t.childcare?.c ? t.childcare.c.min ?? t.childcare.c.km : null), higherIsBetter: false, defaultWeight: 0 },
   { id: 'industry', label: 'Fewer industrial neighbours', hint: 'Fewer oil and gas wells (active, suspended or abandoned) and oil and gas facilities within 5 km of the town limits, industrial sites reporting to the National Pollutant Release Inventory within 5 km, licensed pipelines within 2 km and producing mines within 25 km, one count each. Neutral: these are also where many of the jobs are', value: (t) => t.industry?.score ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'radon', label: 'Lower radon', hint: 'Fewer of the tested homes in the place’s health region at or above Canada’s radon guideline, 200 Bq/m³ (Health Canada survey, 2009–2011; 2007 health regions, so neighbouring places tie). A regional odds, not a property’s: every home should get a long-term test', value: (t) => t.radon?.region.pct ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'winterday', label: 'Longer winter days', hint: 'More hours from sunrise to sunset on December 21, the shortest day (computed from latitude: the farther south, the longer; under an hour and a half between the far north and the border)', value: (t) => t.light?.d[0] ?? null, higherIsBetter: true, defaultWeight: 0 },
-  { id: 'airport', label: 'Near an airport', hint: 'Shorter drive to the nearest airport with scheduled passenger flights (OurAirports’ flag; Regina and Saskatoon have the most routes, the smaller ones a few flights a day or week)', value: (t) => (t.transit?.air ? t.transit.air.min ?? t.transit.air.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'airport', drive: true, label: 'Near an airport', hint: 'Shorter drive to the nearest airport with scheduled passenger flights (OurAirports’ flag; Regina and Saskatoon have the most routes, the smaller ones a few flights a day or week)', value: (t) => (t.transit?.air ? t.transit.air.min ?? t.transit.air.km : null), higherIsBetter: false, defaultWeight: 0 },
   { id: 'carfree', label: 'Can live without a car', hint: 'What is mapped in town to get around without driving: a city bus (2), an intercity bus stop (1), a VIA Rail stop (1). Intercity bus is only what OpenStreetMap has (partial), and it says nothing about how often anything runs', value: (t) => t.transit?.carFree ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'needs', label: 'Daily needs in town', hint: 'More of eight everyday services mapped in town (OpenStreetMap): grocery store, pharmacy, school, bank or credit union, gas station, library, post office, clinic', value: (t) => t.needs?.met ?? null, higherIsBetter: true, defaultWeight: 2 },
 ];
@@ -347,7 +352,7 @@ export type Ranked = { t: TownMetrics; score: number; parts: Record<string, numb
 export function rankTowns(towns: TownMetrics[], weights: Record<string, number>): Ranked[] {
   const parts: Record<string, Map<string, number>> = {};
   for (const c of CRITERIA) {
-    const vals = towns.map((t) => ({ k: t.muni.key, v: c.value(t) })).filter((x) => x.v != null) as { k: string; v: number }[];
+    const vals = towns.map((t) => ({ k: t.muni.key, v: c.drive && t.muni.tier === 2 ? null : c.value(t) })).filter((x) => x.v != null) as { k: string; v: number }[];
     vals.sort((a, b) => a.v - b.v);
     const m = new Map<string, number>();
     vals.forEach((x, i) => {
