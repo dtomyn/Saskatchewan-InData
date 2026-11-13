@@ -43,5 +43,9 @@ Settings the newcomer sets once: "I work in…" (feeds Workday Reach and a drive
 - Incident-level crime from Table 35-10-0182-01 (impaired driving, break-ins, by service).
 - Saskatchewan's own wildfire perimeters if they become open; NTP's 1980–2023 historical set (needs a Western University account).
 - Courts of King's Bench and Provincial Court locations from an official list, if one is published openly.
-- Live readings, a history of them, forecasts and what-ifs, physical systems and finer places: five plans in build order in [`plans/digital-twin/`](plans/digital-twin/README.md).
+- Live readings, a history of them, forecasts and what-ifs, physical systems and finer places: five plans in build order in [`plans/digital-twin/`](plans/digital-twin/README.md). ✅ Plan 1 (a Now on rivers, fires, air, with weather alerts) is built; its unconfirmed feeds stay open:
+  - Agency-reported active fires (name, size, status) from CIFFC or the Saskatchewan Public Safety Agency *(verify)*: CWFIS's `activefires.csv` answers 404.
+  - ECCC FireWork smoke forecast (PM2.5 from wildfire smoke, next 72 h) on GeoMet *(verify)*: only retrospective `RAQDPS-FW.CE_*` layers found.
+  - Highway Hotline road closures and conditions *(verify)*: the map page shows no open feed.
+  - GTFS-realtime for Regina and Saskatoon (vehicle positions, service alerts) *(verify)*: no URL confirmed.
 - Per-layer films and an overview (blueprint Part 8, `storyboard_layers.py` in Island Atlas); the how-to explainer is in `video/`.

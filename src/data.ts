@@ -349,6 +349,31 @@ export type Drought = {
   months: string[]; maps: string[]; share: number[][]; towns: Record<string, string>;
 };
 
+// ---- Right now: the live files in public/data/now/ (not committed; rebuilt hourly by .github/workflows/live.yml).
+// Times are ISO strings in UTC. `asOf` is the newest reading (for lists of what is in effect, when the list was read).
+type NowBase = { asOf: string; fetched: string; source: string; sourceUrl: string; licence: string; licenceUrl: string };
+/** gauge id (in rivers.json), time, level m, discharge m³/s, discharge ÷ the gauge's median annual peak, flag */
+export type NowRiverRow = [string, string, number | null, number | null, number | null, 'ice' | 'est' | 'dry' | 'other' | null];
+export type NowRivers = NowBase & { rows: NowRiverRow[] };
+/** lon, lat, time seen, fire radiative power (MW), sensor */
+export type Hotspot = [number, number, string, number | null, string | null];
+/** a perimeter CWFIS estimates from hotspots: first and last heat seen, hectares, hotspots counted */
+export type FirePerimeter = { first: string; last: string; ha: number; n: number; polys: [number, number][][][] };
+export type NowFires = NowBase & { hours: number; keepDays: number; hotspots: Hotspot[]; perimeters: FirePerimeter[] };
+/** An AQHI community: the latest observation (`t`, `v`) and the newest forecast's highest value from now (`fv` at `ft`, the forecast running to `fto`). `out`: outside Saskatchewan. */
+export type AqhiCommunity = { id: string; name: string; lon: number; lat: number; t: string; v: number; fv?: number; ft?: string; fto?: string; pub?: string; out?: true };
+/** `towns[key]`: [index into communities, km] for the nearest community within `reachKm` */
+export type NowAir = NowBase & { reachKm: number; communities: AqhiCommunity[]; towns: Record<string, [number, number]> };
+export type WeatherAlert = {
+  code: string; type: string; name: string; short: string | null; colour: string | null; status: string | null;
+  issued: string; ends: string | null; expires: string | null; text: string;
+  /** forecast regions the alert covers; the atlas's places inside them */
+  areas: string[]; places: string[]; polys: [number, number][][][];
+};
+export type NowAlerts = NowBase & { alerts: WeatherAlert[] };
+/** `skipped`: live readings were deliberately not loaded (the film), so the app shows no trace of them, not even the dashed box. */
+export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; skipped: boolean };
+
 export type Data = {
   outline: GeoJSON.Feature | null;
   munis: Muni[];
@@ -382,6 +407,8 @@ export type Data = {
   radon: Radon | null;
   light: Light | null;
   transit: Transit | null;
+  /** live readings; all null when public/data/now/ is absent, or with ?film (unless ?now is also given) */
+  now: Now;
   manifest: Record<string, { ok: boolean; updated?: string; lastError?: string }>;
 };
 
@@ -433,6 +460,12 @@ export async function loadAll(): Promise<Data> {
     load<Transit>('transit'),
     load<Data['manifest']>('manifest'),
   ]);
+  // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
+  const q = new URLSearchParams(location.search);
+  const live = !q.has('film') || q.has('now');
+  const [nRivers, nFires, nAir, nAlerts, nManifest] = live
+    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<Data['manifest']>('now/manifest')])
+    : [null, null, null, null, null];
   return {
     outline,
     munis: munis ?? [],
@@ -467,7 +500,14 @@ export async function loadAll(): Promise<Data> {
     radon: radon?.regions?.length ? radon : null,
     light: light && Object.keys(light.towns ?? {}).length ? light : null,
     transit: transit?.airports?.length ? transit : null,
-    manifest: manifest ?? {},
+    now: {
+      rivers: nRivers?.asOf && Array.isArray(nRivers.rows) ? nRivers : null,
+      fires: nFires?.asOf && Array.isArray(nFires.hotspots) ? nFires : null,
+      air: nAir?.asOf && Array.isArray(nAir.communities) ? nAir : null,
+      alerts: nAlerts?.asOf && Array.isArray(nAlerts.alerts) ? nAlerts : null,
+      skipped: !live,
+    },
+    manifest: { ...(manifest ?? {}), ...(nManifest ?? {}) },
   };
 }
 

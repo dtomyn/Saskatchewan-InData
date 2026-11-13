@@ -2,24 +2,25 @@
 
 **Who:** buyers, farmers, insurers' customers and the curious who want to know what the land and sky have done to a place over time.
 
-**The question:** How often has fire, smoke, wind, hail, drought or flood reached here, and is it changing?
+**The question:** How often has fire, smoke, wind, hail, drought or flood reached here, is it changing, and what is happening right now?
 
 ## What answers it
 
 The Layer menu's **History on the timeline** group, scrubbed or played on the timeline:
 
-- **🔥 Wildfires** (1959 → 2025): fires flare as they start and leave area-true scar circles.
-- **🌫 Smoke & air** (2001 → 2023): smoke days per year at six air stations.
+- **🔥 Wildfires** (1959 → 2025, then Now): fires flare as they start and leave area-true scar circles; at **Now**, satellite hotspots of the last 24 hours and estimated perimeters.
+- **🌫 Smoke & air** (2001 → 2023, then Now): smoke days per year at six air stations; at **Now**, the AQHI at each community and its forecast high.
 - **🌪 Tornadoes** (1980 → today, monthly; gap 2010–2016) with tracks.
 - **🧊 Hail** (2022 → today): Northern Hail Project storms and radar swaths.
 - **🌾 Drought** (Nov 2002 → today, monthly): Canadian Drought Monitor D0–D4.
-- **≋ River floods** (1912 → 2025): river levels against normal.
+- **≋ River floods** (1912 → 2025, then Now): river peaks against normal; at **Now**, each gauge's latest flow against its normal peak.
 - Data-driven events: fires over 100,000 ha, F3+ or casualty tornadoes, high-water years, the smokiest and worst drought years.
+- A **Right now** block at the top of those three panels (with weather alerts in effect, drawn dashed on the map) and a **Right now** group in the Town Report: the nearest gauge, hotspots within 50 km, the AQHI and alerts covering the place, each with its age.
 - **Town Report** hazard rows and Finder criteria: Low wildfire exposure, Fewer smoke days, Fewer tornadoes, Less hail, Fewer drought months.
 
 ## How
 
-Turn on a history layer and press play, or set a year; click an event for its panel.
+Turn on a history layer and press play, or set a year; click an event for its panel. River floods, Wildfires and Smoke & air open at **Now**, the right end of their timeline.
 
 ## What it cannot tell you
 
@@ -28,10 +29,13 @@ Turn on a history layer and press play, or set a year; click an event for its pa
 - Tornado and hail counts depend on who (or what radar) was there; only three summers of hail swaths.
 - Drought is a consensus map on a 10 km grid; a town near an edge can read one step off.
 - None of it is a forecast or an insurance rating.
+- Live readings refresh about hourly and may be late or stop: each shows its age, greys after 3 hours and is not drawn after 24. A hotspot is heat seen from a satellite, not a confirmed fire. The AQHI is an index, not the smoke-day count, and is borrowed from the nearest community within 150 km. Live readings never feed the Finder.
 
 ## Check it
 
 ```js
 atlas.clearMap(); atlas.focus('fires'); atlas.setTime(2015.6)
 atlas.clearMap(); atlas.focus('drought'); atlas.setTime(2021.6)
+// live readings: load /?film&now (plain ?film skips them)
+atlas.clearMap(); atlas.focus('rivers')   // lands on Now
 ```

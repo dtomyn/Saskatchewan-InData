@@ -5,10 +5,11 @@
 import * as d3 from 'd3';
 import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
-import { Data, MONTHS, SmokeStation, interpYearly, km } from './data';
+import { AqhiCommunity, Data, MONTHS, SmokeStation, interpYearly, km } from './data';
 import { barChart } from './charts';
 import { esc } from './html';
 import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { NOW_T, ageTag, ago, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, aqhiColor, aqhiText, aqhiWord, drawable, freshness, isNow, ms, nowBlock, skTime, tickAges } from './now';
 
 export const SMOKE_COLOR = '#e8a87c';
 /** haze → amber → the fire layer's ember red, by smoke days in a year */
@@ -60,14 +61,69 @@ export function smokeLayer(data: Data): AtlasLayer {
   const recent = ys.filter((y) => y > y1 - 10), early = ys.filter((y) => y <= y1 - 10);
   const avgOf = (yy: number[]) => (yy.length ? d3.mean(yy, (y) => mean[y].v)! : null);
   const H = (days: number) => 2500 + days * 1500;
+  // right now: Environment Canada's AQHI, the latest hour and the newest forecast's highest value, per community
+  const nowA = data.now.air;
+  const comms = nowA?.communities ?? [];
+  const HA = (v: number) => 2500 + Math.min(v, 11) * 9000;
+  const isLive = (id?: string) => !!id?.startsWith('smoke-now');
+  const borrowers = (i: number) => Object.entries(nowA?.towns ?? {}).filter(([, [c]]) => c === i).map(([k]) => data.munis.find((m) => m.key === k)?.name ?? k);
+  function airNow() {
+    if (data.now.skipped) return '';
+    const live = comms.filter((c) => drawable(c.t));
+    const body = `<p>Environment Canada’s Air Quality Health Index, the latest hour at each community it reports for, and the highest value its newest forecast expects. AQHI rolls three pollutants (ozone, nitrogen dioxide and fine particles) into one 1–10+ health-risk scale: it is not the smoke-day count below, and the two are never drawn together. A place without its own reading borrows the nearest community within ${nowA?.reachKm ?? 150} km; its Town Report says which.</p>
+      <div class="now-list">${live.map((c) => `<div><span class="sw" style="background:${aqhiColor(c.v)}"></span><b>${aqhiText(c.v)}</b> ${esc(c.name)}${c.out ? ' <span class="tk">(outside Sask.)</span>' : ''} <span class="tk">${aqhiWord(c.v)}${c.fv != null ? ` · forecast up to ${aqhiText(c.fv)}` : ''}</span> ${ageTag(c.t)}</div>`).join('') || '<div class="tk">No community has reported in the past day.</div>'}</div>
+      ${alertList(alertsInEffect(data, 'smoke'), data)}`;
+    return nowBlock({ color, asOf: nowA?.asOf ?? null, body, source: nowA?.source ?? '', sourceUrl: nowA?.sourceUrl, missing: 'This copy of the data has no air-quality readings.' });
+  }
 
   const l: AtlasLayer = {
     id: 'smoke',
     name: 'Smoke & air',
     icon: '🌫',
     color,
-    range: [y0, y1 + 0.99],
+    range: [y0, nowA ? NOW_T : y1 + 0.99],
     available: !!sm,
+    now: nowA ? {
+      asOf: () => ms(nowA.asOf),
+      archiveEnd: y1 + 0.99,
+      build({ focusedId }) {
+        if (!drawable(nowA.asOf)) return [];
+        const live = comms.map((c, i) => ({ c, i })).filter((x) => drawable(x.c.t));
+        const grey = (x: { c: AqhiCommunity }) => freshness(x.c.t) === 'stale' || freshness(nowA.asOf) === 'stale';
+        const out: Layer[] = [
+          new ColumnLayer<any>({
+            id: 'smoke-now-cols',
+            data: live,
+            getPosition: (x) => [x.c.lon, x.c.lat],
+            radius: 8000,
+            diskResolution: 20,
+            extruded: true,
+            getElevation: (x) => HA(x.c.v),
+            getFillColor: (x) => (grey(x) ? [130, 140, 155, 190] : rgb(aqhiColor(x.c.v), 235)),
+            material: { ambient: 0.65, diffuse: 0.5 },
+            pickable: true,
+          }),
+          ...alertOutlines('smoke-now-alerts', alertsInEffect(data, 'smoke')),
+        ];
+        if (focusedId === 'smoke')
+          out.push(new TextLayer<any>({
+            id: 'smoke-now-labels',
+            data: live,
+            getPosition: (x) => [x.c.lon, x.c.lat, HA(x.c.v) + 7000],
+            getText: (x) => `${x.c.name} AQHI ${aqhiText(x.c.v)}`,
+            getSize: 12,
+            getColor: [235, 240, 248, 230],
+            fontFamily: 'JetBrains Mono, monospace',
+            fontWeight: 600,
+            outlineWidth: 3,
+            outlineColor: [6, 10, 18, 220],
+            fontSettings: { sdf: true },
+            billboard: true,
+            parameters: NO_DEPTH,
+          } as any));
+        return out;
+      },
+    } : undefined,
     unavailable: 'Environment Canada’s air-quality archive (NAPS) could not be reached when this copy of the data was built. Run <code>npm run data smoke</code>, then reload.',
     build({ time, focusedId }) {
       const live = stations
@@ -141,6 +197,7 @@ export function smokeLayer(data: Data): AtlasLayer {
     },
     panel(el) {
       el.innerHTML = `${kicker(l, 'Fine particles · NAPS')}
+        ${airNow()}
         <h2>Smoke on the wind</h2>
         <p class="lede">Each column is an air-monitoring station. Its height is how many days that year the air averaged more than ${limit} µg/m³ of fine particles (PM2.5) over 24 hours: on the prairies, nearly always wildfire smoke. Haze-grey is a clear year; ember red is a summer under smoke.</p>`;
       const hero = heroStats(el, 4);
@@ -162,8 +219,11 @@ export function smokeLayer(data: Data): AtlasLayer {
         ${sourceLine(sm?.source ?? '')}`);
       return {
         update({ time }) {
+          tickAges(el);
           const y = Math.floor(time);
-          hero(0, mean[y] ? mean[y].v.toFixed(0) : '–', mean[y] ? `smoke days in ${y}, ${mean[y].n}-station average` : `no stations counted in ${y}`);
+          const top = nowA && isNow(time, l.range[1]) ? comms.filter((c) => drawable(c.t)).sort((a, b) => b.v - a.v)[0] : null;
+          if (nowA && isNow(time, l.range[1])) hero(0, top ? aqhiText(top.v) : '–', top ? `highest AQHI right now, ${top.name} (${aqhiWord(top.v)})` : 'no AQHI reading in the past day');
+          else hero(0, mean[y] ? mean[y].v.toFixed(0) : '–', mean[y] ? `smoke days in ${y}, ${mean[y].n}-station average` : `no stations counted in ${y}`);
           hero(1, String(worstYear), `smokiest year (${mean[worstYear] ? Math.round(mean[worstYear].v) : '–'} days)`);
           const a = avgOf(recent), b = avgOf(early);
           hero(2, a != null ? a.toFixed(0) : '–', `days a year, ${recent[0] ?? '–'}–${y1}${b != null ? ` (${b.toFixed(0)} before)` : ''}`);
@@ -175,6 +235,24 @@ export function smokeLayer(data: Data): AtlasLayer {
     describe(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('smoke')) return null;
+      if (isLive(info.layer.id)) {
+        if (o.a) return alertEvent(o.a, 'smoke', data, info.coordinate?.[0], info.coordinate?.[1]);
+        const c: AqhiCommunity | undefined = o.c;
+        if (!c) return null;
+        const who = borrowers(o.i);
+        return {
+          layer: 'smoke', kind: 'Air Quality Health Index', lon: c.lon, lat: c.lat, zoom: 8,
+          title: `${c.name}: AQHI ${aqhiText(c.v)}`,
+          body: `Environment Canada’s Air Quality Health Index for ${c.name}${c.out ? ' (outside Saskatchewan)' : ''}, ${aqhiWord(c.v)}. The index combines ozone, nitrogen dioxide and fine particles into one health-risk number; it is not a count of smoke days.`,
+          stats: [
+            { v: aqhiText(c.v), l: `observed ${ago(c.t)}${freshness(c.t) === 'stale' ? ' · stale' : ''}` },
+            ...(c.fv != null && c.ft ? [{ v: aqhiText(c.fv), l: `highest forecast, ${skTime(c.ft)} (Sask. time)` }] : []),
+            { v: String(who.length), l: `of the atlas’s places borrow this reading` },
+          ],
+          ...(who.length ? { sections: [{ title: 'Places that borrow this reading', text: who.join(', ') }] } : {}),
+          sources: [{ label: 'ECCC Air Quality Health Index', url: nowA?.sourceUrl ?? 'https://weather.gc.ca/airquality/' }],
+        };
+      }
       const s: SmokeStation = o.s ?? o;
       const yy = years(s);
       if (!yy.length) return null;
@@ -197,6 +275,11 @@ export function smokeLayer(data: Data): AtlasLayer {
     tooltip(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('smoke')) return null;
+      if (isLive(info.layer.id)) {
+        if (o.a) return alertTooltip(o.a);
+        const c: AqhiCommunity | undefined = o.c;
+        return c ? `<b>${esc(c.name)}</b> <span class="tk">AQHI</span><br><span class="tk">Right now</span> <span class="tv">${aqhiText(c.v)}, ${aqhiWord(c.v)}</span><br><span class="tk">Observed</span> <span class="tv">${ago(c.t)}${freshness(c.t) === 'stale' ? ' · stale' : ''}</span>${c.fv != null ? `<br><span class="tk">Forecast up to</span> <span class="tv">${aqhiText(c.fv)}</span>` : ''}` : null;
+      }
       const s: SmokeStation = o.s ?? o;
       const yy = years(s);
       return `<b>${esc(s.name)}</b> <span class="tk">air station</span>${o.d != null ? `<br><span class="tk">This year</span> <span class="tv">${Math.round(o.d)} smoke days</span>` : ''}<br><span class="tk">Average</span> <span class="tv">${yy.length ? Math.round(d3.mean(yy, (y) => s.days[y])!) : '–'} days a year</span><br><span class="tk">Record</span> <span class="tv">${yy[0] ?? '–'}–${yy.at(-1) ?? '–'}</span>`;

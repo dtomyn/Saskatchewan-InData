@@ -1,5 +1,6 @@
 // Town Report and Town Finder side panels.
-import { Data, fmt } from './data';
+import { Data, Muni, NowRiverRow, RiverStation, fmt, km } from './data';
+import { ageTag, alertList, alertsInEffect, aqhiText, aqhiWord, drawable, plainAge } from './now';
 import { lineChart } from './charts';
 import { esc } from './html';
 import { startReach, campsWithin } from './camping';
@@ -62,6 +63,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     <div class="kicker" style="--c:#ffffff">${esc(m.kind)} · ${esc(m.rd)} Saskatchewan${t.treaty ? ` · ${esc(t.treaty)} territory` : ''}</div>
     <h2>${esc(m.name)}</h2>
     ${opts.rank ? `<p class="lede">Ranks <b>#${opts.rank.pos} of ${opts.rank.of}</b> in your Town Finder (score ${Math.round(opts.rank.score * 100)}).</p>` : ''}
+    ${rightNow(data, m, metric, na, link)}
     <h3>Safety &amp; justice</h3>
     <div class="metric-grid">
       ${metric('Crime Severity', '#ff4d8d', t.csi != null ? t.csi.toFixed(0) : na, csiSub)}
@@ -136,6 +138,50 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
       lineChart(el.querySelector('#tr-rent')!, { height: 110, xDomain: [vals[0].x, vals.at(-1)!.x], yZero: false, yFormat: (v) => `$${Math.round(v)}`, series: [{ key: 'r', label: '2-bedroom', color: '#e6a57e', values: vals }] });
     }
   });
+}
+
+/** Live readings around a place: the nearest gauge reporting, hotspots within 50 km, AQHI (its own or borrowed), and
+ *  weather alerts covering it. Each shows its age; none feeds the Town Finder. */
+function rightNow(data: Data, m: Muni, metric: MetricFn, na: string, link: (layer: string, text: string) => string) {
+  const nw = data.now;
+  if (nw.skipped) return '';
+  if (!nw.rivers && !nw.fires && !nw.air && !nw.alerts)
+    return `<h3>Right now</h3><div class="unavail">This copy of the data has no live readings. Run <code>npm run data now</code>, then reload.</div>`;
+  const dead = 'no reading in the past day';
+  const cells: string[] = [];
+  if (nw.rivers && data.rivers) {
+    const gauges = new Map(data.rivers.stations.map((s) => [s.id, s]));
+    let best: { s: RiverStation; row: NowRiverRow; d: number } | null = null;
+    for (const row of nw.rivers.rows) {
+      const s = gauges.get(row[0]);
+      if (!s || !drawable(row[1])) continue;
+      const d = km(m.lon, m.lat, s.lon, s.lat);
+      if (d <= 100 && (!best || d < best.d)) best = { s, row, d };
+    }
+    const r = best?.row;
+    cells.push(metric('Nearest river gauge', '#4cc9f0', r ? (r[4] != null ? `${r[4] >= 0.095 ? r[4].toFixed(r[4] >= 1 ? 1 : 2) : '<0.1'}×` : `${r[2]} m`) : na,
+      best && r ? `${r[4] != null ? 'flow against its normal annual peak' : 'water level'}${r[5] ? ` (${r[5] === 'ice' ? 'ice-affected' : r[5] === 'est' ? 'estimated' : 'flagged'})` : ''} · ${esc(best.s.name)} (${Math.round(best.d)} km) · ${ageTag(r[1])}` : `no gauge within 100 km has reported in the past day`));
+  }
+  if (nw.fires) {
+    const ok = drawable(nw.fires.asOf);
+    const near = ok ? nw.fires.hotspots.map((h) => ({ h, d: km(m.lon, m.lat, h[0], h[1]) })).filter((x) => x.d <= 50).sort((a, b) => a.d - b.d) : [];
+    cells.push(metric('Hotspots within 50 km', '#ff8a3d', ok ? String(near.length) : na,
+      !ok ? dead : near.length ? `satellite heat, last 24 h, not confirmed fires · nearest ${Math.round(near[0].d)} km, seen ${plainAge(near[0].h[2])}` : `none in the last 24 h · read ${ageTag(nw.fires.asOf)}`));
+  }
+  if (nw.air) {
+    const pick = nw.air.towns[m.key];
+    const c = pick ? nw.air.communities[pick[0]] : null;
+    const ok = c && drawable(c.t);
+    cells.push(metric('Air quality (AQHI)', '#e8a87c', ok ? aqhiText(c!.v) : na,
+      !c ? `no AQHI community within ${nw.air.reachKm} km` : !ok ? dead : `${aqhiWord(c.v)}${c.fv != null ? `, forecast up to ${aqhiText(c.fv)}` : ''} · ${pick![1] < 15 ? 'at' : 'borrowed from'} ${esc(c.name)}${pick![1] < 15 ? '' : ` (${pick![1]} km)`} · ${ageTag(c.t)}`));
+  }
+  const alerts = nw.alerts ? alertsInEffect(data).filter((a) => a.places.includes(m.key)) : [];
+  if (nw.alerts) cells.push(metric('Weather alerts', '#ffd166', drawable(nw.alerts.asOf) ? String(alerts.length) : na,
+    !drawable(nw.alerts.asOf) ? dead : alerts.length ? esc(alerts.map((a) => a.short ?? a.name).join(', ')) : `none in effect · read ${ageTag(nw.alerts.asOf)}`));
+  return `<h3>Right now</h3>
+    <div class="metric-grid">${cells.join('')}</div>
+    ${alertList(alerts, data)}
+    <div class="tr-falls" style="margin-top:8px">${nw.rivers ? link('rivers', '≋ Rivers now') : ''}${nw.fires ? link('fires', '🔥 Hotspots now') : ''}${nw.air ? link('smoke', '🌫 Air now') : ''}</div>`;
 }
 
 /** The drive to the viewer's workplace ("I work in…"), when one is set. */

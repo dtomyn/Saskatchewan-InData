@@ -82,6 +82,10 @@ Two limits to design for: GitHub runs scheduled jobs late when busy, and turns s
 - Editing a file's `asOf` to yesterday greys it; removing `public/data/now/` shows the dashed box and no errors in the console.
 - The hourly workflow has deployed three times in a row without a hand.
 
+## Built
+
+Built as planned, with the recommended choices: `public/data/now/` is not committed, and the schedule is hourly (`17 * * * *`). Differences: the live stages keep their own `now/manifest.json`, so running them changes no committed file; both workflows first download the `now/` files the site is serving, so a failed feed keeps its last file in CI too; `deploy.yml` also runs `npm run data now`; `?film&now` loads the live files for checking by hand; estimated perimeters are kept while heat was seen within 7 days (the layer holds the whole season); hotspots and alerts take `asOf` from when the list was read. The four *(verify)* feeds are parked in `ROADMAP.md`.
+
 ## To confirm before building
 
 - Not committing `public/data/now/` (recommended) versus committing it like the rest of `public/data/`.

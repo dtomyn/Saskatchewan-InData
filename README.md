@@ -13,12 +13,12 @@ It is an exploration tool, not legal, safety or real-estate advice.
 | Justice & safety | ◆ Crime severity | timeline | 1998 → 2025 | Crime Severity Index, Violent CSI and weighted clearance rate for each place's police service, as columns; Saskatchewan's own index on the sparkline |
 | | ⚖ Courts & police | static | as mapped today | Courthouses, police stations and correctional centres; drive time from each place to its nearest court and police, with the routes |
 | | ◈ Treaties & reserves | static | treaties 1871–1906 | The six numbered treaty areas that cover the province and 826 reserve parcels |
-| History | 🔥 Wildfires | timeline | 1959 → 2025 | 27,542 reported fires flaring as they start; each leaves a scar circle the size of the area it burned |
-| | 🌫 Smoke & air | timeline | 2001 → 2023 | Smoke days each year (24-hour fine particles, PM2.5, above 25 µg/m³) at Saskatchewan's six air-monitoring stations, as columns from haze grey to ember red; the smokiest year as an event |
+| History | 🔥 Wildfires | timeline | 1959 → 2025, then **Now** | 27,542 reported fires flaring as they start; each leaves a scar circle the size of the area it burned. At Now: satellite hotspots of the last 24 hours and the perimeters estimated from them (dashed) |
+| | 🌫 Smoke & air | timeline | 2001 → 2023 | Smoke days each year (24-hour fine particles, PM2.5, above 25 µg/m³) at Saskatchewan's six air-monitoring stations, as columns from haze grey to ember red; the smokiest year as an event. At **Now**: the latest Air Quality Health Index at each community, and its forecast high |
 | | 🌪 Tornadoes | timeline (monthly) | 1980 → today | 529 verified tornadoes from Environment Canada (1980–2009) and 174 from the Northern Tornadoes Project (2017 →), coloured by rating, with track lines; no open record covers 2010–2016 |
 | | 🧊 Hail | timeline (monthly) | 2022 → today | 434 hail swaths the Northern Hail Project traced on radar over Saskatchewan (2022–2024), sized and coloured by the radar's largest expected hail, plus the storms in its research database; each flares as a burst of ice, then stays as a dot with its swath line |
 | | 🌾 Drought | timeline (monthly) | Nov 2002 → today | the Canadian Drought Monitor's month-end map, abnormally dry (D0) to exceptional drought (D4), tinted across the province for every month since late 2002; the share of the province in drought, the driest years, and each town's record |
-| | ≋ River floods | timeline | 1912 → 2025 | Each gauge's annual peak against its normal peak |
+| | ≋ River floods | timeline | 1912 → 2025, then **Now** | Each gauge's annual peak against its normal peak. At Now: each gauge's latest real-time flow against the same normal peak |
 | | 🌡 Climate | timeline | 1886 → 2020 | Homogenized station temperatures as anomalies; warming stripes |
 | Places & living | ◍ Population | timeline | 2001 → 2025 | Population of each place, coloured by five-year growth |
 | | ⌂ Home costs | timeline + census | 2000 → 2025; 2021 | Census 2021 median home value, rent paid and share of households spending 30 %+ on shelter for every place; CMHC average 2-bedroom rent for the 9 surveyed centres, year by year, coloured by vacancy; a Property tax view: each place's residential mill rate (Mill Rate Survey) applied to its median home |
@@ -50,7 +50,7 @@ npm run dev        # http://localhost:5173
 npm run build      # type-check + static build into dist/
 ```
 
-`public/data/` is committed, so the app runs without the pipeline.
+`public/data/` is committed, so the app runs without the pipeline, except `public/data/now/`: the live readings (below) are fetched, not committed. Without them the River floods, Wildfires and Smoke & air panels show a dashed "Right now" box; `npm run data now` fills it.
 
 **Dev container:** open the folder in VS Code and choose *Reopen in Container* (needs Docker and the Dev Containers extension). It uses Node 22, runs `npm ci` on creation, keeps `node_modules` in a named volume, and forwards port 5173, so `npm run dev` works as above.
 
@@ -61,7 +61,19 @@ npm run data                    # every stage
 npm run data crime justice      # selected stages
 ```
 
-Stages, in run order: `province places fires tornadoes hail rivers climate smoke drought normals population crime housing jobs needs treaties justice hospitals camping schools internet community newcomer doctors childcare industry water radon light transit commute`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice`, `hospitals`, `camping`, `schools`, `newcomer`, `doctors` and `childcare` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
+Stages, in run order: `province places fires tornadoes hail rivers climate smoke drought normals population crime housing jobs needs treaties justice hospitals camping schools internet community newcomer doctors childcare industry water radon light transit commute now-rivers now-fires now-air now-alerts`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice`, `hospitals`, `camping`, `schools`, `newcomer`, `doctors` and `childcare` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
+
+### Right now: the live readings
+
+```bash
+npm run data now                # now-rivers now-fires now-air now-alerts
+```
+
+Four stages read today's feeds and write `public/data/now/` (in `.gitignore`), never cached: the latest real-time level and flow at each gauge in `rivers.json` (last 24 hours), CWFIS satellite hotspots of the last 24 hours and the fire perimeters estimated from them, Environment Canada's AQHI observations and forecasts, and the weather alerts in effect over Saskatchewan. They keep their own `now/manifest.json`, so running them changes no committed file.
+
+On GitHub, `.github/workflows/live.yml` runs `npm run data now water`, builds and redeploys about once an hour (and on demand); `deploy.yml` runs the live stages too, so a push never deploys without them. Both start from the `now/` files the site is serving, so a feed that is down keeps its last reading. Scheduled runs can be late when GitHub is busy, and GitHub turns schedules off in a repository with no activity for 60 days (re-enable it under Actions), so the app never assumes a reading is fresh: see Caveats.
+
+A layer with a live reading ends its timeline at **Now**, where it opens; the years between its archive and today are hatched ("no record yet"). With `?film` the app skips the live files so the film stays repeatable; `?film&now` loads them.
 
 ## The explainer film
 
@@ -94,12 +106,13 @@ Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu 
 | Crime severity | Statistics Canada Table 35-10-0061-01, police services in Saskatchewan | Statistics Canada Open Licence |
 | Courts & police | OpenStreetMap (`amenity=courthouse`, `police`, `prison`) via Overpass; drive times from the OSRM demo router | ODbL |
 | Treaties & reserves | Indigenous Services Canada, *Historic Treaties* (ArcGIS REST); NRCan Canada Lands Survey System, *Aboriginal Lands of Canada Legislative Boundaries* | OGL – Canada |
-| Wildfires | NRCan CWFIS, Canadian National Fire Database (fire points) | OGL – Canada |
+| Wildfires | NRCan CWFIS, Canadian National Fire Database (fire points); at Now, CWFIS GeoServer WFS `public:hotspots_last24hrs` and `public:m3_polygons_current` | OGL – Canada |
 | Tornadoes | ECCC, Canadian National Tornado Database: Verified Events 1980–2009; Northern Tornadoes Project (Western University), Event Summaries feature service, 2017 → | OGL – Canada; CC BY-NC 4.0 (non-commercial; this atlas is) |
 | Hail | Northern Hail Project (Western University), public ArcGIS layers: MESH hail swaths 2022 and 2023, MESH hail swaths 2024, NHP Research Database. No 2025 swath layer is published yet, and ECCC's hail reports are not open data | CC BY-NC 4.0 (stated on the research database and the project's maps; the swath layers carry no licence text of their own, so the project's terms are assumed) |
 | Drought | Agriculture and Agri-Food Canada, Canadian Drought Monitor (open.canada.ca dataset 292646cd…), read from AAFC's `canadian_drought_monitor` image service one month at a time as raw categories on a 10 km grid (288 maps, ~390 KB) | OGL – Canada |
-| River floods | ECCC HYDAT annual peaks via `api.weather.gc.ca` | OGL – Canada |
-| Smoke & air | ECCC, National Air Pollution Surveillance (NAPS) program, hourly PM2.5 by year (`data-donnees.az.ec.gc.ca`, ~10 MB a year for all of Canada; streamed, Saskatchewan rows cached in `.cache/naps/`) | OGL – Canada |
+| River floods | ECCC HYDAT annual peaks via `api.weather.gc.ca`; at Now, `hydrometric-realtime` (provisional) | OGL – Canada |
+| Smoke & air | ECCC, National Air Pollution Surveillance (NAPS) program, hourly PM2.5 by year (`data-donnees.az.ec.gc.ca`, ~10 MB a year for all of Canada; streamed, Saskatchewan rows cached in `.cache/naps/`); at Now, ECCC AQHI `aqhi-observations-realtime` and `aqhi-forecasts-realtime` | OGL – Canada |
+| Weather alerts (Right now) | ECCC public weather alerts, `api.weather.gc.ca/collections/weather-alerts` | OGL – Canada |
 | Climate, normals | ECCC AHCCD and Canadian Climate Normals via `api.weather.gc.ca` | OGL – Canada |
 | Light & dark | Computed in the `light` stage: day length from NOAA's [solar position equations](https://gml.noaa.gov/grad/solcalc/calcdetails.html); geomagnetic latitude from the [IGRF-14 coefficients](https://www.ngdc.noaa.gov/IAGA/vmod/coeffs/igrf14coeffs.txt) (IAGA, newest epoch's dipole); aurora bands from NOAA SWPC's [Kp rule](https://www.swpc.noaa.gov/content/tips-viewing-aurora); dark-sky designations from the RASC [Dark-Sky Sites in Canada](https://rasc.ca/lpa/dark-sky-sites) table (read as text, cited for the designation only), drawn with the `camping` stage's park outlines; OSRM drives | Computed; IGRF freely available; RASC web page (designation cited, nothing reproduced but names and years); parks OGL; routes ODbL |
 | Population | Statistics Canada Table 17-10-0155-01 (census subdivisions) | Statistics Canada Open Licence |
@@ -123,6 +136,7 @@ Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu 
 
 ## Caveats
 
+- **Right now** readings are point-in-time and show their age everywhere: older than 3 hours they are greyed and labelled stale, older than 24 hours they are not drawn. Real-time river data are provisional; readings flagged ice-affected or estimated get an amber ring, and a silent gauge (many shut for the winter) shows "no reading", not zero. A **hotspot** is heat seen from a satellite, not a confirmed fire: gas flares, farm and slash burning and hot industrial sites show up too; the perimeters CWFIS estimates from them are drawn dashed. The **AQHI** is an index of three pollutants (ozone, nitrogen dioxide, fine particles), not the smoke-day count, and the two are never drawn together; a place without its own reading borrows the nearest community within 150 km (Cold Lake and Medicine Hat included), named in its report. Alert regions come from Environment Canada's forecast regions; a place is "covered" when its centre is inside one. Live readings never feed the Town Finder.
 - **Crime** is reported by police service, not by town. Small towns' municipal RCMP series stop in 2011; after that the atlas uses the rural detachment of the same name, which also covers the surrounding area, including nearby First Nations. Northern detachments cover small populations, so their index swings hard on a few incidents. A high index in a service hub partly reflects people who come in from outside.
 - **Courts and police** come from OpenStreetMap, which is incomplete here. Where Statistics Canada lists a place with its own current municipal police service but nothing is mapped near its centre, the atlas counts police as "in town" and says so. Provincial Court circuit points held in halls or band offices are mostly unmapped.
 - **Home costs**: census values are 2021 (owners' own estimates of what their home would sell for; shelter costs include utilities) for each place's own census subdivision, with the smallest places' figures rounded or suppressed. CMHC's survey covers only purpose-built rentals of three units or more in 9 centres (Weyburn and smaller towns are not surveyed); each centre's rent and vacancy are for its whole metropolitan area or agglomeration and are shown only on the place it is named after (Saskatoon's includes Warman and Martensville). Lloydminster's census and rent figures are its Saskatchewan side; its vacancy rate covers both sides.

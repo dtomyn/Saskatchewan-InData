@@ -7,3 +7,6 @@ dist
 video/out/
 __pycache__/
 
+
+# live readings: rebuilt hourly by .github/workflows/live.yml, never committed
+public/data/now/
