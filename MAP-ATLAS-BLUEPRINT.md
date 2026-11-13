@@ -142,6 +142,8 @@ src/panels.ts              Place Report and Place Finder panels; each layer's re
 src/report-kit.ts          the report's tile, link and trip helpers, shared by panels and layers
 src/charts.ts              d3 barChart, lineChart, scatterChart, stripes, rampCSS — all with a playhead
 src/sources.ts             the Data & sources view
+src/sources-catalog.ts     every source's entry: owner, licence, records read, rings
+src/sources-round.ts       the tree-ring canvas
 src/<deepfinder>.ts        optional deep finder (rail, funnel, report, shortlist)
 src/html.ts                esc(), safeUrl()
 src/style.css              the whole design system (Part 4)
