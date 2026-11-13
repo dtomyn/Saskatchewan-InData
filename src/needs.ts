@@ -8,7 +8,7 @@ import { km } from './data';
 import type { Data, NeedSite } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 
 /** The eight needs, in the order the data stage writes them (`Needs.kinds`). */
 export const NEEDS = [

@@ -9,9 +9,25 @@
 import { PolygonLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import { Data, Subdivision, fmt } from './data';
+import type { CommunityCensus } from './data';
 import { esc } from './html';
-import type { AtlasEvent, RGBA } from './layers';
-import { pctText } from './community';
+import type { AtlasEvent, RGBA } from './layer-kit';
+
+/** A census count field of the Who lives here profile (not the birthplace or language lists). */
+export type CountKey = keyof Omit<CommunityCensus, 'birth' | 'lang'>;
+/**
+ * A share in % from census counts, or null. Census counts are randomly rounded to a multiple of 5, so a 0 means "none or
+ * a handful": it comes back as 0 here (for the map and the Finder) but is shown as "—" by `pctText`.
+ */
+export const share = (c: Partial<CommunityCensus> | undefined, n: CountKey, of: CountKey) => {
+  const a = c?.[n], b = c?.[of];
+  return a == null || !b ? null : (a / b) * 100;
+};
+/** A share for reading: "—" when suppressed or when the rounded count is 0 (too few to say), else one decimal. */
+export const pctText = (c: Partial<CommunityCensus> | undefined, n: CountKey, of: CountKey) => {
+  const v = share(c, n, of);
+  return v == null || !c?.[n] ? '—' : `${v < 10 ? v.toFixed(1) : Math.round(v)}%`;
+};
 
 export type CsdPoly = { s: Subdivision; poly: [number, number][][] };
 const polyMemo = new WeakMap<object, CsdPoly[]>();

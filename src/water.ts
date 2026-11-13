@@ -8,7 +8,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import type { Data, WaterSite } from './data';
 import { esc, safeUrl } from './html';
-import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { dayText, ensureFeed, waterHistory } from './history';
 
 export const WATER_COLOR = '#64b5f6';

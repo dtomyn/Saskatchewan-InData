@@ -9,7 +9,7 @@ import type { Data, Light, LightTown, Muni } from './data';
 import { MONTHS } from './data';
 import { rampCSS } from './charts';
 import { esc, safeUrl } from './html';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 
 export const LIGHT_COLOR = '#a3b8ff';
 // night blue to pale sun, over the hours of daylight Saskatchewan sees through the year

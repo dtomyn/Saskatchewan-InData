@@ -7,7 +7,7 @@
 import * as d3 from 'd3';
 import { Data, fmt, interpYearly } from './data';
 import { lineChart, rampCSS } from './charts';
-import { AtlasLayer, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { esc } from './html';
 import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
 

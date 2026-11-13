@@ -7,7 +7,7 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, PostSec, School, Trip } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 
 export const SECTORS: Record<School['s'], { label: string; plural: string; color: string }> = {
   pub: { label: 'Public', plural: 'public', color: '#5aa9ff' },

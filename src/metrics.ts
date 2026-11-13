@@ -346,6 +346,29 @@ export const CRITERIA: Criterion[] = [
   { id: 'needs', label: 'Daily needs in town', hint: 'More of eight everyday services mapped in town (OpenStreetMap): grocery store, pharmacy, school, bank or credit union, gas station, library, post office, clinic', value: (t) => t.needs?.met ?? null, higherIsBetter: true, defaultWeight: 2 },
 ];
 
+// ---- the Finder's weights, saved in this browser (read by the Finder and Workday Reach)
+const STORE_KEY = 'living-skies-atlas:weights';
+
+/** Criteria that were replaced: a weight saved (or set by a preset) under the old id carries over to the new one. */
+const RENAMED: Record<string, string> = { services: 'needs' };
+export const migrate = (w: Record<string, number>) => {
+  const out = { ...w };
+  for (const [from, to] of Object.entries(RENAMED)) if (from in out) { if (!(to in w)) out[to] = out[from]; delete out[from]; }
+  return out;
+};
+
+export function loadWeights(): Record<string, number> {
+  const def = Object.fromEntries(CRITERIA.map((c) => [c.id, c.defaultWeight]));
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
+    if (saved && typeof saved === 'object') return { ...def, ...migrate(saved) };
+  } catch { /* storage unavailable */ }
+  return def;
+}
+export function saveWeights(w: Record<string, number>) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(w)); } catch { /* ignore */ }
+}
+
 export type Ranked = { t: TownMetrics; score: number; parts: Record<string, number | null> };
 
 /** Percentile-rank each criterion across places (robust to outliers), then weight-average. */

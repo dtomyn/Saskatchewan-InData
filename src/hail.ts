@@ -8,7 +8,7 @@ import type { Layer } from '@deck.gl/core';
 import { HailRow, fmt, lowerBound, MONTHS } from './data';
 import { barChart } from './charts';
 import { esc } from './html';
-import { ADDITIVE, AtlasLayer, NO_DEPTH, RGBA, TimedEvent, deferChart, filterExt, glowWindow, heroStats, isoDate, kicker, nearestTown, rgb, sourceLine } from './layers';
+import { ADDITIVE, AtlasLayer, NO_DEPTH, RGBA, TimedEvent, deferChart, filterExt, glowWindow, heroStats, isoDate, kicker, nearestTown, rgb, sourceLine } from './layer-kit';
 import type { Data } from './data';
 
 /** hail size bands (mm, at least): pea to quarter, to golf ball, to tennis ball, to softball, softball and up */

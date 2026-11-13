@@ -8,7 +8,7 @@ import type { Layer } from '@deck.gl/core';
 import type { Data } from './data';
 import { lineChart } from './charts';
 import { esc, safeUrl } from './html';
-import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 
 export const CROPS_COLOR = '#c9d65b';
 /** the stage's classes in order (letters b…l on the map), with a colour and a short name */

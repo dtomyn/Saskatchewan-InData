@@ -7,7 +7,7 @@ import { PolygonLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import { Data, Jobs, JobsRegion, fmt, interpYearly } from './data';
 import { lineChart, rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { esc } from './html';
 import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
 

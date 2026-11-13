@@ -10,8 +10,8 @@ import { fmt } from './data';
 import type { CommunityCensus, Data, WorshipSite } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
-import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
+import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing, pctText, share } from './subdivisions';
 
 export const COMMUNITY_COLOR = '#f0a6ca';
 
@@ -36,21 +36,6 @@ const MEASURES = [
   { id: 'ind', chip: 'Indigenous identity', label: 'First Nations, Métis or Inuit', n: 'ind', of: 'indTot', max: 100 },
 ] as const;
 type MeasureId = (typeof MEASURES)[number]['id'];
-type CountKey = keyof Omit<CommunityCensus, 'birth' | 'lang'>;
-
-/**
- * A share in % from census counts, or null. Census counts are randomly rounded to a multiple of 5, so a 0 means "none or
- * a handful": it comes back as 0 here (for the map and the Finder) but is shown as "—" by `pctText`.
- */
-export const share = (c: Partial<CommunityCensus> | undefined, n: CountKey, of: CountKey) => {
-  const a = c?.[n], b = c?.[of];
-  return a == null || !b ? null : (a / b) * 100;
-};
-/** A share for reading: "—" when suppressed or when the rounded count is 0 (too few to say), else one decimal. */
-export const pctText = (c: Partial<CommunityCensus> | undefined, n: CountKey, of: CountKey) => {
-  const v = share(c, n, of);
-  return v == null || !c?.[n] ? '—' : `${v < 10 ? v.toFixed(1) : Math.round(v)}%`;
-};
 
 /** One place's community picture, for the Town Report and the Finder. */
 export type PlaceCommunity = Partial<CommunityCensus> & {

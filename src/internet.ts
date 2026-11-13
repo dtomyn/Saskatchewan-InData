@@ -10,7 +10,7 @@ import { fmt } from './data';
 import type { Data, NetHex, NetTown } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 
 /** What the map can show, in the order of the panel's chips. */
 export const NET_MEASURES = [

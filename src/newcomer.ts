@@ -9,7 +9,7 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, NewcomerAgency, NewcomerOffice, Trip } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 
 export const NEWCOMER_COLOR = '#4fd1c5';
 

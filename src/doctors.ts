@@ -8,7 +8,7 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, DoctorSite, Trip } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 
 export const DOCTORS_COLOR = '#ff8fab';
 

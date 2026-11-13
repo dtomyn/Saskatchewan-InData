@@ -9,7 +9,7 @@ import type { Layer } from '@deck.gl/core';
 import { Data, MONTHS, fmt, lowerBound } from './data';
 import { lineChart } from './charts';
 import { esc } from './html';
-import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 
 export const DROUGHT_COLOR = '#e0a43a';
 /** D0–D4: the drought monitor's ramp (yellow, tan, orange, red, dark red), its darkest step lifted for the dark map */

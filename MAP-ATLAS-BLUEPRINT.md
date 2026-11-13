@@ -132,7 +132,10 @@ Not built yet.
 ```
 index.html                 app shell: map, appbar, panel, top actions, timeline (with its event ticker), tooltip, modal, loader
 src/main.ts                state, map init, render loop, focus/menu/timeline, keyboard, hashes, ?film handle
-src/layers.ts              AtlasLayer interface + one factory per layer + CURATED_EVENTS
+src/layer-kit.ts           AtlasLayer interface + the helpers layer modules share
+src/<layer>.ts             one factory per layer (fires.ts, rivers.ts, …)
+src/layers.ts              the registry: buildLayers() in menu order
+src/curated-events.ts      CURATED_EVENTS
 src/data.ts                types for every JSON file, loadAll(), formatters (fmt), helpers (km, lowerBound…)
 src/metrics.ts             per-place derived metrics, CRITERIA, rankPlaces()
 src/panels.ts              Place Report and Place Finder panels, weights in localStorage
@@ -305,7 +308,7 @@ Menu in: 0.18s fade/slide down. Panel swap: fade + 6px rise. Ticker in: 0.4s spr
 
 ### 5.1 The layer contract
 
-Every layer is one factory in `layers.ts` returning:
+Every layer is one factory in its own module (`src/<layer>.ts`, importing the contract from `layer-kit.ts`) returning:
 
 ```ts
 export type Ctx = { time: number; speed: number; data: Data; selected: string | null; hovered: string | null; focusedId: string; clock: number };

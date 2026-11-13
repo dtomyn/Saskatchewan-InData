@@ -7,12 +7,13 @@ import { smallView } from './small';
 import { cityTractsHTML, drawCityTracts } from './tracts';
 import { esc } from './html';
 import { startReach, campsWithin } from './camping';
-import { CRITERIA, CareTrip, TownMetrics, driveMin, getWork, rankTowns, setWork, townMetrics, workplace } from './metrics';
+import { CRITERIA, CareTrip, TownMetrics, driveMin, getWork, migrate, rankTowns, saveWeights, setWork, townMetrics, workplace } from './metrics';
 import { placesWithin, startCommute } from './commute';
 import { NEEDS, PlaceNeeds, countedWhere } from './needs';
 import { SchoolTrip } from './schools';
 import { PlaceNet } from './internet';
-import { COMMUNITY_COLOR, PlaceCommunity, RELIGIONS, pctText, people } from './community';
+import { COMMUNITY_COLOR, PlaceCommunity, RELIGIONS, people } from './community';
+import { pctText } from './subdivisions';
 import { ERRANDS, NewcomerTrip, PlaceNewcomer, tripText } from './newcomer';
 import { DOCTORS_COLOR, DoctorTrip, PlaceDoctors, SITE_KINDS, doctorTripText } from './doctors';
 import { CHILDCARE_COLOR, ChildcareTrip, PlaceChildcare, childcareTripText } from './childcare';
@@ -23,28 +24,6 @@ import { PlaceRadon, RADON_RAMP } from './radon';
 import { BUS_COLOR, CITY_COLOR, PlaceTransit, RAIL_COLOR, TRANSIT_COLOR, airText, sysText } from './transit';
 import { droughtNow, droughtStrip } from './drought';
 import { AURORA_BANDS, AURORA_RAMP, DAY_RAMP, PRESERVE_COLOR, PlaceLight, hm, mlText } from './light';
-
-const STORE_KEY = 'living-skies-atlas:weights';
-
-/** Criteria that were replaced: a weight saved (or set by a preset) under the old id carries over to the new one. */
-const RENAMED: Record<string, string> = { services: 'needs' };
-const migrate = (w: Record<string, number>) => {
-  const out = { ...w };
-  for (const [from, to] of Object.entries(RENAMED)) if (from in out) { if (!(to in w)) out[to] = out[from]; delete out[from]; }
-  return out;
-};
-
-export function loadWeights(): Record<string, number> {
-  const def = Object.fromEntries(CRITERIA.map((c) => [c.id, c.defaultWeight]));
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
-    if (saved && typeof saved === 'object') return { ...def, ...migrate(saved) };
-  } catch { /* storage unavailable */ }
-  return def;
-}
-function saveWeights(w: Record<string, number>) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(w)); } catch { /* ignore */ }
-}
 
 type MetricFn = (label: string, dot: string, v: string, sub: string) => string;
 const tripV = (t: CareTrip) => (t.inferred ? 'In town' : t.min != null ? `${t.min} min` : `${Math.round(t.km)} km`);

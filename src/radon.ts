@@ -9,7 +9,7 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, RadonArea } from './data';
 import { rampCSS } from './charts';
 import { esc, safeUrl } from './html';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 
 export const RADON_COLOR = '#b48cff';
 // low share stays dark and cool; a quarter or more of homes over the guideline glows

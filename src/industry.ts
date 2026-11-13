@@ -13,7 +13,7 @@ import { fmt } from './data';
 import type { Data, IndustryLine, Mine, NpriSite, PowerPlant, WellHex } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 
 export const INDUSTRY_COLOR = '#d4e157';
 

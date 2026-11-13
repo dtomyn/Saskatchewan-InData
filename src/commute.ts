@@ -10,9 +10,8 @@ import { ArcLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import { Muni, fmt, km } from './data';
 import { esc } from './html';
-import { ADDITIVE, AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layers';
-import { COMMUTE_LIMITS, driveMin, getWork, rankTowns, setWork, townMetrics, workplace } from './metrics';
-import { loadWeights } from './panels';
+import { ADDITIVE, AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
+import { COMMUTE_LIMITS, driveMin, getWork, loadWeights, rankTowns, setWork, townMetrics, workplace } from './metrics';
 import type { Data } from './data';
 
 const COLOR = '#c9a7ff';
