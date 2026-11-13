@@ -249,6 +249,44 @@ function dpRing(ring, tol) {
   const a = dp(ring.slice(0, k + 1), tol), b = dp(ring.slice(k), tol);
   return [...a, ...b.slice(1)];
 }
+/** Visvalingam–Whyatt for a closed ring: drops the point whose triangle with its neighbours is smallest until every
+ * remaining triangle is at least `minArea` (square degrees). Keeps a ragged outline's shape better than Douglas–Peucker,
+ * which keeps every outermost spike. */
+function vwRing(ring, minArea) {
+  const pts = ring.slice(0, -1), n = pts.length;
+  if (n < 4) return ring;
+  const prev = new Int32Array(n), next = new Int32Array(n), area = new Float64Array(n), alive = new Uint8Array(n).fill(1);
+  for (let i = 0; i < n; i++) { prev[i] = (i - 1 + n) % n; next[i] = (i + 1) % n; }
+  const tri = (i) => { const a = pts[prev[i]], b = pts[i], c = pts[next[i]]; return Math.abs((a[0] - c[0]) * (b[1] - a[1]) - (a[0] - b[0]) * (c[1] - a[1])) / 2; };
+  const heap = []; // [area, index], lazy deletion
+  const push = (v, i) => { heap.push([v, i]); for (let k = heap.length - 1; k;) { const q = (k - 1) >> 1; if (heap[q][0] <= heap[k][0]) break; [heap[q], heap[k]] = [heap[k], heap[q]]; k = q; } };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let k = 0; ;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; }
+    }
+    return top;
+  };
+  for (let i = 0; i < n; i++) { area[i] = tri(i); push(area[i], i); }
+  let left = n, floor = 0;
+  while (heap.length && left > 3) {
+    const [v, i] = pop();
+    if (!alive[i] || v !== area[i]) continue;
+    if (Math.max(v, floor) >= minArea) break;
+    floor = Math.max(v, floor); // an effective area never drops below the last one removed
+    alive[i] = 0; left--;
+    const a = prev[i], b = next[i];
+    next[a] = b; prev[b] = a;
+    for (const j of [a, b]) { area[j] = Math.max(tri(j), floor); push(area[j], j); }
+  }
+  let k = 0;
+  while (!alive[k]) k++;
+  const out = [], start = k;
+  do { out.push(pts[k]); k = next[k]; } while (k !== start);
+  out.push(out[0]);
+  return out;
+}
 /** Simplifies and rounds a GeoJSON Polygon/MultiPolygon to an array of polygons (rings of [lon, lat]). */
 function polys(geom, tol, d = 4) {
   const ps = geom.type === 'Polygon' ? [geom.coordinates] : geom.type === 'MultiPolygon' ? geom.coordinates : [];
@@ -504,7 +542,67 @@ const SOURCES = {
     }
     points.sort((a, b) => a[2] - b[2]);
     log(`  ${points.length} Saskatchewan fires (${skipped} rows off the map or undated), ${points[0]?.[2] | 0}–${points.at(-1)?.[2] | 0}`);
-    await writeOut('fires', { source: 'Natural Resources Canada, Canadian Wildland Fire Information System: Canadian National Fire Database, fire points (NFDB_point)', perimeters: [], points });
+
+    // the National Burned Area Composite: mapped burn outlines, one WFS request a year (a big year is ~20 MB), cached.
+    // WFS 1.0.0 with EPSG:4326 answers lon/lat in that order (2.0.0 swaps them).
+    const NBAC = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs';
+    const nbacYears = async () => {
+      const q = new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: 'public:nbac', propertyName: 'year', CQL_FILTER: "admin_area='SK'", outputFormat: 'application/json' });
+      const day = new Date().toISOString().slice(0, 10);
+      const j = await cachedJSON(`nbac/sk-years-${day}.json`, `${NBAC}?${q}`, { timeout: 300_000 });
+      return [...new Set(j.features.map((f) => +f.properties.year).filter((y) => y >= 1900))].sort((a, b) => a - b);
+    };
+    const perimeters = [];
+    let linked = 0;
+    {
+      const years = await nbacYears();
+      if (years.length < 20) throw new Error(`NBAC lists only ${years.length} Saskatchewan years`);
+
+      // points by year, for linking a perimeter to the start points inside it
+      const byYear = new Map();
+      points.forEach((p, i) => { const y = Math.floor(p[2]); if (!byYear.has(y)) byYear.set(y, []); byYear.get(y).push(i); });
+      const outlined = new Set();
+      // outlines only for fires of 200 ha or more (smaller ones stay circles), simplified by Visvalingam–Whyatt to
+      // triangles of a sixth of the fire's width, dropping parts under 40 ha and unburned islands under 200 ha: ~1.3 MB
+      const MIN_HA = 200;
+      const ringHa = (ring) => Math.abs(ringArea(ring)) * 111.32 * 110.57 * Math.cos((ring[0][1] * Math.PI) / 180) * 100;
+      for (const y of years) {
+        const q = new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: 'public:nbac', propertyName: 'year,adj_ha,poly_ha,prescribed,ag_sdate,hs_sdate,geometry', srsName: 'EPSG:4326', CQL_FILTER: `admin_area='SK' AND year=${y}`, outputFormat: 'application/json' });
+        const fc = await cachedJSON(`nbac/sk-${y}.json`, `${NBAC}?${q}`, { timeout: 600_000 });
+        for (const f of fc.features ?? []) {
+          const pr = f.properties, g = f.geometry;
+          const ha = +(pr.adj_ha ?? pr.poly_ha) || 0;
+          if (!g || ha < MIN_HA || /^t/i.test(String(pr.prescribed ?? ''))) continue;
+          const minArea = (Math.sqrt(ha / 100) / 111 / 6) ** 2 / 2;
+          const ps = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates)
+            .map((p) => p.map((r) => vwRing(r, minArea).map(([x, y]) => [round(x, 3), round(y, 3)]).filter((c, i, a) => !i || c[0] !== a[i - 1][0] || c[1] !== a[i - 1][1])).filter((r, i) => r.length >= 4 && ringHa(r) >= (i ? 200 : 40)))
+            .filter((p) => p.length && ringHa(p[0]) >= 40);
+          if (!ps.length) continue;
+          // the NFDB start points of the same year inside it (or within 1 km of its edge)
+          let [w, so, e, n] = [180, 90, -180, -90];
+          for (const p of g.type === 'Polygon' ? [g.coordinates] : g.coordinates) for (const [x, yy] of p[0]) { w = Math.min(w, x); e = Math.max(e, x); so = Math.min(so, yy); n = Math.max(n, yy); }
+          const near = (i) => points[i][0] >= w - 0.02 && points[i][0] <= e + 0.02 && points[i][1] >= so - 0.01 && points[i][1] <= n + 0.01;
+          const inside = (byYear.get(y) ?? []).filter((i) => !outlined.has(i) && near(i) && (booleanPointInPolygon([points[i][0], points[i][1]], f) || edgeKm(points[i][0], points[i][1], g) <= 1));
+          inside.forEach((i) => outlined.add(i));
+          linked += inside.length;
+          // when it appears: its first start point, else the agency's or the hotspots' start date, else mid-season
+          const date = pr.ag_sdate || pr.hs_sdate;
+          const t = inside.length ? Math.min(...inside.map((i) => points[i][2])) : (date ? fracYear(`${String(date).slice(0, 10)}T12:00:00Z`) : y + 0.55);
+          // compact row: year, hectares (NBAC's, adjusted for unburned islands where it has them), polygons, time, start points inside
+          perimeters.push([y, round(ha, 0), ps, round(t, 3), inside]);
+        }
+      }
+      perimeters.sort((a, b) => a[3] - b[3]);
+      log(`  ${perimeters.length} NBAC perimeters ${years[0]}–${years.at(-1)}; ${linked} of the start points lie inside one`);
+    }
+    await writeOut('fires', {
+      source: 'Natural Resources Canada, Canadian Wildland Fire Information System: Canadian National Fire Database, fire points (NFDB_point)',
+      perimeterSource: 'Natural Resources Canada, Canadian Forest Service: National Burned Area Composite (NBAC), CWFIS GeoServer layer public:nbac',
+      perimeterUrl: 'https://cwfis.cfs.nrcan.gc.ca/ha/nbac',
+      licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada',
+      perimeterYears: perimeters.length ? [perimeters.reduce((a, p) => Math.min(a, p[0]), 9999), perimeters.reduce((a, p) => Math.max(a, p[0]), 0)] : null,
+      perimeters, points,
+    });
   },
 
   // ECCC Canadian National Tornado Database: verified events 1980–2009, with track end points where known.
@@ -962,6 +1060,126 @@ const SOURCES = {
       // share of the province's area at D0 or worse, D1+, D2+, D3+, D4, and not analyzed (%)
       months, maps, share,
       // per place, one letter a month: the category of the grid cell its centre is in
+      towns,
+    });
+  },
+
+  // AAFC's Annual Crop Inventory: a 30 m map of crops and land cover, yearly since 2009, over the farm belt (it stops
+  // around 55–56° N). Read like the drought monitor (exportImage, raw categories, Web Mercator), sampled at 500 m and
+  // folded into 3 km cells (about 1.8 km on the ground) that each take their most common class.
+  async crops() {
+    const { clipFeature } = await getProvince();
+    const places = await getPlaces();
+    const BASE = 'https://agriculture.canada.ca/imagery-images/rest/services/annual_crop_inventory';
+    const day = new Date().toISOString().slice(0, 10);
+    const list = await cachedJSON(`crops/services-${day}.json`, `${BASE}?f=json`);
+    const years = (list.services ?? []).map((s) => +/\/(\d{4})$/.exec(s.name)?.[1]).filter((y) => y >= 2009).sort((a, b) => a - b);
+    if (years.length < 10) throw new Error(`crop inventory lists only ${years.length} years`);
+    // classes, grouped: the inventory's codes (10 cloud, 20 water, 30 exposed, 34–35 built, 50 shrub, 60 burned, 80–85
+    // wetland and peatland, 110 grassland, 120–199 agriculture, 200–230 forest)
+    const CLASSES = ['cereals', 'canola', 'pulses', 'other crops', 'pasture and forage', 'grassland and shrub', 'forest', 'wetland', 'water', 'built-up', 'bare or burned'];
+    const group = (v) => {
+      if (v === 20) return 8;
+      if (v === 34 || v === 35) return 9;
+      if (v === 30 || v === 60) return 10;
+      if (v === 50 || v === 110) return 5;
+      if (v === 80 || v === 85) return 7;
+      if (v >= 200 && v <= 230) return 6;
+      if (v === 122) return 4;
+      if (v === 153) return 1;
+      if (v >= 160 && v <= 174) return 2;
+      if (v >= 132 && v <= 147 && v !== 141) return 0;
+      if (v >= 120 && v <= 199) return 3;
+      return -1; // 0 not mapped, 10 cloud, anything unknown
+    };
+    const LUT = new Int8Array(256).map((_, v) => group(v));
+    // the grid: 3 km Web Mercator cells, each sampled 6 × 6 (500 m)
+    const R = 6378137, PX = 3000, SUB = 6;
+    const mx = (lon) => (R * lon * Math.PI) / 180, my = (lat) => R * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+    const ulon = (x) => (x / R) * (180 / Math.PI), ulat = (y) => (2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * (180 / Math.PI);
+    const x0 = Math.floor(mx(-110.05) / PX) * PX, x1 = Math.ceil(mx(-101.3) / PX) * PX;
+    const y0 = Math.floor(my(48.95) / PX) * PX, y1 = Math.ceil(my(57) / PX) * PX;
+    const W = (x1 - x0) / PX, H = (y1 - y0) / PX;
+    const inside = new Uint8Array(W * H), area = new Float64Array(W * H);
+    for (let r = 0; r < H; r++) {
+      const lat = ulat(y1 - (r + 0.5) * PX);
+      for (let c = 0; c < W; c++) if (booleanPointInPolygon([ulon(x0 + (c + 0.5) * PX), lat], clipFeature)) { inside[r * W + c] = 1; area[r * W + c] = Math.cos((lat * Math.PI) / 180) ** 2; }
+    }
+    // one year: the samples in horizontal strips (each under ~2 M pixels), cached raw, then the most common class per cell
+    const STRIP = 160; // cell rows per request
+    const yearGrid = async (y) => {
+      const out = new Int8Array(W * H).fill(-1);
+      for (let r0 = 0; r0 < H; r0 += STRIP) {
+        const rows = Math.min(STRIP, H - r0), w = W * SUB, h = rows * SUB;
+        const top = y1 - r0 * PX, bottom = top - rows * PX;
+        const q = new URLSearchParams({ bbox: `${x0},${bottom},${x1},${top}`, bboxSR: '3857', imageSR: '3857', size: `${w},${h}`, format: 'bsq', pixelType: 'U8', interpolation: 'RSP_NearestNeighbor', f: 'image' });
+        const buf = await cached(`crops/${y}-${PX / 1000}km-${r0}.bin`, async () => {
+          const b = await fetchBuf(`${BASE}/${y}/ImageServer/exportImage?${q}`, { timeout: 300_000 });
+          if (b.length < w * h) throw new Error(`crops ${y}: got ${b.length} bytes, expected ${w * h}`);
+          return b;
+        });
+        const n = new Uint16Array(CLASSES.length);
+        for (let r = 0; r < rows; r++)
+          for (let c = 0; c < W; c++) {
+            const k = (r0 + r) * W + c;
+            if (!inside[k]) continue;
+            n.fill(0);
+            for (let i = 0; i < SUB; i++) for (let j = 0; j < SUB; j++) { const g = LUT[buf[(r * SUB + i) * w + c * SUB + j]]; if (g >= 0) n[g]++; }
+            let best = -1, bn = 0;
+            for (let g = 0; g < n.length; g++) if (n[g] > bn) { bn = n[g]; best = g; }
+            out[k] = best;
+          }
+      }
+      return out;
+    };
+    const grids = [];
+    for (const y of years) { grids.push(await yearGrid(y)); log(`  ${y}`); }
+    // the common footprint: cells mapped every year, so the shares compare like with like
+    const common = new Uint8Array(W * H);
+    for (let k = 0; k < W * H; k++) common[k] = inside[k] && grids.every((g) => g[k] >= 0) ? 1 : 0;
+    const share = grids.map((g) => {
+      const s = new Float64Array(CLASSES.length);
+      let tot = 0;
+      for (let k = 0; k < W * H; k++) if (common[k]) { s[g[k]] += area[k]; tot += area[k]; }
+      return [...s].map((v) => Math.round((v / tot) * 1000) / 10);
+    });
+    // the map, run-length: an optional count, then a letter: a not mapped or outside, b–l the classes in order
+    const maps = grids.map((g) => {
+      let rle = '', run = 0, prev = '';
+      for (let k = 0; k < W * H; k++) {
+        const ch = g[k] < 0 ? 'a' : String.fromCharCode(98 + g[k]);
+        if (ch === prev) run++;
+        else { if (prev) rle += (run > 1 ? run : '') + prev; prev = ch; run = 1; }
+      }
+      return rle + (run > 1 ? run : '') + prev;
+    });
+    // per place: the land within 25 km by class, each year (%, of the mapped cells in that circle; null when none mapped)
+    const towns = {};
+    for (const p of places) {
+      const cells = [];
+      const cx = mx(p.lon), cy = my(p.lat), sc = 1 / Math.cos((p.lat * Math.PI) / 180), rr = 25000 * sc;
+      for (let r = Math.max(0, Math.floor((y1 - cy - rr) / PX)); r <= Math.min(H - 1, Math.floor((y1 - cy + rr) / PX)); r++)
+        for (let c = Math.max(0, Math.floor((cx - rr - x0) / PX)); c <= Math.min(W - 1, Math.floor((cx + rr - x0) / PX)); c++) {
+          const dx = x0 + (c + 0.5) * PX - cx, dy = y1 - (r + 0.5) * PX - cy;
+          if (Math.hypot(dx, dy) <= rr) cells.push(r * W + c);
+        }
+      towns[p.key] = grids.map((g) => {
+        const s = new Array(CLASSES.length).fill(0);
+        let n = 0;
+        for (const k of cells) if (g[k] >= 0) { s[g[k]]++; n++; }
+        return n >= cells.length / 2 ? s.map((v) => Math.round((v / n) * 100)) : null;
+      });
+    }
+    log(`${years.length} years ${years[0]}–${years.at(-1)}; grid ${W}×${H}; ${maps.reduce((a, m) => a + m.length, 0) >> 10} KB of maps`);
+    await writeOut('crops', {
+      source: 'Agriculture and Agri-Food Canada, Annual Crop Inventory (30 m, image services annual_crop_inventory/<year>)',
+      sourceUrl: 'https://open.canada.ca/data/en/dataset/ba2645d5-4458-414d-b196-6303ac06c1c9',
+      serviceUrl: BASE,
+      licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada',
+      classes: CLASSES,
+      grid: { x0, y1, px: PX, w: W, h: H, sub: SUB, bounds: [ulon(x0), ulat(y0), ulon(x1), ulat(y1)].map((v) => round(v, 5)) },
+      // per year: the map, and each class's share (%) of the footprint mapped in every year
+      years, maps, share,
       towns,
     });
   },
@@ -2100,6 +2318,105 @@ const SOURCES = {
       fed: fed.map((p) => ({ n: p.n, o: p.o, s: p.s, p: simplify(p.parts) })),
       npri: npri.map(({ id, n4, k6, ...f }) => ({ ...f, lon: round(f.lon, 3), lat: round(f.lat, 3) })),
       mines, towns,
+    });
+  },
+
+  // THE POWER GRID: transmission lines, substations and generating stations as mapped in OpenStreetMap (power=line,
+  // substation, plant). SaskPower publishes no open map of its grid, so coverage is what mappers have drawn: say so.
+  // Each place measures them from its town limits (needs.json), like Hidden neighbours.
+  async power() {
+    await getProvince();
+    const places = await getPlaces();
+    const LINE_KM = 1, PLANT_KM = 10;
+    const lineOSM = await overpass('sk-power-lines.json', '[out:json][timeout:300];area["ISO3166-2"="CA-SK"]->.sk;way["power"="line"](area.sk);out tags geom qt;');
+    const siteOSM = await overpass('sk-power-sites.json', '[out:json][timeout:300];area["ISO3166-2"="CA-SK"]->.sk;nwr["power"~"^(substation|plant)$"](area.sk);out center tags qt;');
+    // the highest voltage a way carries, in kV ("138000;25000" → 138)
+    const kv = (t) => { const vs = String(t.voltage ?? '').split(/[;,]/).map((v) => +v.trim()).filter((v) => v > 0); return vs.length ? Math.round(Math.max(...vs) / 1000) : null; };
+    const KV_CLASS = (v) => (v == null ? 0 : v >= 200 ? 230 : v >= 100 ? 138 : 72);
+    // lines grouped by voltage class and joined end to end, cut to their Saskatchewan runs
+    const byClass = new Map();
+    for (const e of lineOSM.elements) {
+      if (e.type !== 'way' || !e.geometry?.length) continue;
+      const c = KV_CLASS(kv(e.tags ?? {}));
+      if (!byClass.has(c)) byClass.set(c, []);
+      let run = [];
+      for (const g of e.geometry) {
+        if (inSask(g.lon, g.lat, 0.02)) run.push([g.lon, g.lat]);
+        else { if (run.length >= 2) byClass.get(c).push(run); run = []; }
+      }
+      if (run.length >= 2) byClass.get(c).push(run);
+    }
+    const lines = [...byClass].map(([c, parts]) => ({
+      kv: c || null,
+      parts,
+      p: joinPaths(parts).map((l) => dp(l, 0.0008).map(([x, y]) => [round(x, 4), round(y, 4)])).filter((l) => l.length >= 2),
+    })).sort((a, b) => (b.kv ?? 0) - (a.kv ?? 0));
+    const lineKm = (parts) => parts.reduce((a, l) => a + l.reduce((s, c, i) => s + (i ? distKm(l[i - 1][0], l[i - 1][1], c[0], c[1]) : 0), 0), 0);
+    const SOURCE = (t) => {
+      const s = String(t['plant:source'] ?? t['generator:source'] ?? '').toLowerCase();
+      return /coal/.test(s) ? 'coal' : /gas/.test(s) ? 'gas' : /hydro|water/.test(s) ? 'hydro' : /wind/.test(s) ? 'wind' : /solar/.test(s) ? 'solar' : /biomass|biogas|waste|heat/.test(s) ? 'heat' : 'other';
+    };
+    const mw = (t) => { const m = /([\d.]+)\s*(mw|kw|gw)?/i.exec(String(t['plant:output:electricity'] ?? '')); if (!m) return null; const v = +m[1] * ({ kw: 0.001, gw: 1000 }[m[2]?.toLowerCase()] ?? 1); return v > 0 ? round(v, 1) : null; };
+    const subs = [], plants = [];
+    for (const e of siteOSM.elements) {
+      const t = e.tags ?? {};
+      const lon = e.lon ?? e.center?.lon, lat = e.lat ?? e.center?.lat;
+      if (!Number.isFinite(lon) || !inSask(lon, lat, 0.02)) continue;
+      if (t.power === 'plant') plants.push({ n: t.name ?? null, o: t.operator ?? null, s: SOURCE(t), mw: mw(t), lon: round(lon, 4), lat: round(lat, 4) });
+      // a substation drawn as a point and again as an outline is kept once
+      else if (!subs.some((s) => distKm(s[0], s[1], lon, lat) < 0.3)) subs.push([round(lon, 4), round(lat, 4), kv(t), t.name ?? null]);
+    }
+    plants.sort((a, b) => (b.mw ?? 0) - (a.mw ?? 0));
+    log(`  OpenStreetMap: ${lines.map((l) => `${l.kv ?? '?'} kV ${Math.round(lineKm(l.parts))} km`).join(', ')}; ${subs.length} substations, ${plants.length} plants`);
+    if (!lines.length || subs.length < 50) throw new Error(`only ${lines.length} line classes and ${subs.length} substations mapped: Overpass answer looks incomplete`);
+
+    // --- per place, from the town limits (needs.json) or, without them, from a circle round the centre
+    let needs = null;
+    try { needs = await readOut('needs'); } catch { log('  needs.json missing: run the needs stage for town limits'); }
+    const fallbackKm = needs?.fallbackKm ?? 3;
+    const kmFrom = (p) => {
+      const a = needs?.areas?.[p.key];
+      if (a?.length) {
+        const geom = { type: 'MultiPolygon', coordinates: a };
+        const feat = { type: 'Feature', properties: {}, geometry: geom };
+        return (lon, lat) => (booleanPointInPolygon([lon, lat], feat) ? 0 : edgeKm(lon, lat, geom));
+      }
+      return (lon, lat) => Math.max(0, distKm(p.lon, p.lat, lon, lat) - fallbackKm);
+    };
+    const towns = {};
+    for (const p of places) {
+      const d = kmFrom(p);
+      // the nearest line of each class: points every ~250 m, only those within 30 km of the centre measured exactly
+      let line = null;
+      for (const l of lines)
+        for (const part of l.parts)
+          for (let i = 1; i < part.length; i++) {
+            const [x0, y0] = part[i - 1], [x1, y1] = part[i];
+            const steps = Math.max(1, Math.ceil(distKm(x0, y0, x1, y1) / 0.25));
+            for (let s = 0; s <= steps; s++) {
+              const x = x0 + ((x1 - x0) * s) / steps, y = y0 + ((y1 - y0) * s) / steps;
+              if (distKm(p.lon, p.lat, x, y) > 30) continue;
+              const k = d(x, y);
+              if (!line || k < line.km || (k === line.km && (l.kv ?? 0) > (line.kv ?? 0))) line = { km: k, kv: l.kv };
+            }
+          }
+      let sub = null;
+      for (const s of subs) { if (distKm(p.lon, p.lat, s[0], s[1]) > 60) continue; const k = d(s[0], s[1]); if (!sub || k < sub) sub = k; }
+      let plant = null;
+      plants.forEach((x, i) => { if (distKm(p.lon, p.lat, x.lon, x.lat) > 60) return; const k = d(x.lon, x.lat); if (k <= PLANT_KM && (!plant || k < plant.km)) plant = { i, km: k }; });
+      towns[p.key] = {
+        line: line && { km: round(line.km, 1), kv: line.kv },
+        sub: sub == null ? null : round(sub, 1),
+        plant: plant && { i: plant.i, km: round(plant.km, 1) },
+      };
+    }
+    await writeOut('power', {
+      source: 'OpenStreetMap contributors: power lines, substations and generating stations (power=line, substation, plant)',
+      licence: 'Open Database Licence (ODbL)', licenceUrl: 'https://www.openstreetmap.org/copyright',
+      asOf: new Date().toISOString().slice(0, 10), lineKm: LINE_KM, plantKm: PLANT_KM, fallbackKm,
+      totals: { km: Object.fromEntries(lines.map((l) => [l.kv ?? 0, Math.round(lineKm(l.parts))])) },
+      lines: lines.map(({ kv: v, p }) => ({ kv: v, p })),
+      subs, plants, towns,
     });
   },
 
@@ -3939,7 +4256,7 @@ async function statcanTable(pid) {
 
 // `now` stands for the four live stages
 const wanted = process.argv.slice(2).flatMap((n) => (n === 'now' ? NOW_STAGES : [n]));
-const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'climate', 'smoke', 'drought', 'normals', 'projections', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
+const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'climate', 'smoke', 'drought', 'crops', 'normals', 'projections', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'power', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
 const unknown = wanted.filter((n) => !order.includes(n));
 if (unknown.length) { console.error(`Unknown stage(s): ${unknown.join(', ')}`); process.exit(1); }
 const run = wanted.length ? order.filter((n) => wanted.includes(n)) : order.filter((n) => !ON_REQUEST.includes(n));

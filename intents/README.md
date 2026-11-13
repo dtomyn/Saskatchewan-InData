@@ -16,6 +16,7 @@ Use these when deciding whether a feature earns its place (it should serve at le
 | [Live near work](live-near-work.md) | Where can I live and still get to work, and where are the jobs? |
 | [Understand natural hazards](understand-natural-hazards.md) | What has fire, smoke, wind, hail, drought and flood done here? |
 | [Check around the property](check-around-the-property.md) | What's under, beside and in the water near a home? |
+| [See how the land is used](see-how-the-land-is-used.md) | What grows around here, and how has it changed? |
 | [Know the climate and the light](know-the-climate-and-the-light.md) | How cold, sunny, snowy and dark is it here? |
 | [Get outdoors](get-outdoors.md) | Where can we camp this weekend, and where is the sky dark? |
 | [Learn the land's history](learn-the-lands-history.md) | Whose treaty land is this, and what happened here? |

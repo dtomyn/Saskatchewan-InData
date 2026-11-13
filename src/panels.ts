@@ -14,7 +14,8 @@ import { COMMUNITY_COLOR, PlaceCommunity, RELIGIONS, pctText, people } from './c
 import { ERRANDS, NewcomerTrip, PlaceNewcomer, tripText } from './newcomer';
 import { DOCTORS_COLOR, DoctorTrip, PlaceDoctors, SITE_KINDS, doctorTripText } from './doctors';
 import { CHILDCARE_COLOR, ChildcareTrip, PlaceChildcare, childcareTripText } from './childcare';
-import { INDUSTRY_COLOR, PlaceIndustry, kmText, tonnes } from './industry';
+import { INDUSTRY_COLOR, PlaceIndustry, kmText, kvText, placePower, plantText, tonnes } from './industry';
+import { CROPS_COLOR, cropsBar, cropsText, placeCrops } from './crops';
 import { PlaceWater, WATER_COLOR, WATER_KINDS, lastedText, waterDays } from './water';
 import { PlaceRadon, RADON_RAMP } from './radon';
 import { BUS_COLOR, CITY_COLOR, PlaceTransit, RAIL_COLOR, TRANSIT_COLOR, airText, sysText } from './transit';
@@ -93,7 +94,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.newcomer && t.newcomer ? newcomerRows(t.newcomer, metric, na, link) : ''}
     ${data.transit && t.transit ? transitRows(t.transit, data, metric, link) : ''}
     ${data.childcare && t.childcare ? childcareRows(t.childcare, data.childcare.slackKm, metric, na, link) : ''}
-    ${data.industry && t.industry ? industryRows(t.industry, data, metric, link) : ''}
+    ${data.industry && t.industry ? industryRows(t.industry, data, metric, link, key) : ''}
     ${data.water && t.water ? waterRows(t.water, data, metric, link) : ''}
     ${data.radon && t.radon ? radonRows(t.radon, data, metric, link) : ''}
     ${data.housing ? homeCosts(t, metric, na, link) : ''}
@@ -111,6 +112,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${feelsRow(t, data, metric, na)}
     ${data.light && t.light ? lightRows(t.light, data, metric, na, link) : ''}
     ${data.drought && t.drought ? `<div class="dm-cap">Drought Monitor, every month since ${data.drought.months[0].slice(0, 4)}</div>${droughtStrip(data, key)}<div class="tr-falls" style="margin-top:8px">${link('drought', '🌾 Drought on the map')}</div>` : ''}
+    ${(() => { const pc = data.crops ? placeCrops(data, key) : null; return pc ? `<h3>The land around it</h3><div class="metric-grid">${metric('What grows here', CROPS_COLOR, `${pc.crop}%`, cropsText(pc))}</div>${cropsBar(pc)}<p class="note" style="margin-top:6px">Annual Crop Inventory: each ~2 km square counts as its most common class, so small fields and sloughs vanish.</p><div class="tr-falls" style="margin-top:8px">${link('crops', '🌱 What grows here on the map')}</div>` : ''; })()}
     ${t.climate?.trend != null ? `<div class="callout" style="--c:#f25f5c">The nearest long-term station (${esc(t.climate.name)}) has warmed <b>${fmt.signed(t.climate.trend, 2)} °C per decade</b> since 1950.</div>` : ''}
     ${t.river ? `<div class="callout" style="--c:#4cc9f0"><b>${esc(t.river.name)}</b> (${t.river.dist.toFixed(0)} km away) reached 1.5× its normal peak in ${Math.round(t.river.floodShare * 100)}% of years; its record was ${t.river.record.ratio.toFixed(1)}× in ${t.river.record.year}.</div>` : ''}
     ${t.pop ? '<h3>Population</h3><div id="tr-pop"></div>' : ''}
@@ -238,7 +240,8 @@ function internetRows(p: PlaceNet, metric: MetricFn, link: (layer: string, text:
 }
 
 /** Hidden neighbours: wells, pipelines, NPRI emitters and mines near the town limits (neutral: also where the jobs are). */
-function industryRows(p: PlaceIndustry, data: Data, metric: MetricFn, link: (layer: string, text: string) => string) {
+function industryRows(p: PlaceIndustry, data: Data, metric: MetricFn, link: (layer: string, text: string) => string, key: string) {
+  const pw = placePower(data, key);
   const I = data.industry!;
   const c = INDUSTRY_COLOR;
   const [a, s, b] = p.wells;
@@ -249,6 +252,7 @@ function industryRows(p: PlaceIndustry, data: Data, metric: MetricFn, link: (lay
       ${metric('Pipelines', c, String(lines), lines ? `in use within ${I.pipeKm} km${p.sour ? ` · <b>${p.sour} carrying sour gas</b>` : ''}${p.fed.length ? ` · federal: ${esc(p.fed.join(', '))}` : ''}` : `no licensed line in use within ${I.pipeKm} km (flowlines not counted)`)}
       ${metric('Nearest emitter', c, p.np ? kmText(p.np.km) : 'n/a', p.np ? `${esc(p.np.site.n)} (${esc(p.np.site.k.toLowerCase())}), ${tonnes(p.np.site.t)} released in ${I.npriYear}${p.n5 > 1 ? ` · ${p.n5} NPRI sites within ${I.npriKm} km` : ''}` : 'no NPRI site')}
       ${metric('Mine nearby', c, p.mine ? 'Yes' : 'No', p.mine ? `${esc(p.mine.mine.n)} (${esc(p.mine.mine.cm.toLowerCase())}), ${p.mine.km > 0 ? `${kmText(p.mine.km)} from town limits` : 'inside the town limits'}` : `no producing mine within ${I.mineKm} km`)}
+      ${pw ? metric('Power line', '#b4c6ff', pw.line ? kmText(pw.line.km) : 'n/a', `${pw.line ? `nearest mapped high-voltage line from town limits (${esc(kvText(pw.line.kv))})` : 'no mapped line within 30 km'}${pw.sub != null ? ` · substation ${kmText(pw.sub)}` : ''}${pw.plant ? `<br>generating station ${kmText(pw.plant.km)}: ${esc(plantText(pw.plant.plant))}` : ''} · OpenStreetMap, partial`) : ''}
     </div>
     <p class="note" style="margin-top:6px">Counted from the town limits. Wells include suspended and abandoned ones, which can restrict where you build. Neutral: these are also where many of the jobs are.</p>
     <div class="tr-falls" style="margin-top:8px">${link('industry', '🛢 Hidden neighbours on the map')}</div>`;

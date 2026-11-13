@@ -853,6 +853,8 @@ body.cinema .maplibregl-ctrl-bottom-right { top: 8px; bottom: auto !important; r
 .dm-cap { margin: 10px 0 4px; font-size: 11px; color: var(--ink-3); }
 .dm-strip { position: relative; height: 16px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, .04); }
 .dm-strip i { position: absolute; top: 0; bottom: 0; width: 0.36%; min-width: 1px; }
+.crop-bar { display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, .04); }
+.crop-bar i { display: block; height: 100%; }
 .dm-axis { position: relative; height: 14px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
 .dm-axis span { position: absolute; top: 2px; transform: translateX(-50%); }
 

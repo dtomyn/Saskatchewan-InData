@@ -78,6 +78,19 @@ const ALL_SOURCES: Source[] = [
     },
   },
   {
+    id: 'nbac', key: 'fires', name: 'Burn outlines', color: '#c8553d', group: 'Hazards',
+    owner: 'Natural Resources Canada · Canadian Forest Service', title: 'National Burned Area Composite (NBAC): mapped burn perimeters', url: 'https://cwfis.cfs.nrcan.gc.ca/ha/nbac',
+    endpoint: 'cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs · typeName=public:nbac, WFS 1.0.0 in EPSG:4326, one Saskatchewan year at a time', licence: OGL_CA,
+    gives: 'The mapped outline of each burn, from satellite imagery and agency mapping: Wildfires draws these for fires of 200 ha or more, and a circle for the rest.',
+    read: (d) => d.fires?.perimeters?.length ? { n: d.fires.perimeters.length, what: `${fmt.int(d.fires.perimeters.length)} burn outlines, ${d.fires.perimeterYears?.[0]}–${d.fires.perimeterYears?.[1]}` } : null,
+    rings: (d) => {
+      const ha: Record<number, number> = {};
+      for (const b of d.fires?.perimeters ?? []) ha[b[0]] = (ha[b[0]] ?? 0) + b[1];
+      const f = norm(ha, (v, m) => Math.log1p(v ?? 0) / Math.log1p(m));
+      return Object.fromEntries(Object.keys(ha).map((y) => [y, { v: f(+y), label: `${fmt.ha(ha[+y])} inside mapped outlines` }]));
+    },
+  },
+  {
     id: 'smoke', key: 'smoke', name: 'Smoke & air', color: '#e8a87c', group: 'Hazards',
     owner: 'Environment and Climate Change Canada', title: 'National Air Pollution Surveillance (NAPS) program: hourly PM2.5', url: 'https://data-donnees.az.ec.gc.ca/data/air/monitor/national-air-pollution-surveillance-naps-program/',
     endpoint: 'data-donnees.az.ec.gc.ca/api/file?path=…/Data-Donnees/{year}/ContinuousData-DonneesContinu/HourlyData-DonneesHoraires/PM25_{year}.csv', licence: OGL_CA,
@@ -145,6 +158,14 @@ const ALL_SOURCES: Source[] = [
         return [y, { v: Math.max(0.12, Math.min(1, m / 30)), label: `${m.toFixed(0)}% of the province in severe drought or worse on average (${xs.length} monthly maps)` }];
       }));
     },
+  },
+  {
+    id: 'crops', key: 'crops', name: 'What grows here', color: '#c9d65b', group: 'Climate',
+    owner: 'Agriculture and Agri-Food Canada', title: 'Annual Crop Inventory: 30 m crop and land cover map', url: 'https://open.canada.ca/data/en/dataset/ba2645d5-4458-414d-b196-6303ac06c1c9',
+    endpoint: 'agriculture.canada.ca/imagery-images/rest/services/annual_crop_inventory/<year>/ImageServer · exportImage as raw categories, sampled at 500 m, each 3 km cell its most common class', licence: OGL_CA,
+    gives: 'What grew on the farm belt each year since 2009 (cereals, canola, pulses, pasture, grassland, forest and more), and the land within 25 km of each place.',
+    read: (d) => d.crops && { n: d.crops.years.length, what: `${d.crops.years.length} yearly maps, ${d.crops.years[0]}–${d.crops.years.at(-1)}` },
+    rings: (d) => Object.fromEntries((d.crops?.years ?? []).map((y, i) => [y, { v: Math.max(0.15, Math.min(1, d.crops!.share[i][1] / 20)), label: `${d.crops!.share[i][1].toFixed(0)}% canola, ${d.crops!.share[i][0].toFixed(0)}% cereals` }])),
   },
   {
     id: 'rivers', key: 'rivers', name: 'River floods', color: '#4cc9f0', group: 'Hazards',
@@ -343,6 +364,14 @@ const ALL_SOURCES: Source[] = [
     gives: 'Where the oil and gas wells (active, suspended, abandoned), facilities, licensed pipelines, reporting industrial emitters and producing mines are, and how many lie near each place.',
     read: (d) => d.industry && { n: sum(d.industry.totals.wells) + d.industry.npri.length + d.industry.mines.length, what: `${fmt.int(sum(d.industry.totals.wells))} wells, ${fmt.int(d.industry.totals.pipes + d.industry.totals.oldPipes)} licensed pipelines, ${d.industry.npri.length} NPRI sites (${d.industry.npriYear}), ${d.industry.mines.length} producing mines` },
     rings: (d) => (d.industry ? { [d.industry.npriYear]: { v: 0.7, label: `NPRI ${d.industry.npriYear} reporting year` }, [NOW]: { v: 1, label: `wells, pipelines and mines as licensed on ${d.industry.asOf}` } } : {}),
+  },
+  {
+    id: 'power', key: 'power', name: 'Power grid', color: '#b4c6ff', group: 'People & places',
+    owner: 'OpenStreetMap contributors', title: 'power=line, power=substation, power=plant', url: 'https://wiki.openstreetmap.org/wiki/Power_networks',
+    endpoint: 'overpass-api.de (and mirrors) · ways and outlines inside ISO3166-2 CA-SK', licence: 'OSM ODbL',
+    gives: 'The high-voltage lines, substations and generating stations mappers have drawn (partial: SaskPower publishes no open grid map), and how near each place they run.',
+    read: (d) => d.power && { n: d.power.subs.length + d.power.plants.length, what: `${fmt.int(sum(Object.values(d.power.totals.km)))} km of line, ${d.power.subs.length} substations, ${d.power.plants.length} generating stations` },
+    rings: (d) => (d.power ? { [NOW]: { v: 1, label: `as mapped on ${d.power.asOf}` } } : {}),
   },
   {
     id: 'water', key: 'water', name: 'Drinking water', color: '#64b5f6', group: 'People & places',

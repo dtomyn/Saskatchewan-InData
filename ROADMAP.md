@@ -41,9 +41,9 @@ Settings the newcomer sets once: "I work in…" (feeds Workday Reach and a drive
 ## Still open
 
 - Incident-level crime from Table 35-10-0182-01 (impaired driving, break-ins, by service).
-- Saskatchewan's own wildfire perimeters if they become open; NTP's 1980–2023 historical set (needs a Western University account).
+- NTP's 1980–2023 historical tornado set (needs a Western University account). (Wildfire perimeters: built from NRCan's National Burned Area Composite, plan 4a.)
 - Courts of King's Bench and Provincial Court locations from an official list, if one is published openly.
-- Live readings, a history of them, forecasts and what-ifs, physical systems and finer places: five plans in build order in [`plans/digital-twin/`](plans/digital-twin/README.md). ✅ Plan 1 (a Now on rivers, fires, air, with weather alerts), ✅ plan 2 (the daily record on the `data-history` branch) and ✅ plan 3 (closure scenarios, CMIP6 climate projections, short-range outlooks, WSA flood-prone land) are built. Still to come from plan 2: the Finder criterion "Fewer advisory days" (weight 0) once a year of drinking water history exists. Plan 1's unconfirmed feeds stay open:
+- Live readings, a history of them, forecasts and what-ifs, physical systems and finer places: five plans in build order in [`plans/digital-twin/`](plans/digital-twin/README.md). ✅ Plan 1 (a Now on rivers, fires, air, with weather alerts), ✅ plan 2 (the daily record on the `data-history` branch) ✅ plan 3 (closure scenarios, CMIP6 climate projections, short-range outlooks, WSA flood-prone land) and ✅ plan 4's first three parts (NBAC burn outlines, the Annual Crop Inventory as What grows here, the OSM power grid in Hidden neighbours) are built. Still to come from plan 2: the Finder criterion "Fewer advisory days" (weight 0) once a year of drinking water history exists. Plan 1's unconfirmed feeds stay open:
   - Agency-reported active fires (name, size, status) from CIFFC or the Saskatchewan Public Safety Agency *(verify)*: CWFIS's `activefires.csv` answers 404.
   - Highway Hotline road closures and conditions *(verify)*: the map page shows no open feed.
   - GTFS-realtime for Regina and Saskatoon (vehicle positions, service alerts) *(verify)*: no URL confirmed.
@@ -53,4 +53,8 @@ Settings the newcomer sets once: "I work in…" (feeds Workday Reach and a drive
   - River flow forecasts and advisories: the Water Security Agency publishes them as PDFs and web pages only (the ten-day Saskatchewan River System forecast, spring runoff outlooks).
   - More closures: police, schools and clinics are routed to one site per place, so they can't fall back; raise their `keep` to add them.
   - NRCan's national Flood Susceptibility Index (30 m raster, OGL) as a context layer where the WSA has no community map.
+- From plan 4:
+  - Roads as entities (4d): the Ministry of Highways' traffic volumes are only a PDF map on GeoHub, so not built; revisit if they appear as data.
+  - SaskPower outages: a JSON file behind the outage map (`saskpower.com/api/sitecore/Content/GetOutageJsonFile`) answers by service region, but is undocumented and states no licence; not used.
+  - Buildings (4e) and 3D terrain (4f): held back, see the plan.
 - Per-layer films and an overview (blueprint Part 8, `storyboard_layers.py` in Island Atlas); the how-to explainer is in `video/`.

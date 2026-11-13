@@ -8,7 +8,7 @@
 
 The Layer menu's **History on the timeline** group, scrubbed or played on the timeline:
 
-- **🔥 Wildfires** (1959 → 2025, then Now): fires flare as they start and leave area-true scar circles; at **Now**, satellite hotspots of the last 24 hours and estimated perimeters.
+- **🔥 Wildfires** (1959 → 2025, then Now): fires flare as they start and leave scars: the mapped burn outline from the National Burned Area Composite for burns of 200 ha or more (1972–2024), an area-true circle otherwise; at **Now**, satellite hotspots of the last 24 hours and estimated perimeters.
 - **🌫 Smoke & air** (2001 → 2023, then Now): smoke days per year at six air stations; at **Now**, the AQHI at each community and its forecast high.
 - **🌪 Tornadoes** (1980 → today, monthly; gap 2010–2016) with tracks.
 - **🧊 Hail** (2022 → today): Northern Hail Project storms and radar swaths.
@@ -24,7 +24,7 @@ Turn on a history layer and press play, or set a year; click an event for its pa
 
 ## What it cannot tell you
 
-- Fire scars are circles of the right area, not perimeters.
+- Only burns of 200 ha or more from 1972 to the composite's latest year have outlines, and those are simplified; every other fire is a circle of the right area, not its shape. The tooltip says which.
 - Smoke days are **borrowed** from the nearest station within 150 km; NAPS has no Saskatchewan rows after 2023 yet.
 - Tornado and hail counts depend on who (or what radar) was there; only three summers of hail swaths.
 - Drought is a consensus map on a 10 km grid; a town near an edge can read one step off.

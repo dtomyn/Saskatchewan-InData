@@ -9,7 +9,7 @@
   },
   "fires": {
     "ok": true,
-    "updated": "2026-11-10T23:49:54.566Z"
+    "updated": "2026-11-13T19:27:27.874Z"
   },
   "tornadoes": {
     "ok": true,
@@ -134,5 +134,13 @@
   "floods": {
     "ok": true,
     "updated": "2026-11-13T18:35:17.765Z"
+  },
+  "crops": {
+    "ok": true,
+    "updated": "2026-11-13T19:07:22.997Z"
+  },
+  "power": {
+    "ok": true,
+    "updated": "2026-11-13T19:20:30.532Z"
   }
 }
