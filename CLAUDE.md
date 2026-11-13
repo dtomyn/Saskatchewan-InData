@@ -23,7 +23,7 @@ The live stages (`now-*`; `npm run data now` runs all five) cache nothing and wr
 
 ## Rules for this repo
 
-- All data comes from `npm run data` stages, never hand-edited JSON. The only hand-typed data is the place-name list in `scripts/places.mjs`, the curated events in `src/layers.ts` (`CURATED_EVENTS`, well-documented facts only, each with a source link) and the province's settlement-services list `SK_SETTLEMENT` in the `newcomer` stage of `scripts/fetch-data.mjs` (typed from saskatchewan.ca, with its source link and the date read in `SK_SETTLEMENT_ASOF`; re-check it when rebuilding).
+- All data comes from `npm run data` stages, never hand-edited JSON. The only hand-typed data is the place-name list in `scripts/places.mjs`, the curated events in `src/layers.ts` (`CURATED_EVENTS`, well-documented facts only, each with a source link) and the province's settlement-services list `SK_SETTLEMENT` in the `newcomer` stage (`scripts/stages/newcomer.mjs`) (typed from saskatchewan.ca, with its source link and the date read in `SK_SETTLEMENT_ASOF`; re-check it when rebuilding).
 - Anything from outside the code (OSM names, data strings) goes through `esc()` / `safeUrl()` in `src/html.ts` before `innerHTML`. The production build ships a CSP (`vite.config.ts`).
 - Say when a value is inferred or borrowed: the in-town police rule (`nearestJustice` in `src/justice.ts`), borrowed climate stations, rural RCMP detachments standing in for a town.
 - When you change a behaviour the blueprint describes (layer menu rules, event panels), update `MAP-ATLAS-BLUEPRINT.md` and the README with it.
@@ -40,7 +40,7 @@ Same shape as Island Atlas:
 - **`src/history.ts`**: the daily record in the app: `dayT`/`tDay` (Saskatchewan day ↔ timeline time), `ensureFeed` (loads a feed's month files once, when the timeline enters a layer's recent span), and per-feed views (`riversHistory`, `firesHistory`, `airHistory`, `waterHistory`). A layer's `now.recent` (`RecentSpan` in `layers.ts`) draws it; `main.ts` hatches only up to its first day and draws its sparkline dashed.
 - **`src/metrics.ts`**: `townMetrics(data)` per place and the Town Finder `CRITERIA` / `rankTowns`. **`src/panels.ts`**: Town Report and Town Finder. **`src/sources.ts`**: the Data & sources view. **`src/events.ts`**: the event/feature panel.
 - **`src/data.ts`**: `loadAll()`, the JSON types, formatters.
-- **`scripts/fetch-data.mjs`**: one async function per stage in `SOURCES`; helpers for caching, OGC API, ArcGIS REST, Overpass (with mirrors) and OSRM drive times (`driveTimes`).
+- **`scripts/fetch-data.mjs`**: the runner only: the stage `ORDER`, `npm run data now`, the manifests. Each stage is `scripts/stages/<name>.mjs`, whose default export does the work and is imported only when it runs. Shared helpers live in `scripts/lib/`: `config` (paths, `BBOX`, endpoints), `io` (`log`, `cached`, `fetchBuf`, `writeOut`, `writeNow`, `pool`), `apis` (OGC API, ArcGIS REST, Overpass with mirrors, StatCan WDS), `parse` (CSV, fractional years, `pdfText`/`advisoryRows`), `geo` (distances, `dp`, `vwRing`, `joinPaths`, `edgeKm`), `places` (`getProvince`, `inSask`, `getPlaces`, `getSmallPlaces`, `smallAreas`, `straightTimes`; the `places` stage primes them with `setPlaces`/`setSmallPlaces`), `drive` (OSRM, `driveTimes`), `census` and `needs-osm` (`NEEDS_KINDS`, `needsOSM`, the ODHF rows). A new stage gets its own file and a place in `ORDER`.
 
 ## Data notes
 

@@ -141,9 +141,10 @@ src/sources.ts             the Data & sources view
 src/<deepfinder>.ts        optional deep finder (rail, funnel, report, shortlist)
 src/html.ts                esc(), safeUrl()
 src/style.css              the whole design system (Part 4)
-scripts/fetch-data.mjs     pipeline: SOURCES stages, cache, manifest
+scripts/fetch-data.mjs     pipeline runner: stage order, manifest
+scripts/stages/<name>.mjs  one stage per source (default export), imported only when it runs
+scripts/lib/*.mjs          shared helpers: config, io (cache, fetch, writeOut), apis, parse, geo, places…
 scripts/places.mjs         the place list and any hand-typed facts
-scripts/<big-stage>.mjs    large stages split into their own module, imported lazily
 public/data/*.json         committed outputs + manifest.json
 video/storyboard.py        main film scenes; storyboard_<film>.py for supplements
 video/render.py            the renderer (Film class)
@@ -433,17 +434,20 @@ A few hazard layers carry a reading of today next to their archive (Living Skies
 
 ## Part 6 – Data pipeline
 
-`scripts/fetch-data.mjs` is a dictionary of **stages**, one per source:
+The pipeline is a set of **stages**, one per source, each its own module in `scripts/stages/`, with shared helpers in `scripts/lib/`. `scripts/fetch-data.mjs` is only the runner:
 
 ```js
-const SOURCES = {
-  async base() { /* outline geometry → base.json */ },
-  async fires() { /* fetch, clip to outline, simplify, quantize, writeOut('fires', …) */ },
-  async places() { /* … */ },
-  async deep() { const { buildDeep } = await import('./deep.mjs'); await buildDeep({ log, cached, writeOut, … }); },
-};
-const order = ['base', /* …stages that others read come first… */, 'deep'];
+// scripts/stages/fires.mjs
+import { cached, fetchBuf, writeOut } from '../lib/io.mjs';
+import { getProvince, inSask } from '../lib/places.mjs';
+export default async function fires() { /* fetch, clip to outline, simplify, quantize, writeOut('fires', …) */ }
+
+// scripts/fetch-data.mjs
+const ORDER = ['base', 'places', /* …stages that others read come first… */];
+for (const name of run) await (await import(`./stages/${name}.mjs`)).default();
 ```
+
+A stage's file stays a few hundred lines at most; a helper two stages need moves to `scripts/lib/`.
 
 - `npm run data` runs all in order; `npm run data fires crime` runs some.
 - Helpers: `cached(name, producer)` (raw responses in `.cache/`), `fetchBuf(url, { retries: 3, timeout })` with backoff, `fetchJSON`, `cachedJSON`, `pool(items, size, fn)` for polite concurrency, paged readers for the common APIs (WFS, OGC API), `writeOut(name, data)` (compact JSON + KB log).
@@ -454,7 +458,7 @@ const order = ['base', /* …stages that others read come first… */, 'deep'];
 - Huge global files sorted by a spatial key (e.g. quadkey-sorted parquet): read only the region's rows with HTTP range requests and cache the clipped rows, never the whole file.
 - Validate a response before caching it: a busy BC WFS answers HTTP 200 with an XML `ExceptionReport`, which a plain cache would keep forever. Parse it, check for `features`, retry with backoff.
 - Area questions (share of land logged, what's next door) are answered on a raster: rasterize polygons onto a grid (scanline fill with per-row edge buckets) and count cells, so overlaps count once. Remove slivers (road allowances, trail corridors) from ownership masks with a morphological opening.
-- Big stages live in their own module and receive the helpers as arguments.
+- Stages import the helpers they use from `scripts/lib/`; a stage that fills a memo other stages read (the place list) does it through a setter in that helper module, never by assigning another module's variable.
 - Feeds that change seasonally (timetables) take the most common value over the next few weeks and fail with a clear message when the feed runs out.
 - **The daily record** (5.9): `scripts/history.mjs` (`npm run data history`, after the live stages) rolls each live feed into `history/<feed>/<YYYY-MM>.json`, one file per feed per month, as daily roll-ups (per gauge per day: min, max, mean flow and the number of readings; per day: hotspots; per community per day: highest AQHI and hours reported; one row per alert and per advisory with first and last seen). Every file records `source`, its first and last run, the hours a run was counted each day and the days backfilled; `history/index.json` lists each feed's months, first and last day, gaps and days with few runs. It is safe to run twice in an hour: feeds that keep a window (gauges ~30 days, AQHI ~3 days) are recomputed for whole days, hotspots are de-duplicated by position and time, alerts and advisories are keyed. `npm run data history-backfill` reaches back once as far as each feed keeps (CWFIS keeps every season's hotspots). A missed run is a gap, never a zero.
 - **Live stages** (5.9) are named `now-<name>`, write `now/<name>.json` with `asOf` (the newest reading; for a list of what is in effect, when it was read), `fetched`, `source`, `sourceUrl` and the licence, cache nothing, and record themselves in `now/manifest.json` (which the app merges with `manifest.json`), so running them never changes a committed file. `npm run data now` runs them all.
