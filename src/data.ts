@@ -555,3 +555,39 @@ export const fmt = {
 };
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// ---------------------------------------------------------------------------------------------
+// history: the daily record of the live feeds (public/data/history/, from the data-history branch; scripts/history.mjs).
+// Never loaded by loadAll(): fetched when the timeline first enters a layer's recent span, or the sources view opens.
+
+/** Month file header: runs[dd] = Saskatchewan hours a run was counted; backfilled = days read back from the feed's archive. */
+type HistoryBase = { feed: string; month: string; source: string; licence: string; first: string | null; last: string | null; runs: Record<string, number[]>; backfilled: string[] };
+/** per gauge: [day of month, min, max, mean discharge m³/s, readings, flag] */
+export type RiversHistory = HistoryBase & { stations: Record<string, [number, number, number, number, number, string | null][]> };
+/** per community: [day of month, highest AQHI, hours reported] */
+export type AirHistory = HistoryBase & { communities: Record<string, { name: string; lon: number; lat: number; out?: true }>; days: Record<string, [number, number, number][]> };
+/** per day of month: [lon, lat, fire radiative power, minute of the Saskatchewan day] */
+export type FiresHistory = HistoryBase & { days: Record<string, [number, number, number | null, number][]> };
+export type AlertsHistory = HistoryBase & { alerts: { key: string; code: string; type: string; name: string; colour: string | null; start: string; seen: string; ends: string | null; areas: number; places: string[] }[] };
+export type WaterHistory = HistoryBase & { advisories: { key: string; n: string; src: string; k: string; d: string | null; reg: string | null; lon?: number; lat?: number; first: string; last: string }[] };
+export type HistoryFeed = 'rivers' | 'air' | 'fires' | 'alerts' | 'water';
+export type HistoryIndex = {
+  updated: string; fewRuns: number;
+  feeds: Partial<Record<HistoryFeed, { months: string[]; first: string; last: string; days: number; gaps: number; gapDays: string[]; few: number; kb: number }>>;
+};
+
+const historyMemo = new Map<string, Promise<unknown>>();
+const liveAllowed = () => { const q = new URLSearchParams(location.search); return !q.has('film') || q.has('now'); };
+/** The history index, or null (no history in this copy, or the film). */
+export function loadHistoryIndex(): Promise<HistoryIndex | null> {
+  if (!liveAllowed()) return Promise.resolve(null);
+  if (!historyMemo.has('index')) historyMemo.set('index', load<HistoryIndex>('history/index'));
+  return historyMemo.get('index') as Promise<HistoryIndex | null>;
+}
+/** One feed's month file ('YYYY-MM'), or null. Each is fetched once. */
+export function loadHistory<T>(feed: HistoryFeed, month: string): Promise<T | null> {
+  if (!liveAllowed()) return Promise.resolve(null);
+  const k = `${feed}/${month}`;
+  if (!historyMemo.has(k)) historyMemo.set(k, load<T>(`history/${k}`));
+  return historyMemo.get(k) as Promise<T | null>;
+}

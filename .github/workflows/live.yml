@@ -1,16 +1,23 @@
 name: Refresh live readings
 
-# Rebuilds the live stages (rivers, fires, air, alerts, plus drinking-water advisories) about once an hour and
-# redeploys the site. Nothing is committed: public/data/now/ is not in git. GitHub runs scheduled jobs late when it is
+# Rebuilds the live stages (rivers, fires, air, alerts, plus drinking-water advisories) about once an hour, rolls them
+# into the daily record, and redeploys the site. Nothing is committed to main: public/data/now/ is not in git, and the
+# daily record (public/data/history/) is appended to the data-history branch by the archive job. GitHub runs scheduled jobs late when it is
 # busy, and turns schedules off in a repository with no activity for 60 days, so the app never assumes a reading is
 # fresh: every live value shows its age.
 on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
+    inputs:
+      backfill:
+        description: Reach back as far as each feed keeps (run once, to start the daily record)
+        type: boolean
+        default: false
 
 # Least privilege, as in deploy.yml: only the deploy job (which runs no repository code) can write to Pages or mint an
-# OIDC token, so npm packages run during the build never hold either.
+# OIDC token, and only the archive job (which runs no repository code either: git and the shell below) can push, and
+# only to data-history. npm packages run during the build never hold either.
 permissions: {}
 
 concurrency:
@@ -47,12 +54,62 @@ jobs:
           for f in rivers fires air alerts manifest; do
             curl -fsS --max-time 30 -o "public/data/now/$f.json" "$SITE/data/now/$f.json" || rm -f "public/data/now/$f.json"
           done
+      # The daily record lives on the data-history branch (never on main). Read it into public/data/history/ so the site
+      # ships it. If the branch exists, a failed checkout fails the run: starting the record afresh would overwrite it.
+      - name: Is there a daily record yet?
+        id: hist
+        env:
+          URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          if git ls-remote --exit-code --heads "$URL" data-history > /dev/null; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.hist.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: data-history
+          path: .history-branch
+          persist-credentials: false
+      - name: Copy the daily record into the site
+        run: |
+          mkdir -p public/data/history
+          if [ -d .history-branch ]; then cp -r .history-branch/. public/data/history/ && rm -rf public/data/history/.git; fi
       # a failed stage keeps its old file and records the error in the manifest; the run still deploys
-      - run: npm run data now water
+      - run: npm run data now water ${{ inputs.backfill && 'history-backfill' || 'history' }}
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: history
+          path: public/data/history
+          include-hidden-files: false
+          if-no-files-found: error
+          retention-days: 3
+  archive:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: history
+          path: incoming
+      # Additive only: files are added or replaced, never deleted (retention: keep everything).
+      - name: Append to the data-history branch
+        env:
+          URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          git init -q record && cd record
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add origin "$URL"
+          if git fetch -q --depth 1 origin data-history; then git checkout -q -b data-history FETCH_HEAD; else git checkout -q --orphan data-history; fi
+          cp -r ../incoming/. .
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing new to keep."; exit 0; fi
+          git commit -q -m "Daily record: run of $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q origin HEAD:data-history
   deploy:
     needs: build
     runs-on: ubuntu-latest

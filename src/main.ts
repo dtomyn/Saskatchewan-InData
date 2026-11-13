@@ -9,6 +9,7 @@ import type { Layer, PickingInfo } from '@deck.gl/core';
 import * as d3 from 'd3';
 import { Data, MONTHS, clamp, loadAll } from './data';
 import { isNow } from './now';
+import { ensureFeed, onHistory, tDay } from './history';
 import { AtlasEvent, AtlasLayer, CURATED_EVENTS, Ctx, PanelHandle, TimedEvent, buildLayers } from './layers';
 import { eventColor, eventDate, eventLayers, fromTooltip, momentsList, renderEventPanel } from './events';
 import { loadWeights, renderFinder, renderTownReport } from './panels';
@@ -158,8 +159,12 @@ function render() {
   const out: Layer[] = [];
   for (const l of layers) {
     if (!l.available || !state.visible.has(l.id)) continue;
-    // at the timeline's Now stop, a layer with a live reading draws it over its archive
-    const live = l.now && isNow(state.time, l.range[1]) ? l.now.build(c) : [];
+    // at the timeline's Now stop, a layer with a live reading draws it over its archive; between the archive and Now,
+    // its daily record (fetched the first time the timeline enters that span)
+    const rec = l.now?.recent;
+    const inSpan = !!rec && state.time >= rec.from && !isNow(state.time, l.range[1]);
+    if (inSpan) ensureFeed(rec!.feed, rec!.from);
+    const live = l.now && isNow(state.time, l.range[1]) ? l.now.build(c) : inSpan ? rec!.build(c) : [];
     for (const dl of [...l.build(c), ...live]) {
       // flat layers go under the basemap labels; 3D columns stay on top
       const flat = /scars|embers|base|stems/.test(dl.id);
@@ -574,9 +579,10 @@ function drawSpark() {
   if (!pts.length) return;
   const [a, b] = l.range;
   const x = (v: number) => ((v - a) / (b - a)) * w;
-  // between the archive's last year and today: hatched, "no record yet"
+  // between the archive's last year and today: hatched, "no record yet", up to the first day of the daily record
   if (l.now && l.now.archiveEnd < b) {
-    const x0 = x(l.now.archiveEnd), x1 = w;
+    const first = l.now.recent?.first() ?? null;
+    const x0 = x(l.now.archiveEnd), x1 = first != null ? x(first) : w;
     g.save();
     g.beginPath();
     g.rect(x0, 0, x1 - x0, h);
@@ -589,6 +595,23 @@ function drawSpark() {
     g.globalAlpha = 0.9;
     g.fillRect(w - 2, 0, 2, h);
     g.globalAlpha = 1;
+    // the daily record: a dashed line on its own scale (provisional, never part of the record's bars); a missing day breaks it
+    const rp = l.now.recent?.spark() ?? [];
+    if (rp.length) {
+      const rmax = Math.max(...rp.map((p) => p.y)) || 1;
+      const yy = (v: number) => h - 2 - (v / rmax) * (h * 0.7);
+      g.save();
+      g.strokeStyle = l.color;
+      g.globalAlpha = 0.9;
+      g.lineWidth = 1.2;
+      g.setLineDash([3, 2]);
+      g.beginPath();
+      rp.forEach((p, i) => { const gap = i === 0 || p.x - rp[i - 1].x > 1.5 / 365.25; if (gap) g.moveTo(x(p.x), yy(p.y)); else g.lineTo(x(p.x), yy(p.y)); });
+      g.stroke();
+      // a lone day still shows as a dot
+      rp.forEach((p, i) => { const alone = (i === 0 || p.x - rp[i - 1].x > 1.5 / 365.25) && (i === rp.length - 1 || rp[i + 1].x - p.x > 1.5 / 365.25); if (alone) g.fillRect(x(p.x) - 1, yy(p.y) - 1, 2, 2); });
+      g.restore();
+    }
   }
   const max = Math.max(...pts.map((p) => Math.abs(p.y))) || 1;
   const diverging = pts.some((p) => p.y < 0);
@@ -651,8 +674,13 @@ function syncTimelineUI() {
   s.style.setProperty('--p', `${((state.time - a) / (b - a)) * 100}%`);
   const atNow = !!l.now && isNow(state.time, b);
   const gap = !!l.now && !atNow && state.time > l.now.archiveEnd;
+  const rec = gap ? l.now!.recent : undefined;
+  const first = rec?.first() ?? null;
+  // inside the daily record: the day and a provisional badge; a day it lacks is a gap, before it "no record yet"
+  const recorded = !!rec && first != null && state.time >= first;
   $('year').textContent = atNow ? 'Now' : String(Math.floor(state.time));
-  $('month').textContent = atNow ? '' : gap ? 'no record yet' : l.monthly || state.speed <= 1 ? MONTHS[Math.floor((state.time % 1) * 12)] : '';
+  $('month').textContent = atNow ? '' : recorded ? (rec!.covers(state.time) ? `${tDay(state.time).slice(5)} · provisional` : 'no reading') : gap ? 'no record yet' : l.monthly || state.speed <= 1 ? MONTHS[Math.floor((state.time % 1) * 12)] : '';
+  $('month').classList.toggle('prov', recorded && rec!.covers(state.time));
   const y = Math.floor(state.time * (l.monthly ? 12 : 1));
   if (y !== lastSparkYear) {
     lastSparkYear = y;
@@ -798,6 +826,8 @@ async function boot() {
   state.time = byId.crime.range[0];
   initMap();
   bindControls();
+  // a daily record arriving redraws the sparkline (its dashed line, the hatch's new end)
+  onHistory(() => drawSpark());
   focus('province');
   requestAnimationFrame(frame);
   // a report's link to a layer opens it at today, where its story ends

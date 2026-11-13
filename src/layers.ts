@@ -4,7 +4,8 @@ import * as d3 from 'd3';
 import { ColumnLayer, LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { DataFilterExtension, PathStyleExtension } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { Data, Facility, FirePerimeter, FirePoint, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
+import { Data, Facility, FirePerimeter, FirePoint, HistoryFeed, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
+import { DAY_T, HistHotspot, dayT, dayText, firesHistory, riversHistory, tDay } from './history';
 import { barChart, lineChart, rampCSS, scatterChart, stripes, ChartHandle } from './charts';
 import { NormalVar, provinceAnomalies, slope, townMetrics } from './metrics';
 import { tornadoLayer } from './tornado';
@@ -101,8 +102,22 @@ export interface AtlasLayer {
    * `archiveEnd` is where its archive stops (the gap to Now is hatched, "no record yet"); `asOf` is the reading's time
    * (ms); at Now, main.ts draws `build` on top of the layer's own `build`.
    */
-  now?: { asOf: () => number | null; archiveEnd: number; build: (ctx: Ctx) => Layer[] };
+  now?: { asOf: () => number | null; archiveEnd: number; build: (ctx: Ctx) => Layer[]; recent?: RecentSpan };
 }
+/**
+ * The recent span between a layer's archive and Now, drawn from the daily record of its live feed (src/history.ts).
+ * Starts at `from` (the first day after the archive), so a provisional day is never joined to the official record.
+ * main.ts loads the feed when the timeline first enters the span, hatches the span before `first()`, draws `spark()`
+ * dashed on its own scale, and adds `build` while the time is inside the span.
+ */
+export type RecentSpan = {
+  feed: HistoryFeed; from: number;
+  first: () => number | null;
+  /** has a record for the day holding `t` (else that day is a gap) */
+  covers: (t: number) => boolean;
+  spark: () => { x: number; y: number }[];
+  build: (ctx: Ctx) => Layer[];
+};
 
 // ---------------------------------------------------------------------------------------------
 // shared bits
@@ -208,6 +223,49 @@ function firesLayer(data: Data): AtlasLayer {
   const hotspots = nowF?.hotspots ?? [];
   const perimeters = nowF?.perimeters ?? [];
   const isLive = (id?: string) => !!id?.startsWith('fires-now');
+  // the recent span: hotspots kept by the daily record since the archive's last year (heat, not fires; never in the fire statistics)
+  const FFROM = y1 + 1;
+  let fPts: HistHotspot[] | null = null;
+  const fPoints = () => (fPts ??= firesHistory() ? firesHistory()!.points.filter((p) => p[2] >= FFROM) : null) ?? [];
+  const fDays = () => (firesHistory()?.sorted ?? []).filter((d) => dayT(d) >= FFROM);
+  const firesRecent: RecentSpan = {
+    feed: 'fires', from: FFROM,
+    first: () => { const d = fDays()[0]; return d ? dayT(d) : null; },
+    covers: (t) => t >= FFROM && !!firesHistory()?.covered.has(tDay(t)),
+    spark: () => fDays().map((d) => ({ x: dayT(d), y: firesHistory()!.perDay.get(d) ?? 0 })),
+    build({ time, speed }) {
+      const pts = fPoints();
+      if (time < FFROM || !pts.length) return [];
+      // about two weeks at 2 yr/s; never less than three days
+      const W = Math.max(3 * DAY_T, speed * 0.02);
+      const flash = pts.slice(lowerBound(pts, time - W, (p) => p[2]), lowerBound(pts, time, (p) => p[2]));
+      return [
+        new ScatterplotLayer<HistHotspot>({
+          id: 'fires-hist-dots',
+          data: pts,
+          getPosition: (d) => [d[0], d[1]],
+          getRadius: 900,
+          radiusMinPixels: 1,
+          getFillColor: [255, 214, 140, 60],
+          extensions: filterExt,
+          getFilterValue: (d) => d[2],
+          filterRange: [FFROM, time],
+          pickable: true,
+          parameters: NO_DEPTH,
+        } as any),
+        new ScatterplotLayer<HistHotspot>({
+          id: 'fires-hist-flash',
+          data: flash,
+          getPosition: (d) => [d[0], d[1]],
+          getRadius: (d) => 2500 + Math.sqrt(d[3] ?? 1) * 900,
+          radiusMinPixels: 2,
+          getFillColor: (d) => [255, 236, 150, 255 * (1 - (time - d[2]) / W) ** 1.5],
+          updateTriggers: { getFillColor: time },
+          parameters: ADDITIVE,
+        }),
+      ];
+    },
+  };
   /** a hotspot fades with age across the 24-hour window */
   const hotAlpha = (h: Hotspot) => Math.round(255 * Math.max(0.35, 1 - Math.max(0, Date.now() - ms(h[2])) / (24 * 36e5)));
   function firesNow() {
@@ -230,6 +288,7 @@ function firesLayer(data: Data): AtlasLayer {
     now: nowF ? {
       asOf: () => ms(nowF.asOf),
       archiveEnd: y1 + 0.99,
+      recent: firesRecent,
       build({ clock }) {
         // the list as a whole goes stale (the hourly refresh stopped), not each hotspot: a hotspot is up to 24 h old by design
         if (!drawable(nowF.asOf)) return [];
@@ -352,7 +411,10 @@ function firesLayer(data: Data): AtlasLayer {
           const y = Math.floor(time);
           const cz = causeByYear[y] ?? [0, 0, 0];
           if (nowF && isNow(time, l.range[1])) hero(0, drawable(nowF.asOf) ? fmt.int(hotspots.length) : '–', 'satellite hotspots, last 24 hours');
-          else hero(0, fmt.int(countByYear[y] ?? 0), `fires in ${y}`);
+          else if (nowF && time >= FFROM) {
+            const d = tDay(time), n = firesHistory()?.perDay.get(d);
+            hero(0, firesRecent.covers(time) ? fmt.int(n ?? 0) : '–', firesRecent.covers(time) ? `satellite hotspots on ${dayText(d)} (not fires)` : `no record for ${dayText(d)}`);
+          } else hero(0, fmt.int(countByYear[y] ?? 0), `fires in ${y}`);
           hero(1, fmt.ha(haByYear[y] ?? 0), `burned in ${y}`);
           const tot = cz[0] + cz[1] + cz[2];
           hero(2, tot ? `${Math.round((cz[0] / tot) * 100)}%` : '–', `started by lightning in ${y}`);
@@ -365,6 +427,17 @@ function firesLayer(data: Data): AtlasLayer {
     },
     describe(info) {
       const lid = info.layer?.id;
+      if (lid?.startsWith('fires-hist') && Array.isArray(info.object)) {
+        const [lon, lat, t, frp] = info.object as HistHotspot;
+        const { town, km: d } = nearestTown(data.munis, lon, lat);
+        return {
+          t, layer: 'fires', kind: 'Satellite hotspot (recorded)', lon, lat, zoom: 9,
+          title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${town.name}`,
+          body: `A hotspot kept by the atlas’s daily record of CWFIS’s feed${d >= 5 ? `, about ${Math.round(d)} km from ${town.name}` : ''}. It is not a confirmed fire, and hotspots never count in the wildfire statistics.`,
+          stats: [{ v: dayText(tDay(t)), l: 'seen (Sask. day)' }, ...(frp != null ? [{ v: `${frp} MW`, l: 'fire radiative power' }] : [])],
+          sources: [{ label: 'CWFIS satellite hotspots', url: 'https://cwfis.cfs.nrcan.gc.ca/maps/fm3' }],
+        };
+      }
       if (isLive(lid)) {
         const x: any = info.object;
         if (x?.a) return alertEvent(x.a, 'fires', data, info.coordinate?.[0], info.coordinate?.[1]);
@@ -408,6 +481,7 @@ function firesLayer(data: Data): AtlasLayer {
     },
     tooltip(info) {
       const o: any = info.object;
+      if (info.layer?.id.startsWith('fires-hist') && Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">recorded, not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${dayText(tDay(o[2]))}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
       if (isLive(info.layer?.id)) {
         if (o?.a) return alertTooltip(o.a);
         if (o?.p) return `<b>Estimated fire perimeter</b><br><span class="tk">Area</span> <span class="tv">${fmt.ha(o.p.ha)}</span><br><span class="tk">Last heat seen</span> <span class="tv">${ago(o.p.last)}</span>`;
@@ -455,6 +529,33 @@ function riversLayer(data: Data): AtlasLayer {
   const FLAG: Record<string, string> = { ice: 'ice-affected', est: 'estimated', dry: 'dry', other: 'flagged' };
   const STALE: [number, number, number, number] = [130, 140, 155, 190];
   const ratioText = (r: number) => (r >= 0.095 ? `${r.toFixed(r >= 1 ? 1 : 2)}×` : r > 0 ? '<0.1×' : '0×');
+  // the recent span: each day's highest real-time flow against the normal peak, from the daily record (provisional)
+  const RFROM = y1 + 1;
+  const rDays = () => (riversHistory()?.sorted ?? []).filter((d) => dayT(d) >= RFROM);
+  const rRows = (d: string) => (riversHistory()?.days.get(d) ?? []).flatMap((h) => { const s = gauge.get(h.id); return s?.median ? [{ s, h, r: h.max / s.median, day: d }] : []; });
+  let rSpark: { x: number; y: number }[] | null = null;
+  const riversRecent: RecentSpan = {
+    feed: 'rivers', from: RFROM,
+    first: () => { const d = rDays()[0]; return d ? dayT(d) : null; },
+    covers: (t) => t >= RFROM && !!riversHistory()?.days.has(tDay(t)),
+    spark: () => (rSpark ??= riversHistory() ? rDays().map((d) => { const rows = rRows(d); return { x: dayT(d), y: rows.length ? rows.filter((x) => x.r >= 1.5).length / rows.length : 0 }; }) : null) ?? [],
+    build({ time }) {
+      if (time < RFROM) return [];
+      return [new ColumnLayer<any>({
+        id: 'rivers-hist-cols',
+        data: rRows(tDay(time)),
+        getPosition: (d) => [d.s.lon, d.s.lat],
+        radius: 3800,
+        diskResolution: 24,
+        extruded: true,
+        getElevation: (d) => d.r * 27000,
+        getFillColor: (d) => rgb(ratioColor(d.r), 150),
+        material: { ambient: 0.6, diffuse: 0.6, shininess: 20 },
+        pickable: true,
+        updateTriggers: { getElevation: tDay(time), getFillColor: tDay(time) },
+      })];
+    },
+  };
   const liveValue = (row: NowRiverRow) => (row[4] != null ? `${ratioText(row[4])} normal peak · ${row[3]} m³/s` : row[2] != null ? `level ${row[2]} m` : 'no value');
   /** The panel's Right now block: gauges reporting, the highest against normal, flags, and alerts. */
   function riversNow() {
@@ -478,6 +579,7 @@ function riversLayer(data: Data): AtlasLayer {
     now: nowR ? {
       asOf: () => ms(nowR.asOf),
       archiveEnd: y1 + 0.99,
+      recent: riversRecent,
       build() {
         // the file's own time rules first: a reading older than DROP_H is not drawn, an old one is grey
         if (!drawable(nowR.asOf)) return [];
@@ -611,6 +713,9 @@ function riversLayer(data: Data): AtlasLayer {
           if (nowR && isNow(time, l.range[1])) {
             const flow = nowRows.filter((d) => drawable(d.row[1]) && d.row[4] != null);
             hero(0, String(flow.filter((d) => d.row[4]! >= 1.5).length), `of ${flow.length} gauges at 1.5× their normal peak right now`);
+          } else if (nowR && time >= RFROM) {
+            const rows = rRows(tDay(time));
+            hero(0, rows.length ? String(rows.filter((x) => x.r >= 1.5).length) : '–', rows.length ? `of ${rows.length} gauges ≥1.5× on ${dayText(tDay(time))} (provisional)` : `no record for ${dayText(tDay(time))}`);
           } else hero(0, sh ? `${sh.high}` : '–', sh ? `of ${sh.n} gauges ≥1.5× in ${y}` : `no gauge data in ${y}`);
           let best: { s: any; r: number } | null = null;
           for (const s of stations) { const r = ratio(s, y); if (r != null && (!best || r > best.r)) best = { s, r }; }
@@ -648,6 +753,7 @@ function riversLayer(data: Data): AtlasLayer {
       const s = o.s ?? o;
       const rec = Object.entries(s.peaks as Record<string, number>).reduce((a, b) => (b[1] > a[1] ? b : a));
       const lv = o.row as NowRiverRow | undefined;
+      if (o.h) return `<b>${esc(s.name)}</b> <span class="tk">provisional</span><br><span class="tk">${dayText(o.day)}</span> <span class="tv">${ratioText(o.r)} normal peak at its highest</span><br><span class="tk">Flow that day</span> <span class="tv">${o.h.min}–${o.h.max} m³/s, mean ${o.h.mean}</span><br><span class="tk">Readings</span> <span class="tv">${o.h.n}</span>${o.h.flag ? `<br><span class="tk">Flagged</span> <span class="tv">${FLAG[o.h.flag] ?? 'flagged'}</span>` : ''}`;
       return `<b>${esc(s.name)}</b><br><span class="tk">Gauge</span> <span class="tv">${esc(s.id)}</span>${lv ? `<br><span class="tk">Right now</span> <span class="tv">${liveValue(lv)}</span><br><span class="tk">Read</span> <span class="tv">${ago(lv[1])}${freshness(lv[1]) === 'stale' ? ' · stale' : ''}</span>${lv[5] ? `<br><span class="tk">Flagged</span> <span class="tv">${FLAG[lv[5]]}</span>` : ''}` : ''}${o.r != null ? `<br><span class="tk">This year</span> <span class="tv">${o.r.toFixed(2)}× normal</span>` : ''}<br><span class="tk">Normal annual peak</span> <span class="tv">${s.median} m³/s</span><br><span class="tk">Record</span> <span class="tv">${rec[1]} m³/s (${rec[0]})</span>`;
     },
   };

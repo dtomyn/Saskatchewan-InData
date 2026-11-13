@@ -6,6 +6,7 @@
 //   node scripts/fetch-data.mjs                 # all stages
 //   node scripts/fetch-data.mjs fires crime     # selected stages
 //   node scripts/fetch-data.mjs now             # the four live stages (now-rivers, now-fires, now-air, now-alerts)
+//   node scripts/fetch-data.mjs now history     # …and roll them into the daily record (public/data/history/)
 //
 // Raw downloads are cached in .cache/ so re-runs are quick. Delete it to force a refresh.
 
@@ -3659,6 +3660,16 @@ const SOURCES = {
 /** The live stages, which `npm run data now` runs. */
 const NOW_STAGES = ['now-rivers', 'now-fires', 'now-air', 'now-alerts'];
 
+// The daily record of the live feeds (scripts/history.mjs; plans/digital-twin/2-accumulated-state.md). Run only when
+// named: `history` rolls today in, `history-backfill` also reaches back as far as each feed keeps. Both read the live
+// files, so run them after `now`.
+const historyHelpers = () => ({ log, fetchBuf, asJSON, OGC, BBOX, OUT, readOut, inSask, getProvince, round });
+SOURCES.history = async () => { const { history } = await import('./history.mjs'); await history(historyHelpers()); };
+SOURCES['history-backfill'] = async () => { const { history } = await import('./history.mjs'); await history(historyHelpers(), { backfill: true }); };
+const ON_REQUEST = ['history', 'history-backfill'];
+/** Stages whose run is recorded in public/data/now/manifest.json (not committed), not in manifest.json. */
+const LIVE_STAGES = [...NOW_STAGES, ...ON_REQUEST];
+
 async function writeNow(name, data) {
   await fs.mkdir(path.join(OUT, 'now'), { recursive: true });
   const text = JSON.stringify(data);
@@ -3740,10 +3751,10 @@ async function statcanTable(pid) {
 
 // `now` stands for the four live stages
 const wanted = process.argv.slice(2).flatMap((n) => (n === 'now' ? NOW_STAGES : [n]));
-const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'climate', 'smoke', 'drought', 'normals', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES];
+const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'climate', 'smoke', 'drought', 'normals', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
 const unknown = wanted.filter((n) => !order.includes(n));
 if (unknown.length) { console.error(`Unknown stage(s): ${unknown.join(', ')}`); process.exit(1); }
-const run = wanted.length ? order.filter((n) => wanted.includes(n)) : order;
+const run = wanted.length ? order.filter((n) => wanted.includes(n)) : order.filter((n) => !ON_REQUEST.includes(n));
 
 // The live stages keep their own manifest beside their files (public/data/now/, not committed), so the committed
 // manifest.json never changes just because the live stages ran.
@@ -3754,7 +3765,7 @@ const manifests = { main: await readManifest(MANIFEST), now: await readManifest(
 let failures = 0;
 for (const name of run) {
   const t0 = Date.now();
-  const manifest = NOW_STAGES.includes(name) ? manifests.now : manifests.main;
+  const manifest = LIVE_STAGES.includes(name) ? manifests.now : manifests.main;
   console.log(`\n▶ ${name}`);
   try {
     await SOURCES[name]();
@@ -3767,8 +3778,8 @@ for (const name of run) {
   }
 }
 await fs.mkdir(OUT, { recursive: true });
-if (run.some((n) => !NOW_STAGES.includes(n))) await fs.writeFile(MANIFEST, JSON.stringify(manifests.main, null, 2));
-if (run.some((n) => NOW_STAGES.includes(n))) {
+if (run.some((n) => !LIVE_STAGES.includes(n))) await fs.writeFile(MANIFEST, JSON.stringify(manifests.main, null, 2));
+if (run.some((n) => LIVE_STAGES.includes(n))) {
   await fs.mkdir(path.dirname(NOW_MANIFEST), { recursive: true });
   await fs.writeFile(NOW_MANIFEST, JSON.stringify(manifests.now, null, 2));
 }

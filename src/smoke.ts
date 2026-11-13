@@ -8,7 +8,8 @@ import type { Layer } from '@deck.gl/core';
 import { AqhiCommunity, Data, MONTHS, SmokeStation, interpYearly, km } from './data';
 import { barChart } from './charts';
 import { esc } from './html';
-import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, RecentSpan, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { airHistory, dayT, dayText, tDay } from './history';
 import { NOW_T, ageTag, ago, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, aqhiColor, aqhiText, aqhiWord, drawable, freshness, isNow, ms, nowBlock, skTime, tickAges } from './now';
 
 export const SMOKE_COLOR = '#e8a87c';
@@ -66,6 +67,32 @@ export function smokeLayer(data: Data): AtlasLayer {
   const comms = nowA?.communities ?? [];
   const HA = (v: number) => 2500 + Math.min(v, 11) * 9000;
   const isLive = (id?: string) => !!id?.startsWith('smoke-now');
+  // the recent span: each community's highest AQHI per day, from the daily record. On the map only: an index never shares
+  // the sparkline with smoke days, so the span's sparkline stays empty
+  const AFROM = y1 + 1;
+  const aDays = () => (airHistory()?.sorted ?? []).filter((d) => dayT(d) >= AFROM);
+  const airRecent: RecentSpan = {
+    feed: 'air', from: AFROM,
+    first: () => { const d = aDays()[0]; return d ? dayT(d) : null; },
+    covers: (t) => t >= AFROM && !!airHistory()?.days.has(tDay(t)),
+    spark: () => [],
+    build({ time }) {
+      if (time < AFROM) return [];
+      return [new ColumnLayer<any>({
+        id: 'smoke-hist-cols',
+        data: (airHistory()?.days.get(tDay(time)) ?? []).map((h) => ({ h, day: tDay(time) })),
+        getPosition: (x) => [x.h.lon, x.h.lat],
+        radius: 8000,
+        diskResolution: 20,
+        extruded: true,
+        getElevation: (x) => HA(x.h.max),
+        getFillColor: (x) => rgb(aqhiColor(x.h.max), 150),
+        material: { ambient: 0.65, diffuse: 0.5 },
+        pickable: true,
+        updateTriggers: { getElevation: tDay(time), getFillColor: tDay(time) },
+      })];
+    },
+  };
   const borrowers = (i: number) => Object.entries(nowA?.towns ?? {}).filter(([, [c]]) => c === i).map(([k]) => data.munis.find((m) => m.key === k)?.name ?? k);
   function airNow() {
     if (data.now.skipped) return '';
@@ -86,6 +113,7 @@ export function smokeLayer(data: Data): AtlasLayer {
     now: nowA ? {
       asOf: () => ms(nowA.asOf),
       archiveEnd: y1 + 0.99,
+      recent: airRecent,
       build({ focusedId }) {
         if (!drawable(nowA.asOf)) return [];
         const live = comms.map((c, i) => ({ c, i })).filter((x) => drawable(x.c.t));
@@ -223,7 +251,11 @@ export function smokeLayer(data: Data): AtlasLayer {
           const y = Math.floor(time);
           const top = nowA && isNow(time, l.range[1]) ? comms.filter((c) => drawable(c.t)).sort((a, b) => b.v - a.v)[0] : null;
           if (nowA && isNow(time, l.range[1])) hero(0, top ? aqhiText(top.v) : '–', top ? `highest AQHI right now, ${top.name} (${aqhiWord(top.v)})` : 'no AQHI reading in the past day');
-          else hero(0, mean[y] ? mean[y].v.toFixed(0) : '–', mean[y] ? `smoke days in ${y}, ${mean[y].n}-station average` : `no stations counted in ${y}`);
+          else if (nowA && time >= AFROM) {
+            const rows = airHistory()?.days.get(tDay(time)) ?? [];
+            const hi = rows.reduce<(typeof rows)[number] | null>((a, r) => (!a || r.max > a.max ? r : a), null);
+            hero(0, hi ? aqhiText(hi.max) : '–', hi ? `highest AQHI on ${dayText(tDay(time))}, ${hi.name} (provisional; not smoke days)` : `no AQHI record for ${dayText(tDay(time))}`);
+          } else hero(0, mean[y] ? mean[y].v.toFixed(0) : '–', mean[y] ? `smoke days in ${y}, ${mean[y].n}-station average` : `no stations counted in ${y}`);
           hero(1, String(worstYear), `smokiest year (${mean[worstYear] ? Math.round(mean[worstYear].v) : '–'} days)`);
           const a = avgOf(recent), b = avgOf(early);
           hero(2, a != null ? a.toFixed(0) : '–', `days a year, ${recent[0] ?? '–'}–${y1}${b != null ? ` (${b.toFixed(0)} before)` : ''}`);
@@ -235,6 +267,8 @@ export function smokeLayer(data: Data): AtlasLayer {
     describe(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('smoke')) return null;
+      // a recorded day: its panel is built from the tooltip
+      if (info.layer.id === 'smoke-hist-cols') return null;
       if (isLive(info.layer.id)) {
         if (o.a) return alertEvent(o.a, 'smoke', data, info.coordinate?.[0], info.coordinate?.[1]);
         const c: AqhiCommunity | undefined = o.c;
@@ -275,6 +309,7 @@ export function smokeLayer(data: Data): AtlasLayer {
     tooltip(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('smoke')) return null;
+      if (info.layer.id === 'smoke-hist-cols' && o.h) return `<b>${esc(o.h.name)}</b> <span class="tk">AQHI, provisional</span><br><span class="tk">${dayText(o.day)}</span> <span class="tv">highest ${aqhiText(o.h.max)}, ${aqhiWord(o.h.max)}</span><br><span class="tk">Hours reported</span> <span class="tv">${o.h.hours} of 24</span>`;
       if (isLive(info.layer.id)) {
         if (o.a) return alertTooltip(o.a);
         const c: AqhiCommunity | undefined = o.c;

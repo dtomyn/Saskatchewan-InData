@@ -9,8 +9,30 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, WaterSite } from './data';
 import { esc, safeUrl } from './html';
 import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { dayText, ensureFeed, waterHistory } from './history';
 
 export const WATER_COLOR = '#64b5f6';
+
+const addDay = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+/** Advisories listed each day since the daily record began: a bar per day, a dashed gap for a day with no run. */
+function waterHistoryHTML() {
+  const v = waterHistory();
+  if (!v || !v.sorted.length) return '';
+  const first = v.sorted[0], last = v.sorted.at(-1)!;
+  const days: string[] = [];
+  for (let d = first; d <= last; d = addDay(d, 1)) days.push(d);
+  const inEffect = (d: string) => v.rows.filter((r) => r.first <= d && r.last >= d).length;
+  const counts = days.map((d) => (v.covered.has(d) ? inEffect(d) : null));
+  const max = Math.max(1, ...counts.map((c) => c ?? 0));
+  // opened: first listed after the record's first day; closed: last listed before the record's last day
+  const opened = v.rows.filter((r) => r.first > first).length;
+  const closed = v.rows.filter((r) => r.last < last).length;
+  const gaps = counts.filter((c) => c == null).length;
+  return `<h3>Since the daily record began · ${dayText(first)}</h3>
+    <div class="hist-strip" style="--c:${WATER_COLOR}">${days.map((d, i) => counts[i] == null ? `<i class="gap" title="${dayText(d)}: no run, no record"></i>` : `<i${(v.covered.get(d) ?? 0) < 12 ? ' class="few"' : ''} style="height:${Math.max(2, (counts[i]! / max) * 100)}%" title="${dayText(d)}: ${counts[i]} listed${(v.covered.get(d) ?? 0) < 12 ? ` (only ${v.covered.get(d)} hourly runs)` : ''}"></i>`).join('')}</div>
+    <div class="hist-cap"><span>${dayText(first)}</span><span>${dayText(last)}</span></div>
+    <p class="note">${opened} advisories first listed and ${closed} no longer listed since the record began${gaps ? `; ${gaps} day${gaps === 1 ? '' : 's'} had no run (a gap, not a zero)` : ''}. The province and Indigenous Services Canada publish only what is in effect today, so there is no record from before ${dayText(first)}. Fainter bars are days with few hourly runs.</p>`;
+}
 
 export const WATER_KINDS: Record<WaterSite['k'], { label: string; short: string; color: string }> = {
   pdwa: { label: 'Precautionary drinking water advisory', short: 'Precautionary advisory', color: '#ffd166' },
@@ -109,6 +131,9 @@ export function waterLayer(data: Data): AtlasLayer {
       hero(1, String(by('boil')), 'boil water orders and advisories');
       hero(2, String(by('dnc')), 'do-not-consume advisories');
       hero(3, String(fn.length), `on First Nations (${fn.filter((s) => s.lt).length} long-term)`);
+      // the daily record (src/history.ts): advisories in effect each day since it began, fetched when the panel opens
+      const hist = el.appendChild(mk('div'));
+      ensureFeed('water', 0).then(() => { if (hist.isConnected) hist.innerHTML = waterHistoryHTML(); });
       const towns = data.munis.flatMap((m) => { const p = places.get(m.key); return p?.sys.length || p?.su ? [{ m, p: p! }] : []; });
       const longest = [...sites].sort((a, b) => (days(b) ?? -1) - (days(a) ?? -1)).slice(0, 10);
       const body = el.appendChild(mk('div'));

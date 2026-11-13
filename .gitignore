@@ -10,3 +10,5 @@ __pycache__/
 
 # live readings: rebuilt hourly by .github/workflows/live.yml, never committed
 public/data/now/
+public/data/history/
+.history-branch/

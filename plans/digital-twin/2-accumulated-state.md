@@ -65,6 +65,17 @@ So the record does not start on the day this ships:
 - Scrubbing rivers from the last HYDAT year to Now shows no hatched span.
 - `main` has no commits from the workflow.
 
+## Built
+
+Built with the recommended choices: a `data-history` branch, and an `archive` job in `live.yml` that holds `contents: write` (and runs no repository code). What the feeds keep, checked 2026-11-13: real-time gauges about 30 days (from 2026-10-14), AQHI observations about 3 days, weather alerts only what is current; CWFIS `public:hotspots` keeps every season (WFS 2.0, `srsName=CRS:84`, paged). `hydrometric-daily-mean` (official) runs to 2026-04-30 for Saskatchewan; it is not used, so provisional and official days are never mixed. Differences from the plan:
+
+- Rivers and AQHI days are recomputed whole from each feed's own window every run (yesterday and today; `history-backfill` reaches back once), not appended from the live files, so a missed run is filled as long as the feed still holds it. The gauge feed is paged one day at a time: deep offsets stall.
+- Hotspots are de-duplicated by position and minute: the feed's ids are not stable. A hotspot month in a big season is large (July 2026: 1.2 MB); it is fetched only when the timeline enters 2026 on Wildfires.
+- The build job checks out `data-history` read-only and fails if the branch exists but cannot be read, so the record is never restarted by accident; the archive is additive (nothing is deleted).
+- AQHI days draw on the map only, never on the smoke-day sparkline (an index is never charted with a count).
+- Drinking water stays a static layer; its panel shows the record as a bar per day (advisories listed), with gaps dashed. The Finder criterion waits for a year of history.
+- The plan's check "Scrubbing rivers from the last HYDAT year to Now shows no hatched span" cannot hold yet: HYDAT's annual peaks end in 2025 and the gauge feed reaches back only to 2026-10-14, so January to mid-October 2026 stays hatched ("no record yet") until next year. The record fills it forward from here.
+
 ## To confirm before building
 
 - A `data-history` branch (recommended) versus committing history to `main` or a second repository.
