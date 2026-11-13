@@ -20,15 +20,18 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 const INTRO_FROM = { center: [-106.0, 54.6] as [number, number], zoom: 3.6, pitch: 0, bearing: 0 };
 const HOME = { center: [-105.6, 51.75] as [number, number], zoom: 5.35, pitch: 45, bearing: -12 };
-const MUNI_LAYERS = new Set(['population', 'crime']);
+const MUNI_LAYERS = new Set(['population', 'crime', 'housing', 'jobs']);
 // static layers that draw town columns only while focused
-const MUNI_WHEN_FOCUSED = new Set(['hospitals', 'justice', 'camping'])
+const MUNI_WHEN_FOCUSED = new Set(['hospitals', 'justice', 'camping', 'needs', 'schools', 'internet', 'commute', 'community', 'newcomer', 'transit', 'doctors', 'childcare', 'industry', 'water'])
 // layer menu sections; any layer not listed lands in the last group
 const LAYER_GROUPS: { name: string; ids: string[] }[] = [
   { name: 'Base map', ids: ['province'] },
   { name: 'Justice & safety', ids: ['crime', 'justice', 'treaties'] },
-  { name: 'History on the timeline', ids: ['fires', 'tornadoes', 'rivers', 'climate'] },
-  { name: 'Places & living', ids: ['population', 'hospitals', 'camping', 'normals'] },
+  { name: 'History on the timeline', ids: ['fires', 'smoke', 'tornadoes', 'hail', 'drought', 'rivers', 'climate'] },
+  { name: 'Places & living', ids: ['population', 'housing', 'jobs', 'needs', 'schools', 'internet', 'camping', 'commute', 'normals', 'light'] },
+  { name: 'Health', ids: ['hospitals', 'doctors'] },
+  { name: 'Settling in', ids: ['community', 'newcomer', 'childcare', 'transit'] },
+  { name: 'Around the property', ids: ['industry', 'water', 'radon'] },
 ];
 
 type Mode = 'layer' | 'town' | 'finder' | 'event';
@@ -775,7 +778,14 @@ async function boot() {
   focus('province');
   requestAnimationFrame(frame);
   // a report's link to a layer opens it at today, where its story ends
-  window.addEventListener('atlas:layer', (e) => { const id = (e as CustomEvent).detail; const l = byId[id]; if (!l?.available) return; focus(id); if (!l.static) setTime(l.range[1]); });
+  window.addEventListener('atlas:layer', (e) => {
+    const id = (e as CustomEvent).detail; const l = byId[id]; if (!l?.available) return;
+    // a link out of the Town Finder (Workday Reach) leaves the Finder for the layer's own story
+    if (state.mode === 'finder') { state.mode = 'layer'; state.ranked = null; $('finder-btn').classList.remove('active'); }
+    focus(id); if (!l.static) setTime(l.range[1]);
+  });
+  // a layer's link into the Town Finder (Workday Reach's "Change what matters")
+  window.addEventListener('atlas:finder', () => { if (state.mode !== 'finder') openFinder(); });
   // a layer's own list opening one of its features (Floodplains' study list)
   window.addEventListener('atlas:event', (e) => { const ev = (e as CustomEvent).detail as AtlasEvent; if (ev?.title) openEvent(ev); });
   // a layer asking the camera to frame something (Weekend Reach framing the campgrounds a place can reach)
@@ -787,7 +797,7 @@ async function boot() {
   });
   window.addEventListener('atlas:town', (e) => { const k = (e as CustomEvent).detail; if (data.munis.some((m) => m.key === k)) openTown(k); });
   if (location.hash === '#sources') showSources();
-  for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));
+  for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping', 'commute']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));
   // The explainer video (video/render.py) drives the atlas through this handle; only set with ?film.
   if (new URLSearchParams(location.search).has('film'))
     (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME };

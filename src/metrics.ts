@@ -1,7 +1,23 @@
 // Derived, per-place statistics shared by the Town Report and the Town Finder.
-import { Data, Muni, NormalsStation, km } from './data';
+import { Data, Muni, NormalsStation, TaxPlace, km } from './data';
 import { nearestJustice } from './justice';
 import { nearestCamp } from './camping';
+import { PlaceNeeds, placeNeeds } from './needs';
+import { placeRegion, topIndustries } from './jobs';
+import { PlaceSchools, placeSchools } from './schools';
+import { PlaceNet, placeNet } from './internet';
+import { PlaceCommunity, placeCommunity } from './community';
+import { PlaceNewcomer, placeNewcomer } from './newcomer';
+import { PlaceDoctors, placeDoctors } from './doctors';
+import { PlaceChildcare, placeChildcare } from './childcare';
+import { PlaceSmoke, placeSmoke } from './smoke';
+import { PlaceHail, placeHail } from './hail';
+import { PlaceDrought, placeDrought } from './drought';
+import { PlaceIndustry, placeIndustry } from './industry';
+import { PlaceWater, placeWater } from './water';
+import { PlaceRadon, placeRadon } from './radon';
+import { PlaceLight, placeLight } from './light';
+import { PlaceTransit, placeTransit } from './transit';
 
 /** A climate-normal value borrowed from the nearest station that reports it. */
 export type NormalPick = { v: number; name: string; dist: number };
@@ -32,8 +48,36 @@ export type TownMetrics = {
   tornadoes50km: number; // tornadoes on record within 50 km (ECCC 1980–2009, Northern Tornadoes Project 2017 →)
   treaty: string | null; // the numbered treaty area the town centre is in
   climate: { name: string; dist: number; meanTemp: number; precip: number | null; trend: number | null } | null;
+  hail: PlaceHail | null; // Northern Hail Project storms (radar swaths 2022–2024, research database) passing within 50 km, and the largest hail among them
+  drought: PlaceDrought | null; // Canadian Drought Monitor: months at D2 (severe) or worse in the last ten years of monthly maps, and the latest month's category, at the town centre's 10 km cell
+  smoke: PlaceSmoke | null; // smoke days a year (24 h PM2.5 > 25 µg/m³), last ten years, borrowed from the nearest NAPS station within 150 km
   river: { name: string; dist: number; floodShare: number; record: { year: string; ratio: number } } | null;
   feels: Record<NormalVar, NormalPick | null>;
+  // home costs: Census 2021 for the place's own census subdivision, CMHC's survey for the centre named after it
+  homeValue: number | null; // median value of owned dwellings ($)
+  ownCost: number | null; // median monthly shelter cost, owners ($)
+  rentCost: number | null; // median monthly shelter cost, renters ($)
+  stir30: number | null; // % of households spending 30 %+ of income on shelter
+  rent30: number | null; // % of renter households doing so
+  marketRent: { r2: number; r1: number | null; vac: number | null; year: number; centre: string } | null; // CMHC, latest year
+  propTax: (TaxPlace & { year: number; edu: number }) | null; // Mill Rate Survey row (latest year) and the indicative tax on the census median home
+  needs: PlaceNeeds | null; // everyday services in town (OpenStreetMap, inside the municipal limits or just outside)
+  // jobs & income: the Labour Force Survey region the place lies in (latest year), and Census 2021 for the place itself
+  jobsRegion: { name: string; ur: number; year: number; combined: boolean } | null;
+  income: number | null; // median total household income, 2020 ($)
+  censusUnemp: number | null; // unemployment rate in census week, May 2021 (%)
+  industries: { name: string; pct: number }[]; // top three NAICS sectors by share of the labour force
+  internet: PlaceNet | null; // fixed speed tiers offered to homes in town, LTE and mobile networks (ISED National Broadband Data)
+  community: PlaceCommunity | null; // who lives here: immigrants, birthplaces, home languages, French, Indigenous identity (Census 2021); places of worship in town (OpenStreetMap)
+  newcomer: PlaceNewcomer | null; // nearest settlement agency, English classes, Service Canada office and SGI issuer by road (IRCC; OpenStreetMap)
+  childcare: PlaceChildcare | null; // nearest licensed child care centre and licensed care of any kind by road; centres and family homes in town (Ministry of Education)
+  doctors: PlaceDoctors | null; // nearest clinic and pharmacy by road, and how many are in town (ODHF; OpenStreetMap)
+  industry: PlaceIndustry | null; // wells and oil & gas facilities within 5 km of the town limits, pipelines within 2 km, the nearest NPRI site, a producing mine within 25 km (Ministry of Energy and Resources; NPRI; OpenStreetMap)
+  water: PlaceWater | null; // drinking water advisories in effect on the town water system and within 25 km of the town centre (Water Security Agency; Saskatchewan Health Authority; Indigenous Services Canada)
+  radon: PlaceRadon | null; // share of tested homes at or above 200 Bq/m³ in the place's 2007 health region and its own postal areas (Health Canada survey, 2009–2011)
+  light: PlaceLight | null; // daylight on Dec 21 / Mar 20 / Jun 21 and civil twilight (computed from latitude), geomagnetic latitude and aurora band (IGRF-14 dipole, NOAA SWPC Kp rule), drive to the nearest campground in a RASC dark-sky preserve
+  transit: PlaceTransit | null; // drive to the nearest airport with scheduled flights (OurAirports; OSRM), VIA and intercity bus stops in town (OpenStreetMap), city buses (GTFS; OpenStreetMap)
+  schools: PlaceSchools | null; // nearest elementary, high, French and post-secondary by road; schools in town (Ministry of Education)
 };
 
 function nearestNormal(stations: NormalsStation[], m: Muni, k: NormalVar, also: NormalVar[] = []): NormalPick | null {
@@ -84,10 +128,44 @@ function inPoly(lon: number, lat: number, poly: [number, number][][]) {
   return inside;
 }
 
+// ---------------------------------------------------------------------------------------------
+// The viewer's workplace ("I work in…"): one setting shared by Workday Reach and the Finder's Short commute,
+// remembered in this browser.
+
+const WORK_KEY = 'living-skies-atlas:work';
+export const COMMUTE_LIMITS = [15, 30, 45, 60];
+export type Work = { key: string | null; limit: number };
+let work: Work = { key: null, limit: 45 };
+try {
+  const w = JSON.parse(localStorage.getItem(WORK_KEY) ?? 'null');
+  if (w && typeof w === 'object') work = { key: typeof w.key === 'string' ? w.key : null, limit: COMMUTE_LIMITS.includes(w.limit) ? w.limit : 45 };
+} catch { /* storage unavailable */ }
+export const getWork = (): Work => work;
+/** Sets the workplace or the commute limit, remembers it, and tells the map and panels. */
+export function setWork(w: Partial<Work>) {
+  work = { ...work, ...w };
+  try { localStorage.setItem(WORK_KEY, JSON.stringify(work)); } catch { /* ignore */ }
+  window.dispatchEvent(new CustomEvent('atlas:work', { detail: work }));
+}
+
+let driveIdx: { data: Data; at: Map<string, number> } | null = null;
+/** The drive in minutes from one place's centre to another's (Workday Reach's OSRM table), or null. */
+export function driveMin(data: Data, from: string, to: string): number | null {
+  const C = data.commute;
+  if (!C) return null;
+  if (driveIdx?.data !== data) driveIdx = { data, at: new Map(C.keys.map((k, i) => [k, i])) };
+  const i = driveIdx.at.get(from), j = driveIdx.at.get(to);
+  return i == null || j == null ? null : C.min[i][j];
+}
+/** The workplace, if one is set and is one of the atlas's places. */
+export const workplace = (data: Data) => (work.key && data.commute && data.munis.some((m) => m.key === work.key) ? work.key : null);
+
 let cache: TownMetrics[] | null = null;
+let cacheData: Data | null = null;
 
 export function townMetrics(data: Data): TownMetrics[] {
   if (cache) return cache;
+  cacheData = data;
   const nowYear = new Date().getFullYear();
   cache = data.munis.map((m) => {
     // population
@@ -169,8 +247,20 @@ export function townMetrics(data: Data): TownMetrics[] {
     const cpark = ct?.camp.p != null ? data.camping!.parks[ct.camp.p].name : null;
     const parks50km = (data.camping?.parks ?? []).filter((p) => p.type !== 'historic' && km(m.lon, m.lat, p.c[0], p.c[1]) <= 50).length;
 
+    const hc = data.housing?.census[m.key];
+    const rs = data.housing?.rent[m.key];
+    const ry = latestYear(rs?.r2);
+    const marketRent = rs && ry ? { r2: rs.r2[ry], r1: rs.r1[ry] ?? null, vac: rs.vac?.[ry] ?? null, year: ry, centre: rs.centre } : null;
+
+    const pr = placeRegion(data, m.key);
+    const jt2 = data.jobs?.towns[m.key];
+
     return {
       muni: m, pop, popYear, popGrowth5y,
+      jobsRegion: pr && pr.ur != null && pr.year != null ? { name: pr.region.name, ur: pr.ur, year: pr.year, combined: pr.region.combined } : null,
+      income: jt2?.inc ?? null, censusUnemp: jt2?.cur ?? null, industries: data.jobs ? topIndustries(data.jobs, jt2?.ind) : [],
+      homeValue: hc?.value ?? null, ownCost: hc?.ownCost ?? null, rentCost: hc?.rentCost ?? null, stir30: hc?.stir30 ?? null, rent30: hc?.rent30 ?? null, marketRent,
+      propTax: data.tax?.places[m.key] ? { ...data.tax.places[m.key], year: data.tax.year, edu: data.tax.edu } : null,
       csi: cy ? cs!.csi![cy] : null, vcsi: cy ? cs?.vcsi?.[cy] ?? null : null, clear: cy ? cs?.clear?.[cy] ?? null : null, csiYear: cy ? String(cy) : null,
       police: svc ? { name: svc.name, rural: svc.level === 'rural' } : null,
       court: jt('court'),
@@ -178,7 +268,22 @@ export function townMetrics(data: Data): TownMetrics[] {
       hospital: htrip ? { name: fac[htrip.f].name, city: fac[htrip.f].city, min: htrip.min, km: htrip.km } : null,
       camp: ct ? { name: ct.camp.name, city: cpark, min: ct.min, km: ct.km } : null,
       parks50km,
+      needs: placeNeeds(data, m.key),
+      schools: placeSchools(data, m.key),
+      internet: placeNet(data, m.key),
+      community: placeCommunity(data, m.key),
+      newcomer: placeNewcomer(data, m.key),
+      doctors: placeDoctors(data, m.key),
+      childcare: placeChildcare(data, m.key),
+      industry: placeIndustry(data, m.key),
+      water: placeWater(data, m.key),
+      radon: placeRadon(data, m.key),
+      light: placeLight(data, m.key),
+      transit: placeTransit(data, m.key),
       fires25km, burnedHa50km, tornadoes50km, treaty, climate, river, feels,
+      smoke: placeSmoke(data, m),
+      hail: placeHail(data, m),
+      drought: placeDrought(data, m.key),
     };
   });
   return cache;
@@ -206,13 +311,34 @@ export const CRITERIA: Criterion[] = [
   { id: 'court', label: 'Court nearby', hint: 'Shorter drive to the nearest courthouse (circuit court points not counted)', value: (t) => mins(t.court), higherIsBetter: false, defaultWeight: 1 },
   { id: 'hospital', label: 'Close to a hospital', hint: 'Shorter drive to the nearest hospital', value: (t) => mins(t.hospital), higherIsBetter: false, defaultWeight: 3 },
   { id: 'camping', label: 'Close to camping', hint: 'Shorter drive to the nearest campground (provincial, national, regional or private)', value: (t) => mins(t.camp), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'buy', label: 'Affordable to buy', hint: 'Lower median value of owned dwellings (Census 2021)', value: (t) => t.homeValue, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'tax', label: 'Lower property tax', hint: 'Lower indicative annual property tax on the place’s 2021 census median home: value × 80 % × (residential municipal + education mill rate) ÷ 1000, from the latest Mill Rate Survey. Base tax, minimum tax and library levies are left out', value: (t) => t.propTax?.tax ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'rent', label: 'Affordable to rent', hint: 'Lower median monthly shelter cost paid by renters (Census 2021: rent plus utilities)', value: (t) => t.rentCost, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'jobs', label: 'Jobs nearby', hint: 'Lower unemployment in the place’s Labour Force Survey region (latest year; only five regions, so many places tie)', value: (t) => t.jobsRegion?.ur ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'income', label: 'Higher income', hint: 'Higher median household income (Census 2021, 2020 incomes)', value: (t) => t.income, higherIsBetter: true, defaultWeight: 0 },
   { id: 'fire', label: 'Low wildfire exposure', hint: 'Fewer fires started within 25 km since 1990', value: (t) => t.fires25km, higherIsBetter: false, defaultWeight: 1 },
+  { id: 'smoke', label: 'Fewer smoke days', hint: 'Fewer days a year when wildfire smoke (24-hour PM2.5 above 25 µg/m³) fouled the air, last ten years, at the nearest of Saskatchewan’s six air-monitoring stations within 150 km (borrowed: places farther away are left out)', value: (t) => t.smoke?.avg ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'hail', label: 'Less hail', hint: 'Fewer hailstorms on record whose swath passed within 50 km (Northern Hail Project radar swaths 2022–2024 and its research database; only three summers, and counts depend on radar coverage and who reported)', value: (t) => t.hail?.n ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'drought', label: 'Fewer drought months', hint: 'Fewer months in severe drought or worse (D2+) on the Canadian Drought Monitor’s monthly maps over the last ten years, at the 10 km map cell the town centre is in (a consensus map, not a measurement)', value: (t) => t.drought?.d2 ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'tornado', label: 'Fewer tornadoes', hint: 'Fewer tornadoes on record within 50 km (1980–2009 and 2017 on; counts depend on who or what was there to spot them)', value: (t) => t.tornadoes50km, higherIsBetter: false, defaultWeight: 0 },
   { id: 'warm', label: 'Milder', hint: 'Higher mean annual temperature (1991+, nearest long-record station)', value: (t) => t.climate?.meanTemp ?? null, higherIsBetter: true, defaultWeight: 1 },
   { id: 'sun', label: 'Sunnier', hint: 'More bright-sunshine hours a year (nearest station that measures it, within 150 km)', value: (t) => t.feels.sun?.v ?? null, higherIsBetter: true, defaultWeight: 1 },
   { id: 'snow', label: 'Less snow & frost', hint: 'Fewer frost days + cm of snowfall a year (30-yr normals)', value: (t) => (t.feels.frostDays && t.feels.snow ? t.feels.frostDays.v + t.feels.snow.v : null), higherIsBetter: false, defaultWeight: 0 },
   { id: 'growth', label: 'Growing', hint: 'Faster population growth over the last five years', value: (t) => t.popGrowth5y, higherIsBetter: true, defaultWeight: 2 },
-  { id: 'services', label: 'Services & amenities', hint: 'Larger place (shops, schools, services)', value: (t) => (t.pop ? Math.log10(t.pop) : null), higherIsBetter: true, defaultWeight: 2 },
+  { id: 'commute', label: 'Short commute', hint: 'Shorter drive to the place you work (set “I work in…” above; off until you do)', value: (t) => { const w = cacheData && workplace(cacheData); return w ? driveMin(cacheData!, t.muni.key, w) : null; }, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'school', label: 'School nearby', hint: 'Shorter drive to the nearest high school (or K-12 school) any family can attend (Ministry of Education list)', value: (t) => mins(t.schools?.h ?? null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'french', label: 'French schooling', hint: 'Shorter drive to the nearest Fransaskois school or school with a French immersion program', value: (t) => mins(t.schools?.f ?? null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'internet', label: 'Fast internet', hint: 'More of the homes in town offered fixed internet at 50/10 Mbps or better, wired or fixed wireless (ISED National Broadband Data: offered, not measured)', value: (t) => t.internet?.f50 ?? null, higherIsBetter: true, defaultWeight: 0 },
+  { id: 'diverse', label: 'Diverse community', hint: 'More of the people in town are immigrants (Census 2021: immigrants as a share of people in private households), so a newcomer is more likely to find others who made the same move. It measures where people were born, nothing else', value: (t) => t.community?.immShare ?? null, higherIsBetter: true, defaultWeight: 0 },
+  { id: 'newcomer', label: 'Newcomer services nearby', hint: 'Shorter drive to the nearest settlement agency (IRCC-funded, or on the province’s settlement list): free help to settle, find work and get credentials recognised', value: (t) => mins(t.newcomer?.s ?? null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'clinic', label: 'Clinic nearby', hint: 'Shorter drive to the nearest medical clinic, doctor’s office or primary health care centre (Saskatchewan Health Authority sites in Statistics Canada’s ODHF, and OpenStreetMap). A clinic nearby is not a doctor taking new patients', value: (t) => (t.doctors?.c ? t.doctors.c.min ?? t.doctors.c.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'childcare', label: 'Childcare nearby', hint: 'Shorter drive to the nearest licensed child care centre (Ministry of Education list). Licensed is not the same as a space being open: waitlists are common', value: (t) => (t.childcare?.c ? t.childcare.c.min ?? t.childcare.c.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'industry', label: 'Fewer industrial neighbours', hint: 'Fewer oil and gas wells (active, suspended or abandoned) and oil and gas facilities within 5 km of the town limits, industrial sites reporting to the National Pollutant Release Inventory within 5 km, licensed pipelines within 2 km and producing mines within 25 km, one count each. Neutral: these are also where many of the jobs are', value: (t) => t.industry?.score ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'radon', label: 'Lower radon', hint: 'Fewer of the tested homes in the place’s health region at or above Canada’s radon guideline, 200 Bq/m³ (Health Canada survey, 2009–2011; 2007 health regions, so neighbouring places tie). A regional odds, not a property’s: every home should get a long-term test', value: (t) => t.radon?.region.pct ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'winterday', label: 'Longer winter days', hint: 'More hours from sunrise to sunset on December 21, the shortest day (computed from latitude: the farther south, the longer; under an hour and a half between the far north and the border)', value: (t) => t.light?.d[0] ?? null, higherIsBetter: true, defaultWeight: 0 },
+  { id: 'airport', label: 'Near an airport', hint: 'Shorter drive to the nearest airport with scheduled passenger flights (OurAirports’ flag; Regina and Saskatoon have the most routes, the smaller ones a few flights a day or week)', value: (t) => (t.transit?.air ? t.transit.air.min ?? t.transit.air.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'carfree', label: 'Can live without a car', hint: 'What is mapped in town to get around without driving: a city bus (2), an intercity bus stop (1), a VIA Rail stop (1). Intercity bus is only what OpenStreetMap has (partial), and it says nothing about how often anything runs', value: (t) => t.transit?.carFree ?? null, higherIsBetter: true, defaultWeight: 0 },
+  { id: 'needs', label: 'Daily needs in town', hint: 'More of eight everyday services mapped in town (OpenStreetMap): grocery store, pharmacy, school, bank or credit union, gas station, library, post office, clinic', value: (t) => t.needs?.met ?? null, higherIsBetter: true, defaultWeight: 2 },
 ];
 
 export type Ranked = { t: TownMetrics; score: number; parts: Record<string, number | null> };
