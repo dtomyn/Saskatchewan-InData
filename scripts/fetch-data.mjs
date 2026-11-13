@@ -337,9 +337,41 @@ function edgeKm(lon, lat, geom) {
   return best;
 }
 
+/** The atlas's own places (tier 1, scripts/places.mjs). */
 async function getPlaces() {
-  if (!placesMemo) placesMemo = await readOut('municipalities');
+  if (!placesMemo) placesMemo = (await readOut('municipalities')).filter((p) => (p.tier ?? 1) === 1);
   return placesMemo;
+}
+/**
+ * Tier 2: every other city, town, village, resort village and northern municipality (from the `places` stage), [] when
+ * municipalities.json has none. Stages that cover them write a `small` table beside their `towns`, so the 62 places'
+ * tables never change; drive times are straight lines for them (no OSRM), labelled as such.
+ */
+let smallMemo;
+async function getSmallPlaces() {
+  if (!smallMemo) { try { smallMemo = (await readOut('municipalities')).filter((p) => p.tier === 2); } catch { smallMemo = []; } }
+  return smallMemo;
+}
+/** Tier-2 town limits: each place's own census subdivision outline from subdivisions.json ({} before that stage has run). */
+let smallAreaMemo;
+async function smallAreas() {
+  if (smallAreaMemo) return smallAreaMemo;
+  smallAreaMemo = {};
+  try {
+    const sub = await readOut('subdivisions');
+    const byId = Object.fromEntries(sub.csds.map((c) => [c.id, c.p]));
+    for (const p of await getSmallPlaces()) if (byId[p.csd]) smallAreaMemo[p.key] = byId[p.csd];
+  } catch { log('  subdivisions.json missing: small communities fall back to a radius'); }
+  return smallAreaMemo;
+}
+/**
+ * Straight-line "trips" for tier-2 places: the `keep` nearest targets as { f, min: null, km }, the same shape as
+ * `driveTimes` (min null = straight-line only), so the app labels them as distances, never drives.
+ */
+function straightTimes(places, targets, { keep = 1 } = {}) {
+  const towns = {};
+  for (const p of places) towns[p.key] = targets.map((t, j) => ({ f: j, min: null, km: round(distKm(p.lon, p.lat, t.lon, t.lat), 1) })).sort((a, b) => a.km - b.km).slice(0, keep);
+  return towns;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -454,6 +486,44 @@ async function censusProfile(tag, chars) {
   const prov = vals(await censusCSV(`${tag}province-47`, `${CENSUS_SDMX}/data/STC_CP,DF_PR/A5.2021A000247.1.${charKey}.1`));
   return { places, prov };
 }
+/**
+ * Every Saskatchewan census subdivision in the census profile's codelist (cities, towns, villages, rural municipalities,
+ * reserves…): [{ uid (7 digits), id (SDMX code), name, type, label }].
+ */
+let allCsdMemo;
+async function censusAllCSDs() {
+  if (allCsdMemo) return allCsdMemo;
+  const desc = (await cached('census/CL_DESC_CSD.xml', () => fetchBuf(`${CENSUS_SDMX}/codelist/STC_CP/CL_DESC_CSD/latest`, { headers: { 'Accept-Language': 'en' }, timeout: 300_000 }))).toString('utf8');
+  const out = [];
+  for (const m of desc.matchAll(/<structure:Code id="(2021A000547\d{5})">\s*<common:Name xml:lang="en">([^<]+)<\/common:Name>/g)) {
+    const label = m[2].replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, '’');
+    const [, name, type] = label.match(/^(.*), ([^,]+) \[Census subdivision\], Saskatchewan$/) ?? [];
+    if (name) out.push({ uid: m[1].slice(-7), id: m[1], name, type, label: label.replace(/ \[Census subdivision\], Saskatchewan$/, '') });
+  }
+  return (allCsdMemo = out);
+}
+/**
+ * The same characteristics for every Saskatchewan census subdivision: `{ [uid]: { v: { charId: value }, ne } }`. `ne`:
+ * an incompletely enumerated reserve or settlement (the first digit of Statistics Canada's data quality flag). Suppressed
+ * values are left out, never zero. Asked 25 subdivisions at a time.
+ */
+async function censusProfileAll(tag, chars) {
+  const every = await censusAllCSDs();
+  const charKey = chars.join('+');
+  const all = {};
+  for (let i = 0; i < every.length; i += 25) {
+    const part = every.slice(i, i + 25);
+    const rows = await censusCSV(`${tag}all-${String(i).padStart(3, '0')}-${part[0].uid}-${part.at(-1).uid}`, `${CENSUS_SDMX}/data/STC_CP,DF_CSD/A5.${part.map((c) => c.id).join('+')}.1.${charKey}.1`);
+    const by = {};
+    for (const r of rows) (by[r.REF_AREA] ??= []).push(r);
+    for (const c of part) {
+      const rs = by[c.id] ?? [], v = {};
+      for (const r of rs) if (chars.includes(String(r.CHARACTERISTIC)) && r.OBS_VALUE !== '' && !Number.isNaN(Number(r.OBS_VALUE))) v[r.CHARACTERISTIC] = Number(r.OBS_VALUE);
+      all[c.uid] = { v, ne: rs.some((r) => String(r.DATA_QUALITY_FLAG ?? '').startsWith('1')) };
+    }
+  }
+  return all;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Daily needs in OpenStreetMap (shared by the `needs` and `doctors` stages, so their pharmacy and clinic tests agree).
@@ -510,7 +580,158 @@ const SOURCES = {
     }
     log(`  ${out.length} of ${PLACES_LIST.length} places located`);
     placesMemo = out;
-    await writeOut('municipalities', out);
+    // tier 2: every other city, town, village, resort village and northern municipality, from its 2021 census
+    // subdivision (the same boundary service as the `subdivisions` stage); placed at the area centroid of its largest part
+    const CSD = 'https://geo.statcan.gc.ca/geo_wa/rest/services/2021/Cartographic_boundary_files/MapServer/9';
+    const feats = await arcgisAll(CSD, { where: "PRUID='47'", outFields: 'CSDUID,CSDNAME,CSDTYPE,LANDAREA', maxAllowableOffset: '0.001' }, 'csd-47-all', 250);
+    const KIND = { CY: 'City', T: 'Town', VL: 'Village', RV: 'Resort village', NV: 'Northern village', NT: 'Northern town', NH: 'Northern hamlet' };
+    const taken = new Set(out.map((p) => p.key));
+    const centroid = (ring) => {
+      let a = 0, x = 0, y = 0;
+      for (let i = 1; i < ring.length; i++) { const [x0, y0] = ring[i - 1], [x1, y1] = ring[i]; const f = x0 * y1 - x1 * y0; a += f; x += (x0 + x1) * f; y += (y0 + y1) * f; }
+      return a ? [x / (3 * a), y / (3 * a)] : ring[0];
+    };
+    const small = [];
+    for (const f of feats) {
+      const pr = f.properties, kind = KIND[pr.CSDTYPE];
+      if (!kind || !f.geometry) continue;
+      const name = String(pr.CSDNAME).replace(/ \((part|partie)\)$/i, '');
+      let key = normalizeName(name);
+      if (PLACE_KEYS.has(key)) continue; // one of the 62
+      if (taken.has(key)) key = `${key} ${pr.CSDTYPE.toLowerCase()}`;
+      if (taken.has(key)) { log(`  ✖ ${name} (${pr.CSDTYPE}): name taken twice`); continue; }
+      taken.add(key);
+      const ps = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+      const big = ps.map((q) => q[0]).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)))[0];
+      const [lon, lat] = centroid(big).map((v) => round(v));
+      const rd = lat >= 54.3 ? 'North' : lat >= 51.6 ? 'Central' : 'South';
+      const part = /\((part|partie)\)$/i.test(String(pr.CSDNAME));
+      small.push({ key, name: part ? `${name} (Saskatchewan part)` : name, rd, kind, lon, lat, tier: 2, csd: String(pr.CSDUID) });
+    }
+    small.sort((a, b) => a.key.localeCompare(b.key));
+    log(`  tier 2: ${small.length} other communities (${Object.values(KIND).map((k) => `${k} ${small.filter((p) => p.kind === k).length}`).filter((t) => !/ 0$/.test(t)).join(', ')})`);
+    smallMemo = small;
+    await writeOut('municipalities', [...out.map((p) => ({ ...p, tier: 1 })), ...small]);
+  },
+
+  // Every census subdivision in Saskatchewan (cities, towns, villages, resort villages, rural municipalities, reserves,
+  // northern municipalities, the unorganized north): Statistics Canada's 2021 cartographic boundary file (served by its
+  // MapServer as GeoJSON, like the town limits in `needs`), simplified, with the 2021 population and dwelling counts.
+  // The census layers tint the province by these outlines and read their values from each stage's `csd` table.
+  async subdivisions() {
+    await getProvince();
+    let places = [];
+    try { places = await getPlaces(); } catch { log('  municipalities.json missing: run the places stage to link the atlas’s own places'); }
+    const CSD = 'https://geo.statcan.gc.ca/geo_wa/rest/services/2021/Cartographic_boundary_files/MapServer/9';
+    const feats = await arcgisAll(CSD, { where: "PRUID='47'", outFields: 'CSDUID,CSDNAME,CSDTYPE,LANDAREA', maxAllowableOffset: '0.001' }, 'csd-47-all', 250);
+    const desc = Object.fromEntries((await censusAllCSDs()).map((c) => [c.uid, c]));
+    const cen = await censusProfileAll('subdiv-', ['1', '2', '4']);
+    const MUNI = /^(City|Town|Village|Northern village|Northern town|Northern hamlet)$/i;
+    const smallBy = Object.fromEntries((await getSmallPlaces()).map((q) => [q.csd, q]));
+    const types = {};
+    const csds = [];
+    for (const f of feats) {
+      const p = f.properties, uid = String(p.CSDUID);
+      if (!f.geometry) { log(`  ${p.CSDNAME}: no outline`); continue; }
+      const d = desc[uid];
+      const type = d?.type ?? p.CSDTYPE;
+      types[p.CSDTYPE] = type;
+      const ps = polys(f.geometry, 0.0015, 4);
+      if (!ps.length) { log(`  ${p.CSDNAME}: outline vanished when simplified`); continue; }
+      const big = ps.map((x) => x[0]).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)))[0];
+      const name = String(d?.name ?? p.CSDNAME).replace(/ \((part|partie)\)$/i, ' (Saskatchewan part)');
+      const c = cen[uid];
+      const o = { id: uid, n: name, t: p.CSDTYPE, c: [round(big.reduce((a, q) => a + q[0], 0) / big.length, 3), round(big.reduce((a, q) => a + q[1], 0) / big.length, 3)], km2: p.LANDAREA != null ? round(Number(p.LANDAREA), 1) : null };
+      if (c?.v[1] != null) o.pop = c.v[1];
+      if (c?.v[2] != null) o.pop16 = c.v[2];
+      if (c?.v[4] != null) o.dw = c.v[4];
+      if (c?.ne) o.ne = 1;
+      if (MUNI.test(type)) {
+        const key = normalizeName(name.replace(/\(Saskatchewan part\)/i, ''));
+        if (places.some((q) => q.key === key)) o.k = key;
+      }
+      const sp = smallBy[uid];
+      if (sp) o.s = sp.key;
+      o.p = ps;
+      csds.push(o);
+    }
+    csds.sort((a, b) => a.id.localeCompare(b.id));
+    const linked = csds.filter((c) => c.k).length;
+    log(`  ${csds.length} census subdivisions (${Object.entries(types).map(([k, v]) => `${v} ${csds.filter((c) => c.t === k).length}`).join(', ')}); ${linked} of ${places.length} atlas places linked, ${csds.filter((c) => c.s).length} small communities; ${csds.filter((c) => c.ne).length} not fully enumerated; ${csds.filter((c) => c.pop == null).length} with no population`);
+    await writeOut('subdivisions', {
+      source: 'Statistics Canada, 2021 Census Cartographic Boundary Files, census subdivisions',
+      censusSource: 'Statistics Canada, Census of Population 2021, Census Profile (98-401-X2021006) by census subdivision, via the census SDMX API',
+      types, csds,
+    });
+  },
+
+  // Inside the cities: Statistics Canada's 2021 census tracts for the Regina (705) and Saskatoon (725) metropolitan areas
+  // (the only tracted areas in Saskatchewan), with census profile values per tract (census SDMX API, DF_CT). A tract
+  // belongs to a city when its centre lies inside the city's own census subdivision (subdivisions.json); the rest of the
+  // metropolitan area is kept and marked with `out`. Values Statistics Canada suppressed are left out, never zero.
+  async tracts() {
+    const CT = 'https://geo.statcan.gc.ca/geo_wa/rest/services/2021/Cartographic_boundary_files/MapServer/11';
+    const feats = await arcgisAll(CT, { where: "PRUID='47'", outFields: 'CTUID,DGUID,CTNAME,LANDAREA', maxAllowableOffset: '0.0002' }, 'ct-47', 200);
+    const CITY = { 705: 'regina', 725: 'saskatoon' };
+    const CHARS = { 1: 'pop', 2: 'pop16', 1474: 'value', 1480: 'rentCost', 229: 'inc', 1451: 'hh', 1453: 'hh30', 1401: 'owners', 1402: 'renters', 1513: 'hhPop', 1515: 'imm', 1522: 'rec', 1388: 'indTot', 1389: 'ind' };
+    const sub = await readOut('subdivisions');
+    const outline = Object.fromEntries(Object.values(CITY).map((k) => [k, sub.csds.find((c) => c.k === k)?.p]));
+    const ids = feats.map((f) => String(f.properties.DGUID).replace('.', '_'));
+    const vals = {};
+    for (let i = 0; i < ids.length; i += 25) {
+      const part = ids.slice(i, i + 25);
+      const rows = await censusCSV(`tracts-${String(i).padStart(3, '0')}-${part[0]}`, `${CENSUS_SDMX}/data/STC_CP,DF_CT/A5.${part.join('+')}.1.${Object.keys(CHARS).join('+')}.1`);
+      for (const r of rows) if (r.OBS_VALUE !== '' && !Number.isNaN(Number(r.OBS_VALUE)) && CHARS[r.CHARACTERISTIC]) (vals[r.REF_AREA] ??= {})[CHARS[r.CHARACTERISTIC]] = Number(r.OBS_VALUE);
+    }
+    const tracts = [];
+    for (const f of feats) {
+      const p = f.properties, cma = String(p.CTUID).slice(0, 3), city = CITY[cma];
+      if (!city || !f.geometry) continue;
+      const ps = polys(f.geometry, 0.0003, 4);
+      const big = ps.map((x) => x[0]).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)))[0];
+      const c = [round(big.reduce((a, q) => a + q[0], 0) / big.length, 4), round(big.reduce((a, q) => a + q[1], 0) / big.length, 4)];
+      const lim = outline[city];
+      const inside = lim ? booleanPointInPolygon(c, { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: lim } }) : true;
+      const v = { ...(vals[String(p.DGUID).replace('.', '_')] ?? {}) };
+      if (v.hh && v.hh30 != null) v.stir30 = round((v.hh30 / v.hh) * 100, 1);
+      delete v.hh30;
+      tracts.push({ id: String(p.CTUID), city, ...(inside ? {} : { out: 1 }), c, km2: round(Number(p.LANDAREA), 2), ...v, p: ps });
+    }
+    tracts.sort((a, b) => a.id.localeCompare(b.id));
+    // the cities' own neighbourhood outlines, for names on the tract map (no figures are joined to them). Neither city
+    // publishes police-reported crime by neighbourhood with a reuse licence (Regina Police's area tables and 90-day
+    // occurrence map carry none; Saskatoon Police publish city-wide figures only), so none is read.
+    const NB = [
+      { city: 'regina', url: 'https://opengis.regina.ca/arcgis/rest/services/OpenData/Subdivisions/MapServer/5', name: 'SUB_NAME', skip: /^UNDEVELOP/i },
+      { city: 'saskatoon', url: 'https://gisext.saskatoon.ca/arcgisod/rest/services/OD/LandSurface/MapServer/0', name: 'NeighbourhoodName', skip: null },
+    ];
+    const hoods = [];
+    for (const nb of NB) {
+      try {
+        const fs_ = await arcgisAll(nb.url, { where: '1=1', outFields: nb.name, maxAllowableOffset: '0.0002' }, `hoods-${nb.city}`, 1000);
+        const byName = new Map();
+        for (const f of fs_) {
+          const n = String(f.properties[nb.name] ?? '').replace(/\s+/g, ' ').trim();
+          if (!n || !f.geometry || nb.skip?.test(n)) continue;
+          const title = n === n.toUpperCase() ? n.toLowerCase().replace(/(^|[\s(\-/.])([a-z])/g, (_, x, c) => x + c.toUpperCase()) : n;
+          const e = byName.get(title) ?? { city: nb.city, n: title, p: [] };
+          e.p.push(...polys(f.geometry, 0.0003, 4));
+          byName.set(title, e);
+        }
+        hoods.push(...byName.values());
+        log(`  ${nb.city}: ${byName.size} neighbourhoods`);
+      } catch (e) { log(`  ${nb.city} neighbourhoods unavailable: ${e.message}`); }
+    }
+    for (const k of Object.values(CITY)) log(`  ${k}: ${tracts.filter((t) => t.city === k && !t.out).length} tracts in the city, ${tracts.filter((t) => t.city === k && t.out).length} in the rest of the metropolitan area; ${tracts.filter((t) => t.city === k && t.value == null).length} with no dwelling value`);
+    await writeOut('tracts', {
+      source: 'Statistics Canada, 2021 Census Cartographic Boundary Files, census tracts',
+      censusSource: 'Statistics Canada, Census of Population 2021, Census Profile (98-401-X2021006) by census tract, via the census SDMX API',
+      hoodSources: {
+        regina: { source: 'City of Regina, Subdivisions (OpenData MapServer)', licence: 'Open Government Licence – City of Regina', licenceUrl: 'https://www.regina.ca/city-government/open-data/open-government-licence/' },
+        saskatoon: { source: 'City of Saskatoon, Neighbourhoods (OD LandSurface MapServer)', licence: 'City of Saskatoon open data: “free to use, re-use and redistribute”', licenceUrl: 'https://www.saskatoon.ca/services-residents/connect-your-city/open-data' },
+      },
+      tracts, hoods,
+    });
   },
 
   // Canadian National Fire Database (CWFIS, Natural Resources Canada): every reported fire's start point.
@@ -1020,6 +1241,8 @@ const SOURCES = {
     const CH = { [-1]: 'a', 0: 'b', 1: 'c', 2: 'd', 3: 'e', 4: 'f', 5: 'n' };
     const months = [], maps = [], share = [];
     const towns = Object.fromEntries(places.map((p) => [p.key, '']));
+    const smallP = await getSmallPlaces();
+    const small = Object.fromEntries(smallP.map((p) => [p.key, '']));
     const raw = await pool(items, 4, async (it) => {
       const mosaic = JSON.stringify({ mosaicMethod: 'esriMosaicLockRaster', lockRasterIds: [it.id] });
       const q = new URLSearchParams({ bbox: `${x0},${y0},${x1},${y1}`, bboxSR: '3857', imageSR: '3857', size: `${W},${H}`, format: 'bsq', pixelType: 'S8', interpolation: 'RSP_NearestNeighbor', mosaicRule: mosaic, f: 'image' });
@@ -1047,6 +1270,7 @@ const SOURCES = {
       maps.push(rle);
       share.push(s.map((v) => Math.round((v / total) * 1000) / 10));
       for (const p of places) { const k = cell(p.lon, p.lat); towns[p.key] += k < 0 ? 'a' : (CH[px[k]] ?? 'a'); }
+      for (const p of smallP) { const k = cell(p.lon, p.lat); small[p.key] += k < 0 ? 'a' : (CH[px[k]] ?? 'a'); }
     });
     log(`${months.length} monthly maps, ${months[0]} to ${months.at(-1)}; grid ${W}×${H}`);
     await writeOut('drought', {
@@ -1059,8 +1283,8 @@ const SOURCES = {
       // per month: the map (run-length: an optional count, then a letter: a none, b–f D0–D4, n not analyzed) and the
       // share of the province's area at D0 or worse, D1+, D2+, D3+, D4, and not analyzed (%)
       months, maps, share,
-      // per place, one letter a month: the category of the grid cell its centre is in
-      towns,
+      // per place, one letter a month: the category of the grid cell its centre is in (`small`: the tier-2 communities)
+      towns, small,
     });
   },
 
@@ -1409,6 +1633,15 @@ const SOURCES = {
     delete prov.hh30;
     const missing = PLACES_LIST.filter((p) => !census[normalizeName(p.name)]).map((p) => p.name);
     log(`  census: ${keys.length} places matched${missing.length ? `; no CSD for ${missing.join(', ')}` : ''}`);
+    // every census subdivision, for the province-wide tint and the census-only report (keyed by CSD uid)
+    const csd = {};
+    for (const [uid, c] of Object.entries(await censusProfileAll('housing-', Object.keys(CHARS)))) {
+      const o = pick(c.v);
+      if (o.hh && o.hh30 != null) o.stir30 = round((o.hh30 / o.hh) * 100, 1);
+      delete o.hh30;
+      if (Object.keys(o).length) csd[uid] = o;
+    }
+    log(`  census: ${Object.keys(csd).length} subdivisions with values, ${Object.values(csd).filter((o) => o.value != null).length} with a dwelling value`);
     const noValue = keys.filter((k) => census[k].value == null);
     if (noValue.length) log('  census: dwelling value suppressed for', noValue.join(', '));
 
@@ -1444,7 +1677,7 @@ const SOURCES = {
     await writeOut('housing', {
       source: 'Statistics Canada, Census of Population 2021, Census Profile (98-401-X2021006) by census subdivision, via the census SDMX API',
       rentSource: 'CMHC Rental Market Survey via Statistics Canada Tables 34-10-0133-01 (average rents), 34-10-0130-01 and 34-10-0132-01 (vacancy rates); row and apartment structures of three units and over, October',
-      prov, census, rent,
+      prov, census, rent, csd,
     });
   },
 
@@ -1637,6 +1870,13 @@ const SOURCES = {
       if (!f) { log(`  jobs: ${p.name} is in no economic region`); continue; }
       towns[p.key] = { r: regionOfER[f.properties.ERUID] ?? null };
     }
+    // tier 2: only the LFS region (its census figures are in `csd`, by its census subdivision)
+    const small = {};
+    for (const p of await getSmallPlaces()) {
+      let f = inER(p);
+      for (const d of [0.02, 0.05, 0.1]) { if (f) break; f = [[d, 0], [-d, 0], [0, d], [0, -d]].map(([dx, dy]) => inER({ lon: p.lon + dx, lat: p.lat + dy })).find(Boolean); }
+      if (f) small[p.key] = { r: regionOfER[f.properties.ERUID] ?? null };
+    }
 
     // --- Census 2021: median total household income (2020 incomes), unemployment rate (May 2021), labour force by industry
     const NAICS = { 2262: 'Agriculture, forestry, fishing & hunting', 2263: 'Mining, oil & gas', 2264: 'Utilities', 2265: 'Construction', 2266: 'Manufacturing', 2267: 'Wholesale trade', 2268: 'Retail trade', 2269: 'Transportation & warehousing', 2270: 'Information & culture', 2271: 'Finance & insurance', 2272: 'Real estate', 2273: 'Professional & technical services', 2274: 'Management of companies', 2275: 'Admin & support services', 2276: 'Education', 2277: 'Health care & social assistance', 2278: 'Arts, entertainment & recreation', 2279: 'Accommodation & food', 2280: 'Other services', 2281: 'Public administration' };
@@ -1655,6 +1895,12 @@ const SOURCES = {
     };
     for (const [k, p] of Object.entries(cp.places)) if (towns[k]) Object.assign(towns[k], { csd: p.csd }, profile(p.v));
     const sk = profile(cp.prov);
+    const csd = {};
+    for (const [uid, c] of Object.entries(await censusProfileAll('jobs-', ['229', '2230', '2261', ...nIds]))) {
+      const o = profile(c.v);
+      if (Object.keys(o).length) csd[uid] = o;
+    }
+    log(`  census: ${Object.keys(csd).length} subdivisions with values, ${Object.values(csd).filter((o) => o.inc != null).length} with an income`);
     const noInc = Object.keys(towns).filter((k) => towns[k].inc == null);
     if (noInc.length) log('  jobs: no census income for', noInc.join(', '));
     const ys = Object.values(lfs).flatMap((e) => Object.keys(e.ur).map(Number));
@@ -1665,7 +1911,7 @@ const SOURCES = {
       areaSource: 'Statistics Canada, 2021 Census Cartographic Boundary Files, economic regions',
       naics: Object.values(NAICS),
       prov: { ur: prov.ur ?? {}, er: prov.er ?? {}, pr: prov.pr ?? {}, ...sk },
-      regions, towns,
+      regions, towns, small, csd,
     });
   },
 
@@ -1710,9 +1956,12 @@ const SOURCES = {
       all.push({ lon, lat, k, name, osm: `${e.type[0]}${e.id}` });
     }
 
-    const towns = {}, areas = {}, used = new Set();
-    for (const p of places) {
-      const a = area[p.key];
+    const towns = {}, areas = {}, used = new Set(), small = {};
+    const sAreas = await smallAreas();
+    const smallP = await getSmallPlaces();
+    for (const p of [...places, ...smallP]) {
+      const tier2 = p.tier === 2;
+      const a = tier2 ? (sAreas[p.key] ? { name: p.name, geom: { type: 'MultiPolygon', coordinates: sAreas[p.key] } } : null) : area[p.key];
       const n = KINDS.map(() => 0);
       const take = (s, i) => { n[s.k]++; used.add(i); };
       if (a) {
@@ -1722,11 +1971,11 @@ const SOURCES = {
           if (s.lon < w || s.lon > e0 || s.lat < s0 || s.lat > n0) return;
           if (booleanPointInPolygon([s.lon, s.lat], f) || edgeKm(s.lon, s.lat, a.geom) <= SLACK_KM) take(s, i);
         });
-        towns[p.key] = { n, how: 'csd', csd: a.name };
-        areas[p.key] = polys(a.geom, 0.0004, 4);
+        if (tier2) small[p.key] = { n, how: 'csd' };
+        else { towns[p.key] = { n, how: 'csd', csd: a.name }; areas[p.key] = polys(a.geom, 0.0004, 4); }
       } else {
         all.forEach((s, i) => { if (distKm(p.lon, p.lat, s.lon, s.lat) <= FALLBACK_KM) take(s, i); });
-        towns[p.key] = { n, how: 'radius', r: FALLBACK_KM };
+        (tier2 ? small : towns)[p.key] = { n, how: 'radius', r: FALLBACK_KM };
       }
     }
     // keep only the sites that count for some place: [lon, lat, kind, name, osm id]
@@ -1741,7 +1990,8 @@ const SOURCES = {
       areaSource: 'Statistics Canada, 2021 Census Cartographic Boundary Files, census subdivisions (municipal limits)',
       asOf: new Date().toISOString().slice(0, 10),
       kinds: KINDS.map((k) => k.id), slackKm: SLACK_KM, fallbackKm: FALLBACK_KM,
-      sites, towns, areas,
+      // `small`: the tier-2 communities, counted inside their own census subdivision (outline in subdivisions.json)
+      sites, towns, areas, small,
     });
   },
 
@@ -1780,12 +2030,18 @@ const SOURCES = {
     const p = await driveTimes(places, police, 'police', { keep: 1 });
     const towns = {};
     for (const pl of places) towns[pl.key] = { court: remap(c, courts)[pl.key] ?? [], police: remap(p, police)[pl.key] ?? [] };
+    // tier 2: straight lines only (min null), labelled in the app
+    const smallP = await getSmallPlaces();
+    const sc = { towns: straightTimes(smallP, courts, { keep: 3 }) }, sp = { towns: straightTimes(smallP, police) };
+    const small = {};
+    for (const pl of smallP) small[pl.key] = { court: remap(sc, courts)[pl.key] ?? [], police: remap(sp, police)[pl.key] ?? [] };
     await writeOut('justice', {
       source: 'OpenStreetMap contributors (amenity=courthouse, police, prison; ODbL), via Overpass',
       routing: c.routed ? 'OSRM (router.project-osrm.org) on OpenStreetMap roads, typical free-flow driving' : 'straight-line',
       routingSource: c.routed ? 'Drive times: OSRM demo server, © OpenStreetMap contributors (ODbL)' : null,
       asOf: new Date().toISOString().slice(0, 10),
-      sites, towns,
+      // `small`: tier-2 communities, nearest by straight line (min null)
+      sites, towns, small,
     });
   },
 
@@ -1811,11 +2067,13 @@ const SOURCES = {
     log(`  ${facilities.length} facilities, ${hosp.length} counted as hospitals`);
     const d = await driveTimes(places, hosp, 'hosp', { keep: 3 });
     const towns = Object.fromEntries(Object.entries(d.towns).map(([k, v]) => [k, v.map((t) => ({ ...t, f: hosp[t.f].i }))]));
+    // tier 2: the three nearest hospitals by straight line (min null)
+    const small = Object.fromEntries(Object.entries(straightTimes(await getSmallPlaces(), hosp, { keep: 3 })).map(([k, v]) => [k, v.map((t) => ({ ...t, f: hosp[t.f].i }))]));
     await writeOut('hospitals', {
       source: 'Statistics Canada, Open Database of Healthcare Facilities (ODHF v1), Saskatchewan rows',
       routing: d.routed ? 'OSRM (router.project-osrm.org) on OpenStreetMap roads, typical free-flow driving' : 'straight-line',
       routingSource: d.routed ? 'Drive times: OSRM demo server, © OpenStreetMap contributors (ODbL)' : null,
-      facilities, towns,
+      facilities, towns, small,
     });
   },
 
@@ -1907,11 +2165,13 @@ const SOURCES = {
     // --- in town: inside the place's limits (needs.json) or within the same slack, like Daily needs
     let needs = null;
     try { needs = await readOut('needs'); } catch { log('  needs.json missing: run the needs stage for town limits'); }
+    const sAreas = await smallAreas();
     const inTown = (p, s) => {
-      const a = needs?.areas?.[p.key];
+      const a = p.tier === 2 ? sAreas[p.key] : needs?.areas?.[p.key];
       if (a?.length) {
+        if (Math.abs(s.lat - p.lat) > 0.3 || Math.abs(s.lon - p.lon) > 0.45) return false;
         const geom = { type: 'MultiPolygon', coordinates: a };
-        return booleanPointInPolygon([s.lon, s.lat], { type: 'Feature', properties: {}, geometry: geom }) || edgeKm(s.lon, s.lat, geom) <= (needs.slackKm ?? 1);
+        return booleanPointInPolygon([s.lon, s.lat], { type: 'Feature', properties: {}, geometry: geom }) || edgeKm(s.lon, s.lat, geom) <= (needs?.slackKm ?? 1);
       }
       return distKm(p.lon, p.lat, s.lon, s.lat) <= (needs?.fallbackKm ?? 3);
     };
@@ -1948,6 +2208,18 @@ const SOURCES = {
     }
     if (withHosp.length) log(`  no clinic mapped but a hospital in town (inferred doctors): ${withHosp.join(', ')}`);
 
+    // --- tier 2: the same counts in town, the nearest clinic and pharmacy by straight line, and the in-town hospital rule
+    const smallP = await getSmallPlaces();
+    const small = Object.fromEntries(smallP.map((p) => [p.key, { nc: clinics.filter((s) => inTown(p, s)).length, np: pharmacies.filter((s) => inTown(p, s)).length }]));
+    for (const [k, list] of Object.entries(sets))
+      for (const [key, v] of Object.entries(straightTimes(smallP, list))) if (v[0]) small[key][k] = { ...v[0], f: list[v[0].f].i };
+    for (const p of smallP) {
+      if (small[p.key].nc || !hosp?.small) continue;
+      const tr = (hosp.small[p.key] ?? []).find((t) => hosp.facilities[t.f]?.hospital && inTown(p, hosp.facilities[t.f]));
+      if (tr) { const f = hosp.facilities[tr.f]; small[p.key].h = { n: f.name, min: null, km: tr.km, lon: f.lon, lat: f.lat }; }
+    }
+    log(`  tier 2: ${smallP.filter((p) => small[p.key].nc).length} of ${smallP.length} small communities have a clinic in town`);
+
     await writeOut('doctors', {
       source: 'Statistics Canada, Open Database of Healthcare Facilities (ODHF v1), Saskatchewan ambulatory health care services and non-hospital health centres',
       osmSource: 'OpenStreetMap contributors (amenity=clinic, doctors; healthcare=clinic, doctor, nurse, centre; amenity=pharmacy, healthcare=pharmacy; ODbL), via Overpass',
@@ -1960,7 +2232,8 @@ const SOURCES = {
       disruptionsUrl: 'https://www.saskhealthauthority.ca/news-events/service-disruptions',
       asOf: new Date().toISOString().slice(0, 10),
       slackKm: needs?.slackKm ?? 1, fallbackKm: needs?.fallbackKm ?? 3,
-      sites, towns,
+      // `small`: tier-2 communities; their nearest clinic and pharmacy are straight-line distances (min null)
+      sites, towns, small,
     });
   },
 
@@ -2019,11 +2292,13 @@ const SOURCES = {
     // --- in town: inside the place's limits (needs.json) or within its slack, like Daily needs
     let needs = null;
     try { needs = await readOut('needs'); } catch { log('  needs.json missing: run the needs stage for town limits'); }
+    const sAreas = await smallAreas();
     const inTown = (p, s) => {
-      const a = needs?.areas?.[p.key];
+      const a = p.tier === 2 ? sAreas[p.key] : needs?.areas?.[p.key];
       if (a?.length) {
+        if (Math.abs(s.lat - p.lat) > 0.3 || Math.abs(s.lon - p.lon) > 0.45) return false;
         const geom = { type: 'MultiPolygon', coordinates: a };
-        return booleanPointInPolygon([s.lon, s.lat], { type: 'Feature', properties: {}, geometry: geom }) || edgeKm(s.lon, s.lat, geom) <= (needs.slackKm ?? 1);
+        return booleanPointInPolygon([s.lon, s.lat], { type: 'Feature', properties: {}, geometry: geom }) || edgeKm(s.lon, s.lat, geom) <= (needs?.slackKm ?? 1);
       }
       return distKm(p.lon, p.lat, s.lon, s.lat) <= (needs?.fallbackKm ?? 3);
     };
@@ -2075,6 +2350,15 @@ const SOURCES = {
     }
     const none = places.filter((p) => !towns[p.key].nc).map((p) => p.name);
     log(`  ${places.length - none.length} of ${places.length} places have a licensed centre in town${none.length ? `; none: ${none.join(', ')}` : ''}`);
+    // tier 2: counts in town; the nearest centre and nearest licensed care by straight line (min null)
+    const smallP = await getSmallPlaces();
+    const small = Object.fromEntries(smallP.map((p) => {
+      const c = centres.filter((s) => s.lon != null && inTown(p, s)), h = homes.filter((s) => inTown(p, s));
+      return [p.key, { nc: c.length, nh: h.length, ni: c.filter((s) => s.i).length + h.filter((s) => s.i).length }];
+    }));
+    for (const [key, v] of Object.entries(straightTimes(smallP, real))) if (v[0]) small[key].c = { ...v[0], f: real[v[0].f].i };
+    for (const [key, v] of Object.entries(straightTimes(smallP, any))) if (v[0]) { const t = any[v[0].f]; small[key].a = { ...v[0], f: t.i, h: t.h }; }
+    log(`  tier 2: ${smallP.filter((p) => small[p.key].nc).length} of ${smallP.length} small communities have a licensed centre in town`);
 
     await writeOut('childcare', {
       source: 'Government of Saskatchewan, Ministry of Education: regulated child care facilities (saskatchewan.ca, “Find a child care provider in my community”)',
@@ -2088,7 +2372,8 @@ const SOURCES = {
       spaces: null,
       asOf: new Date().toISOString().slice(0, 10),
       slackKm: needs?.slackKm ?? 1, fallbackKm: needs?.fallbackKm ?? 3,
-      centres, homes: homeSites, towns,
+      // `small`: tier-2 communities; their nearest centre and care are straight-line distances (min null)
+      centres, homes: homeSites, towns, small,
     });
   },
 
@@ -2691,11 +2976,14 @@ const SOURCES = {
     // --- per place: its health region (centre in the 2007 outline) and its postal areas: urban FSAs that cover a
     // quarter or more of the town limits' outline points (or hold its centre), else the rural FSA its centre is in
     const inFeat = (pt, geom) => booleanPointInPolygon(pt, { type: 'Feature', properties: {}, geometry: geom });
-    const towns = {};
-    for (const p of places) {
+    const towns = {}, small = {};
+    const sAreas = await smallAreas();
+    const smallP = await getSmallPlaces();
+    for (const p of [...places, ...smallP]) {
+      const tier2 = p.tier === 2;
       let ri = hrFeat.findIndex((f) => booleanPointInPolygon([p.lon, p.lat], f));
       if (ri < 0) ri = hrFeat.map((f, i) => ({ i, d: edgeKm(p.lon, p.lat, f.geometry) })).sort((a, b) => a.d - b.d)[0].i;
-      const area = needs?.areas?.[p.key];
+      const area = tier2 ? sAreas[p.key] : needs?.areas?.[p.key];
       const pts = area?.length ? area.flatMap((poly) => poly[0]) : [];
       const own = fsaFeats.filter((f) => f.properties.CFSAUID[1] !== '0').filter((f) => inFeat([p.lon, p.lat], f.geometry) || (pts.length && pts.filter((pt) => inFeat(pt, f.geometry)).length >= pts.length / 4) || (() => {
         // a small urban FSA wholly inside the town: its own points fall inside the limits
@@ -2707,7 +2995,7 @@ const SOURCES = {
       const f = own.length ? own : fsaFeats.filter((g) => inFeat([p.lon, p.lat], g.geometry)).map((g) => g.properties.CFSAUID);
       const t = tally();
       for (const id of f) { const b = byFSA[id]; t.n += b.n; t.hi += b.hi; t.vhi += b.vhi; t.vals.push(...b.vals); }
-      towns[p.key] = { r: ri, f, ...(f.length ? { fn: t.n, fhi: t.hi } : {}) };
+      (tier2 ? small : towns)[p.key] = { r: ri, f, ...(f.length ? { fn: t.n, fhi: t.hi } : {}) };
     }
     const few = Object.entries(towns).filter(([, t]) => t.fn != null && t.fn < FEW).length;
     log(`  ${prov.n} Saskatchewan homes: ${regions.length} health regions, ${fsas.length} FSAs; ${Object.keys(towns).length} places (${few} on fewer than ${FEW} FSA tests)`);
@@ -2718,7 +3006,7 @@ const SOURCES = {
       url: DATASET, reportUrl: 'https://www.canada.ca/en/health-canada/services/environmental-workplace-health/reports-publications/radiation/cross-canada-survey-radon-concentrations-homes-final-report-health-canada-2012.html',
       testUrl: 'https://www.canada.ca/en/health-canada/services/health-risks-safety/radiation/radon/test-your-home.html',
       guide: GUIDE, oldGuide: OLD_GUIDE, few: FEW, years: '2009–2011',
-      prov: summary(prov), regions, fsas, towns,
+      prov: summary(prov), regions, fsas, towns, small,
     });
   },
 
@@ -2870,6 +3158,14 @@ const SOURCES = {
       const t = dr.towns[p.key]?.[0];
       towns[p.key] = { d: day(p.lat, p.lon), c: civil(p.lat, p.lon), ml, kp: kpOverhead(ml), a: band(ml), ...(t ? { dk: { f: t.f, min: t.min, km: t.km } } : {}) };
     }
+    // tier 2: the same, with the dark-sky campground by straight line (min null)
+    const smallP = await getSmallPlaces();
+    const sdr = straightTimes(smallP, targets);
+    const small = {};
+    for (const p of smallP) {
+      const ml = mlat(p.lat, p.lon), t = sdr[p.key]?.[0];
+      small[p.key] = { d: day(p.lat, p.lon), c: civil(p.lat, p.lon), ml, kp: kpOverhead(ml), a: band(ml), ...(t ? { dk: { f: t.f, min: null, km: t.km } } : {}) };
+    }
     const dec = places.map((p) => towns[p.key].d[0]);
     log(`  ${places.length} places: Dec 21 daylight ${Math.min(...dec).toFixed(2)}–${Math.max(...dec).toFixed(2)} h; geomagnetic ${Math.min(...places.map((p) => towns[p.key].ml))}–${Math.max(...places.map((p) => towns[p.key].ml))}°; ${targets.length} preserve campgrounds`);
     await writeOut('light', {
@@ -2880,7 +3176,7 @@ const SOURCES = {
       kp: KP,
       rasc: { url: RASC_URL, sites: sites.map(({ parks, ...s }) => s) },
       routing: dr.routed ? 'OSRM (router.project-osrm.org) on OpenStreetMap roads, typical free-flow driving' : 'straight-line distance (OSRM unavailable)',
-      preserves, unmapped, targets, rows, cells, curves, towns,
+      preserves, unmapped, targets, rows, cells, curves, towns, small,
     });
   },
 
@@ -3140,11 +3436,13 @@ const SOURCES = {
     // --- schools in town: inside the place's limits (needs.json) or within the same slack, like Daily needs
     let needs = null;
     try { needs = await readOut('needs'); } catch { log('  needs.json missing: run the needs stage for "schools in town"'); }
+    const sAreas = await smallAreas();
     const inTown = (p, s) => {
-      const a = needs?.areas?.[p.key];
+      const a = p.tier === 2 ? sAreas[p.key] : needs?.areas?.[p.key];
       if (a?.length) {
+        if (p.tier === 2 && (Math.abs(s.lat - p.lat) > 0.3 || Math.abs(s.lon - p.lon) > 0.45)) return false;
         const geom = { type: 'MultiPolygon', coordinates: a };
-        return booleanPointInPolygon([s.lon, s.lat], { type: 'Feature', properties: {}, geometry: geom }) || edgeKm(s.lon, s.lat, geom) <= (needs.slackKm ?? 1);
+        return booleanPointInPolygon([s.lon, s.lat], { type: 'Feature', properties: {}, geometry: geom }) || edgeKm(s.lon, s.lat, geom) <= (needs?.slackKm ?? 1);
       }
       return distKm(p.lon, p.lat, s.lon, s.lat) <= (needs?.fallbackKm ?? 3);
     };
@@ -3246,6 +3544,12 @@ const SOURCES = {
     const dp_ = await driveTimes(places, pse, 'pse', { keep: 1 });
     routed &&= dp_.routed;
     for (const [key, v] of Object.entries(dp_.towns)) if (v[0]) towns[key].p = v[0];
+    // tier 2: schools in town; the nearest of each kind by straight line (min null)
+    const smallP = await getSmallPlaces();
+    const small = Object.fromEntries(smallP.map((p) => [p.key, { n: schools.filter((s) => open(s) && inTown(p, s)).length }]));
+    for (const [k, list] of Object.entries(sets))
+      for (const [key, v] of Object.entries(straightTimes(smallP, list))) if (v[0]) small[key][k] = { ...v[0], f: list[v[0].f].i };
+    for (const [key, v] of Object.entries(straightTimes(smallP, pse))) if (v[0]) small[key].p = v[0];
 
     await writeOut('schools', {
       source: 'Government of Saskatchewan, Ministry of Education, K-12 schools (SchoolsAndDivisions: public, separate, Francophone and band schools), Saskatchewan GeoHub; schools it lacks from OpenStreetMap contributors (amenity=school; ODbL), via Overpass',
@@ -3254,7 +3558,7 @@ const SOURCES = {
       routingSource: routed ? 'Drive times: OSRM demo server, © OpenStreetMap contributors (ODbL)' : null,
       asOf: new Date().toISOString().slice(0, 10),
       inferKm: INFER_KM,
-      schools, pse, towns,
+      schools, pse, towns, small,
     });
   },
 
@@ -3361,14 +3665,16 @@ const SOURCES = {
     // --- per place: the households inside its town limits (as Daily needs counts them)
     let needs = null;
     try { needs = await readOut('needs'); } catch { log('  needs.json missing: run the needs stage for town limits'); }
-    const towns = {};
-    for (const p of places) {
-      const a = needs?.areas?.[p.key];
+    const towns = {}, small = {};
+    const sAreas = await smallAreas();
+    for (const p of [...places, ...(await getSmallPlaces())]) {
+      const tier2 = p.tier === 2;
+      const a = tier2 ? sAreas[p.key] : needs?.areas?.[p.key];
       const geom = a?.length ? { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: a } } : null;
       const near = phh.filter((q) => Math.abs(q.lat - p.lat) < 0.25 && Math.abs(q.lon - p.lon) < 0.4);
       const inside = near.filter((q) => (geom ? booleanPointInPolygon([q.lon, q.lat], geom) : distKm(p.lon, p.lat, q.lon, q.lat) <= (needs?.fallbackKm ?? 3)));
       const hh = inside.reduce((s, q) => s + q.hh, 0);
-      if (!inside.length) { log(`  ✖ ${p.name}: no pseudo-households inside its limits`); continue; }
+      if (!inside.length) { if (!tier2) log(`  ✖ ${p.name}: no pseudo-households inside its limits`); continue; }
       // share of households whose top tier is each tier (index 0–5), any fixed and by wire
       const dist = (k) => { const d = [0, 0, 0, 0, 0, 0]; for (const q of inside) d[q[k]] += q.hh; return d.map((v) => pc(v, hh) ?? 0); };
       const best = (k) => Math.max(...inside.map((q) => q[k]));
@@ -3379,7 +3685,7 @@ const SOURCES = {
       for (const id of hs) { const h = hexIsp.get(id); if (!h) continue; h.mob.forEach((x) => mob.add(x)); h.tech.forEach((x) => tech.add(x)); h.isp.forEach((x) => isp.add(x)); }
       const ispList = {};
       for (const s of isp) { const [n, t] = s.split('|'); (ispList[n] ??= []).push(t); }
-      towns[p.key] = {
+      (tier2 ? small : towns)[p.key] = {
         hh: Math.round(hh), n: inside.length,
         comb: dist('comb'), wired: dist('wired'), lte: pc(inside.filter((q) => q.lte).reduce((s, q) => s + q.hh, 0), hh),
         best: best('comb'), bestW: best('wired'), centre: [c.comb, c.wired, c.lte],
@@ -3389,13 +3695,13 @@ const SOURCES = {
     const sum = (k) => phh.reduce((s, q) => s + (k(q) ? q.hh : 0), 0);
     const allHh = sum(() => true);
     const prov = { hh: Math.round(allHh), f50: pc(sum((q) => q.comb === 5), allHh), w50: pc(sum((q) => q.wired === 5), allHh), lte: pc(sum((q) => q.lte), allHh) };
-    log(`  ${hexes.length} hexagons; Saskatchewan: ${prov.f50}% of households offered 50/10 (${prov.w50}% by wire), ${prov.lte}% reached by LTE; ${Object.keys(towns).length} places`);
+    log(`  ${hexes.length} hexagons; Saskatchewan: ${prov.f50}% of households offered 50/10 (${prov.w50}% by wire), ${prov.lte}% reached by LTE; ${Object.keys(towns).length} places, ${Object.keys(small).length} small communities`);
     await writeOut('internet', {
       source: 'Innovation, Science and Economic Development Canada, National Broadband Data (NBD PHH Speeds, NBD Map hexagon data) and Pseudo-Household Demographic Distribution 2021, open.canada.ca',
       licence: 'Open Government Licence – Canada',
       asOf: new Date().toISOString().slice(0, 10),
       tiers: ['none', 'under 5/1', '5/1', '10/2', '25/5', '50/10'],
-      prov, hexes, towns,
+      prov, hexes, towns, small,
     });
   },
 
@@ -3441,6 +3747,16 @@ const SOURCES = {
     const census = {};
     for (const [k, p] of Object.entries(cp.places)) census[k] = { csd: p.csd, ...profile(p.v) };
     const prov = profile(cp.prov);
+    // every census subdivision (top three birthplaces and languages only, to keep the file small)
+    const csd = {};
+    for (const [uid, c] of Object.entries(await censusProfileAll('community-', [...new Set([...Object.values(C), ...BIRTH, ...LANG])]))) {
+      const o = profile(c.v);
+      o.birth = o.birth.slice(0, 3); o.lang = o.lang.slice(0, 3);
+      if (!o.birth.length) delete o.birth;
+      if (!o.lang.length) delete o.lang;
+      if (Object.keys(o).length) csd[uid] = o;
+    }
+    log(`  census: ${Object.keys(csd).length} subdivisions with values`);
     const noImm = places.filter((p) => census[p.key]?.imm == null).map((p) => p.name);
     if (noImm.length) log(`  community: immigrant counts suppressed or no CSD for ${noImm.join(', ')}`);
 
@@ -3485,7 +3801,7 @@ const SOURCES = {
       worshipSource: 'OpenStreetMap contributors (amenity=place_of_worship, religion, denomination; ODbL), via Overpass',
       asOf: new Date().toISOString().slice(0, 10),
       religions: RELIGIONS, slackKm: needs?.slackKm ?? 1,
-      prov, towns, sites,
+      prov, towns, sites, csd,
     });
   },
 
@@ -4256,7 +4572,7 @@ async function statcanTable(pid) {
 
 // `now` stands for the four live stages
 const wanted = process.argv.slice(2).flatMap((n) => (n === 'now' ? NOW_STAGES : [n]));
-const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'climate', 'smoke', 'drought', 'crops', 'normals', 'projections', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'power', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
+const order = ['province', 'places', 'subdivisions', 'tracts', 'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'climate', 'smoke', 'drought', 'crops', 'normals', 'projections', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'power', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
 const unknown = wanted.filter((n) => !order.includes(n));
 if (unknown.length) { console.error(`Unknown stage(s): ${unknown.join(', ')}`); process.exit(1); }
 const run = wanted.length ? order.filter((n) => wanted.includes(n)) : order.filter((n) => !ON_REQUEST.includes(n));

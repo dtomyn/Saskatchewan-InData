@@ -17,6 +17,7 @@ import { openSources, sourcesOpen } from './sources';
 import { Ranked } from './metrics';
 import { SCENARIO_LABEL, ScenarioKind, clearScenario, closedSites, scenarioOn, setClosed } from './scenario';
 import { esc } from './html';
+import { renderSmallReport } from './small';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -169,7 +170,7 @@ function render() {
     const live = l.now && isNow(state.time, l.range[1]) ? l.now.build(c) : inSpan ? rec!.build(c) : [];
     for (const dl of [...l.build(c), ...live]) {
       // flat layers go under the basemap labels; 3D columns stay on top
-      const flat = /scars|embers|base|stems/.test(dl.id);
+      const flat = /scars|embers|base|stems|-csd$/.test(dl.id);
       out.push(flat && firstLabelLayer ? dl.clone({ beforeId: firstLabelLayer } as any) : dl);
     }
   }
@@ -228,12 +229,25 @@ function render() {
         pickable: true,
         parameters: { depthCompare: 'always' },
       } as any),
+      // the small communities (tier 2): fainter, smaller dots that open their own report
+      new ScatterplotLayer<any>({
+        id: 'towns-small',
+        data: data.small,
+        getPosition: (m) => [m.lon, m.lat],
+        getRadius: 700,
+        radiusMinPixels: 1.6,
+        radiusMaxPixels: 4,
+        getFillColor: [154, 216, 255, 150],
+        stroked: false,
+        pickable: true,
+        parameters: { depthCompare: 'always' },
+      } as any),
     );
   }
 
   // pulsing ring on the selected town
   if (state.selected) {
-    const m = data.munis.find((x) => x.key === state.selected);
+    const m = data.munis.find((x) => x.key === state.selected) ?? data.small.find((x) => x.key === state.selected);
     if (m) {
       const p = (performance.now() % 1600) / 1600;
       out.push(
@@ -290,6 +304,8 @@ function onHover(info: PickingInfo) {
   if (id.startsWith('finder')) {
     const r = info.object as Ranked & { i: number };
     html = `<b>#${r.i + 1} ${r.t.muni.name}</b><br><span class="tk">Score</span> <span class="tv">${Math.round(r.score * 100)}</span><br><span class="tk">Click for town report</span>`;
+  } else if (id === 'towns-small') {
+    html = `<b>${esc(info.object.name)}</b><br><span class="tk">${esc(info.object.kind)} · small community</span><br><span class="tk">Click for its report</span>`;
   } else if (id.startsWith('towns')) {
     html = `<b>${info.object.name}</b><br><span class="tk">Click for town report</span>`;
   } else {
@@ -313,7 +329,7 @@ function onClick(info: PickingInfo) {
   if (owner?.click?.(info)) return;
   // a town (a dot, or a town's column on any layer) opens its report
   const key = o.m?.key ?? o.t?.muni?.key ?? (info.layer?.id.startsWith('towns') ? o.key : null);
-  if (key) { openTown(key); return; }
+  if (key) { openPlace(key); return; }
   // anything else opens its details: the layer's own description, or one built from its tooltip
   const rec = featureDetails(owner, info);
   if (rec) openEvent(rec);
@@ -326,6 +342,29 @@ function featureDetails(owner: AtlasLayer | null | undefined, info: PickingInfo)
   if (own) return own;
   const html = owner.tooltip(info);
   return html ? fromTooltip(owner, html, (info.coordinate as [number, number] | undefined) ?? null) : null;
+}
+
+/** A Town Report for one of the 62, or the small-community report for a tier-2 place. */
+function openPlace(key: string) {
+  if (data.munis.some((m) => m.key === key)) openTown(key);
+  else if (data.small.some((m) => m.key === key)) openSmall(key);
+}
+
+function openSmall(key: string) {
+  const m = data.small.find((x) => x.key === key);
+  if (!m) return;
+  state.selected = key;
+  const prevMode = state.mode === 'town' ? 'layer' : state.mode;
+  const fromEvent = state.mode === 'event' ? state.event : null;
+  state.mode = 'town';
+  swapPanel(() => {
+    panelHandle = null;
+    renderSmallReport($('panel'), data, key, {
+      onClose: () => { state.selected = null; if (fromEvent) openEvent(fromEvent); else if (prevMode === 'finder') openFinder(); else showLayerPanel(); },
+      onTown: (k) => openTown(k),
+    });
+  });
+  map.flyTo({ center: [m.lon, m.lat], zoom: Math.max(map.getZoom(), 9), pitch: 55, duration: 1600, essential: true });
 }
 
 function openTown(key: string) {
@@ -357,7 +396,7 @@ function openFinder() {
     panelHandle = null;
     renderFinder($('panel'), data, weights, {
       onChange: (ranked) => { state.ranked = ranked; },
-      onPick: (key) => openTown(key),
+      onPick: (key) => openPlace(key),
       onClose: () => closeFinder(),
     });
   });
@@ -904,12 +943,12 @@ async function boot() {
     map.fitBounds(b, { padding: { top: 90, bottom: 150, left: 60, right }, maxZoom: 9, pitch: 50, bearing: map.getBearing(), duration: 1800, essential: true });
   });
   window.addEventListener('atlas:scenario', (e) => onScenario((e as CustomEvent).detail as ScenarioKind | null));
-  window.addEventListener('atlas:town', (e) => { const k = (e as CustomEvent).detail; if (data.munis.some((m) => m.key === k)) openTown(k); });
+  window.addEventListener('atlas:town', (e) => openPlace((e as CustomEvent).detail));
   if (location.hash === '#sources') showSources();
   for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping', 'commute']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));
   // The explainer video (video/render.py) drives the atlas through this handle; only set with ?film.
   if (new URLSearchParams(location.search).has('film'))
-    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario };
+    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openSmall, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario };
 }
 
 boot();

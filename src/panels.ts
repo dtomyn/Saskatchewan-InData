@@ -3,6 +3,8 @@ import { Data, Muni, NowRiverRow, RiverStation, fmt, km } from './data';
 import { ageTag, alertList, alertsInEffect, aqhiText, aqhiWord, drawable, outlookList, plainAge } from './now';
 import { lineChart } from './charts';
 import { townProjectionRow } from './projections';
+import { smallView } from './small';
+import { cityTractsHTML, drawCityTracts } from './tracts';
 import { esc } from './html';
 import { startReach, campsWithin } from './camping';
 import { CRITERIA, CareTrip, TownMetrics, driveMin, getWork, rankTowns, setWork, townMetrics, workplace } from './metrics';
@@ -65,6 +67,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     <div class="kicker" style="--c:#ffffff">${esc(m.kind)} · ${esc(m.rd)} Saskatchewan${t.treaty ? ` · ${esc(t.treaty)} territory` : ''}</div>
     <h2>${esc(m.name)}</h2>
     ${opts.rank ? `<p class="lede">Ranks <b>#${opts.rank.pos} of ${opts.rank.of}</b> in your Town Finder (score ${Math.round(opts.rank.score * 100)}).</p>` : ''}
+    ${cityTractsHTML(data, key)}
     ${rightNow(data, m, metric, na, link)}
     <h3>Safety &amp; justice</h3>
     <div class="metric-grid">
@@ -125,6 +128,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
   el.querySelectorAll<HTMLElement>('[data-layer]').forEach((b) => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('atlas:layer', { detail: b.dataset.layer }))));
 
   requestAnimationFrame(() => {
+    drawCityTracts(el, data, key);
     const p = data.population?.munis[key];
     if (p && el.querySelector('#tr-pop')) {
       const all = Object.entries(p.pop).map(([y, v]) => ({ x: +y, y: v }));
@@ -448,13 +452,16 @@ function feelsRow(t: TownMetrics, data: Data, metric: MetricFn, na: string) {
 
 // ---------------------------------------------------------------------------------------------
 
+/** The Finder's "Include small communities" switch: off by default, kept while the page is open. */
+let includeSmall = false;
+
 export function renderFinder(
   el: HTMLElement,
   data: Data,
   weights: Record<string, number>,
   opts: { onChange: (ranked: ReturnType<typeof rankTowns>) => void; onPick: (key: string) => void; onClose: () => void },
 ) {
-  const towns: TownMetrics[] = townMetrics(data);
+  let towns: TownMetrics[] = townMetrics(data);
   el.innerHTML = `
     <button class="close-x" aria-label="Close Town Finder">×</button>
     <div class="kicker" style="--c:#a99bff">Town Finder</div>
@@ -469,9 +476,10 @@ export function renderFinder(
       <button class="chip" data-preset="quiet">Quiet &amp; small</button>
       <button class="chip" data-preset="newcomer">New to Saskatchewan</button>
     </div>
+    ${data.small.length ? `<label class="small-sw" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px;font-size:12.5px;color:var(--ink-2)"><input type="checkbox" class="small-on"${includeSmall ? ' checked' : ''}> Include small communities (${data.small.length} more towns and villages: census, hazards and what is mapped in town; no crime, and no drive-time criteria, since their distances are straight lines)</label>` : ''}
     <h3>Your ranking</h3>
     <ol class="rank-list"></ol>
-    <p class="note">Scores are relative (0–100 = worst to best among the atlas’s places on your criteria). Missing data (a place with no police series, say) is skipped rather than penalized. Your weights and workplace are saved in this browser.</p>`;
+    <p class="note">Scores are relative (0–100 = worst to best among the atlas’s places on your criteria). Missing data (a place with no police series, say) is skipped rather than penalized, so a place scored on fewer of your criteria says so (“scored on 9 of 14”); small communities have no crime series and no drive times, so with those weighted they are ranked on the rest alone. Your weights and workplace are saved in this browser.</p>`;
   el.querySelector('.close-x')!.addEventListener('click', opts.onClose);
 
   const wEl = el.querySelector('.weights')!;
@@ -506,12 +514,19 @@ export function renderFinder(
     newcomer: { ...zero, rent: 3, jobs: 3, commute: 3, diverse: 2, needs: 2, hospital: 2, clinic: 2, newcomer: 2, safety: 2, internet: 1 },
   };
 
+  const smallBox = el.querySelector<HTMLInputElement>('.small-on');
+  const pickTowns = () => { towns = includeSmall ? townMetrics(smallView(data)) : townMetrics(data); };
+  pickTowns();
+  smallBox?.addEventListener('change', () => { includeSmall = smallBox.checked; pickTowns(); refresh(); });
   const refresh = () => {
     const ranked = rankTowns(towns, weights);
     const w = workplace(data);
     const to = (k: string) => { if (!w) return ''; const v = driveMin(data, k, w); return k === w ? ' · where you work' : v != null ? ` · ${v} min to work` : ''; };
+    // missing criteria are skipped, never penalized: say how many of the weighted ones a place was scored on
+    const weighted = CRITERIA.filter((c) => (weights[c.id] ?? 0) > 0);
+    const cover = (r: (typeof ranked)[number]) => { const n = weighted.filter((c) => r.parts[c.id] != null).length; return n < weighted.length ? ` · scored on ${n} of ${weighted.length}` : ''; };
     list.innerHTML = ranked
-      .map((r, i) => `<li data-key="${r.t.muni.key}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.t.muni.name)}</span><br><span class="rd">${r.t.pop ? fmt.int(r.t.pop) + ' people' : ''}${r.t.csi != null ? ` · CSI ${r.t.csi.toFixed(0)}` : ''}${to(r.t.muni.key)}</span></span><span><div class="bar"><i style="width:${Math.round(r.score * 100)}%"></i></div><div class="bar-v">${Math.round(r.score * 100)}</div></span></li>`)
+      .map((r, i) => `<li data-key="${r.t.muni.key}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.t.muni.name)}</span><br><span class="rd">${r.t.muni.tier === 2 ? `${esc(r.t.muni.kind.toLowerCase())} · ` : ''}${r.t.pop ? fmt.int(r.t.pop) + ' people' : ''}${r.t.csi != null ? ` · CSI ${r.t.csi.toFixed(0)}` : ''}${to(r.t.muni.key)}${cover(r)}</span></span><span><div class="bar"><i style="width:${Math.round(r.score * 100)}%"></i></div><div class="bar-v">${Math.round(r.score * 100)}</div></span></li>`)
       .join('');
     opts.onChange(ranked);
   };

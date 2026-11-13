@@ -16,6 +16,8 @@ So build it in three steps, each useful alone.
 
 ## 5a. Census layers for every subdivision (M)
 
+**Status: built (2026-11-13).** 951 subdivisions. The outlines come from StatCan's boundary MapServer (layer 9, the service `needs` already uses for town limits), not the shapefile: same 2021 file, no download to parse. `csd` tables are keyed by CSD uid. Jobs & income keeps its LFS region tint by default; the chip *Income by subdivision* swaps it in. Only one Saskatchewan reserve carries the incompletely-enumerated flag in 2021 (Kinoosao-Thomas Clark 204).
+
 The census helpers already work for any CSD (`censusCSDs`, `censusProfile`); only the 62 are kept.
 
 1. New stage `subdivisions`: Statistics Canada's 2021 cartographic boundary file for Saskatchewan's CSDs, read with the shapefile parser already written for the `radon` stage, simplified with `polys()`, written as `subdivisions.json` (id, name, type, centre, outline).
@@ -30,6 +32,8 @@ Rules:
 - A rural municipality surrounds its towns and excludes them: say so in the tooltip.
 
 ## 5b. A report for every community (L)
+
+**Status: built (2026-11-13), Node-only.** 417 tier-2 communities; their nearest hospital, police, court, clinic, pharmacy, child care and schools are straight lines, labelled as such. Moved: `jobs` (region), `needs`, `doctors`, `childcare`, `schools`, `justice`, `hospitals`, `internet`, `drought`, `radon`, `light`; `fires`, `tornadoes`, `hail` and `smoke` needed nothing (the app measures them from location). Left for the 62: `camping`, `transit`, `commute`, `crime`, `tax`, `crops`, `industry`, `water`, `newcomer`, `projections`; the report lists them. Data is 9.5 MB in all, so per-place tables stay keyed objects.
 
 Two tiers of place:
 
@@ -53,6 +57,8 @@ Steps:
 Inferred values multiply here (borrowed stations, rural RCMP detachments standing in for a village, a hospital counted as a clinic). Each keeps its label.
 
 ## 5c. Inside the cities (L)
+
+**Status: built (2026-11-13), census only.** Stage `tracts`: 2021 census tracts (DF_CT serves them; DA is served too) for the Regina and Saskatoon CMAs, 53 and 56 inside the cities, plus each city's neighbourhood outlines for names (Regina Subdivisions under the Open Government Licence – City of Regina; Saskatoon Neighbourhoods, the city's "free to use, re-use and redistribute" statement). The two Town Reports open with a tract map (home value, income, renters, stretched, immigrants, Indigenous identity). **No neighbourhood crime:** Regina Police publish counts by 35 areas of their own (yearly workbooks) and a 90-day occurrence FeatureServer tagged by subdivision, neither with a reuse licence; Saskatoon Police publish city-wide figures only, and their crime map's terms bar reuse. If Regina Police grant a licence, the FeatureServer would need a daily history like the `now-*` stages.
 
 Regina and Saskatoon are each one dot with one crime rate and one home value.
 
