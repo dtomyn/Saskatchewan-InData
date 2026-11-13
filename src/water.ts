@@ -10,6 +10,8 @@ import type { Data, WaterSite } from './data';
 import { esc, safeUrl } from './html';
 import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { dayText, ensureFeed, waterHistory } from './history';
+import { metric, link } from './report-kit';
+import { kmText } from './industry';
 
 export const WATER_COLOR = '#64b5f6';
 
@@ -183,4 +185,29 @@ export function waterLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Drinking water: an advisory on the town's own water system, and how many are in effect within 25 km (any kind of
+ * system: lodges, campgrounds, rural pipelines, First Nations). A point-in-time fact. */
+export function waterRows(p: PlaceWater, data: Data) {
+  const W = data.water!;
+  const c = WATER_COLOR;
+  const s = p.sys[0];
+  const kinds = (Object.keys(WATER_KINDS) as (keyof typeof WATER_KINDS)[]).map((k) => [k, p.near.filter((x) => x.s.k === k).length] as const).filter(([, n]) => n);
+  const nearest = p.near.find((x) => !p.sys.includes(x.s));
+  const sysSub = s
+    ? `since ${esc(s.d ?? 'n/a')} (${lastedText(waterDays(s, W))})${s.part ? ` · affects ${esc(s.part)}` : ''}${s.why ? `<br>${esc(s.why)}` : ''}${p.sys.length > 1 ? `<br>and ${p.sys.length - 1} more` : ''}`
+    : p.su ? 'listed for the town system (Water Security Agency)' : `none listed on ${esc(W.provAsOf)} (Water Security Agency)`;
+  const nearSub = p.near.length
+    ? `advisories in effect: ${kinds.map(([k, n]) => `${n} ${esc(WATER_KINDS[k].short.toLowerCase())}`).join(', ')}${nearest ? `<br>nearest other: ${esc(nearest.s.n)}, ${kmText(nearest.km)}` : ''}`
+    : 'no advisory in effect nearby';
+  return `<h3>Drinking water</h3>
+    <div class="metric-grid">
+      ${metric('Town water system', s ? WATER_KINDS[s.k].color : c, s ? esc(WATER_KINDS[s.k].short) : p.su ? 'Advisory' : 'No advisory', sysSub)}
+      ${metric(`Within ${W.nearKm} km`, c, String(p.near.length), nearSub)}
+    </div>
+    <p class="note" style="margin-top:6px">Advisories in effect on ${esc(W.provAsOf)}; they come and go. No advisory covers a private well: testing it is the owner’s job. Some advisories are placed by a place or lake named in the listing, so the count within ${W.nearKm} km is approximate.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('water', '🚰 Drinking water on the map')}</div>`;
 }

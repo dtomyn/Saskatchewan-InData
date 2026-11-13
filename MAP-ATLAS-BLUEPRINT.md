@@ -138,7 +138,8 @@ src/layers.ts              the registry: buildLayers() in menu order
 src/curated-events.ts      CURATED_EVENTS
 src/data.ts                types for every JSON file, loadAll(), formatters (fmt), helpers (km, lowerBound…)
 src/metrics.ts             per-place derived metrics, CRITERIA, rankPlaces()
-src/panels.ts              Place Report and Place Finder panels, weights in localStorage
+src/panels.ts              Place Report and Place Finder panels; each layer's report rows live in its module
+src/report-kit.ts          the report's tile, link and trip helpers, shared by panels and layers
 src/charts.ts              d3 barChart, lineChart, scatterChart, stripes, rampCSS — all with a playhead
 src/sources.ts             the Data & sources view
 src/<deepfinder>.ts        optional deep finder (rail, funnel, report, shortlist)

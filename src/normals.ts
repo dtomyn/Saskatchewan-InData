@@ -7,6 +7,8 @@ import { AtlasLayer, NO_DEPTH, rgb, kicker, heroStats, mk, sourceLine } from './
 import { NormalVar } from './metrics';
 import { esc } from './html';
 import { rampCSS } from './charts';
+import type { TownMetrics } from './metrics';
+import { metric, na } from './report-kit';
 
 export function normalsLayer(data: Data): AtlasLayer {
   const color = '#c5e86c';
@@ -134,4 +136,21 @@ export function normalsLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** "What it feels like": 30-year climate normals, each from the nearest station that reports it. */
+export function feelsRow(t: TownMetrics, data: Data) {
+  if (!data.normals) return '';
+  const f = t.feels;
+  const from = (p: TownMetrics['feels']['sun']) => (p ? `${esc(p.name)} (${Math.round(p.dist)} km)` : 'no station nearby');
+  const c = '#c5e86c';
+  return `<h3>What it feels like · ${data.normals.period} normals</h3>
+    <div class="metric-grid">
+      ${metric('Sunshine', c, f.sun ? `${fmt.int(f.sun.v)} h` : na, `a year · ${from(f.sun)}`)}
+      ${metric('Rain & snow days', c, f.wetDays ? fmt.int(f.wetDays.v) : na, `≥0.2 mm a year · ${from(f.wetDays)}`)}
+      ${metric('Frost days', c, f.frostDays ? fmt.int(f.frostDays.v) : na, `low ≤0 °C · ${from(f.frostDays)}`)}
+      ${metric('Snowfall', c, f.snow ? `${fmt.int(f.snow.v)} cm` : na, `a year · ${from(f.snow)}`)}
+    </div>`;
 }

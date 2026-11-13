@@ -10,6 +10,8 @@ import { lineChart, rampCSS } from './charts';
 import { AtlasLayer, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { esc } from './html';
 import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
+import type { TownMetrics } from './metrics';
+import { metric, na, link } from './report-kit';
 
 type MeasureKey = 'value' | 'rentCost' | 'stir30' | 'market' | 'tax';
 type Measure = { key: MeasureKey; chip: string; label: string; fmt: (v: number) => string; lowFirst: boolean };
@@ -173,4 +175,35 @@ export function housingLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Home costs: Census 2021 for the place itself, and CMHC's market rent where the place is a surveyed centre. */
+export function homeCosts(t: TownMetrics) {
+  const c = '#e6a57e';
+  const dollars = (v: number | null) => (v != null ? `$${fmt.int(v)}` : na);
+  const mr = t.marketRent;
+  return `<h3>Home costs</h3>
+    <div class="metric-grid">
+      ${metric('Home value', c, t.homeValue != null ? fmt.money(t.homeValue) : na, t.homeValue != null ? 'median value of owned dwellings, Census 2021' : 'not published for this place')}
+      ${metric('Rent paid', c, dollars(t.rentCost), t.rentCost != null ? 'median a month for renters, with utilities, 2021' : 'not published for this place')}
+      ${metric('Owner costs', c, dollars(t.ownCost), t.ownCost != null ? 'median a month: mortgage, tax, utilities, 2021' : '')}
+      ${metric('Stretched', c, t.stir30 != null ? `${t.stir30.toFixed(0)}%` : na, t.stir30 != null ? `of households spend 30 %+ of income on shelter${t.rent30 != null ? ` (renters ${t.rent30.toFixed(0)}%)` : ''}, 2021` : '')}
+      ${mr ? metric('Market rent', c, dollars(mr.r2), `CMHC average 2-bedroom, ${mr.year}${mr.r1 != null ? ` · 1-bed $${fmt.int(mr.r1)}` : ''} · ${esc(mr.centre)} area`) : ''}
+      ${mr ? metric('Vacancy', c, mr.vac != null ? `${mr.vac.toFixed(1)}%` : na, mr.vac != null ? `of purpose-built rentals empty, October ${mr.year} (3 % is roughly balanced)` : 'no vacancy series for this centre') : ''}
+      ${propTaxMetric(t)}
+    </div>
+    <div class="tr-falls" style="margin-top:8px">${link('housing', '⌂ Home costs on the map')}</div>`;
+}
+
+/** Property tax: the indicative annual tax on the median home and the residential mill rate it uses (Mill Rate Survey). */
+export function propTaxMetric(t: TownMetrics) {
+  const p = t.propTax;
+  const c = '#e6a57e';
+  if (!p) return metric('Property tax', c, na, 'no mill rate reported in the Mill Rate Survey for this place');
+  const rate = `${p.r.toFixed(2)} mills residential (${p.year})${p.f ? `: uniform ${p.mr.toFixed(2)} × factor ${p.f.toFixed(2)}` : ''}`;
+  if (p.x) return metric('Property tax', c, na, `${rate} · Lloydminster is assessed under its own charter, so no comparable estimate`);
+  const extra = [p.bt ? 'a base tax' : '', p.mt ? 'a minimum tax' : ''].filter(Boolean).join(' and ');
+  return metric('Property tax', c, p.tax != null ? `~$${fmt.int(p.tax)}` : na, `${p.tax != null ? 'a year on the median home (indicative) · ' : ''}${rate} + ${p.edu.toFixed(2)} education${extra ? ` · also charges ${extra} (not included)` : ''}`);
 }

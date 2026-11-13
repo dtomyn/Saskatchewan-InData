@@ -9,6 +9,7 @@ import type { Data, NeedSite } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { link } from './report-kit';
 
 /** The eight needs, in the order the data stage writes them (`Needs.kinds`). */
 export const NEEDS = [
@@ -171,4 +172,17 @@ export function needsLayer(data: Data): AtlasLayer {
     }
     return inside;
   }
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Daily needs: a ✓/✗ row per everyday service mapped in OpenStreetMap inside (or just outside) the town limits. */
+export function dailyNeeds(p: PlaceNeeds, slackKm: number) {
+  return `<h3>Daily needs · ${p.met} of ${p.of} in town</h3>
+    <div class="needs-list">${NEEDS.map((n) => {
+      const c = p.counts[n.id];
+      return `<div class="nd ${c ? 'yes' : 'no'}" style="--c:${n.color}"><b>${c ? '✓' : '✗'}</b>${n.label}<small>${c || 'none mapped'}</small></div>`;
+    }).join('')}</div>
+    <p class="note" style="margin-top:6px">Counted ${countedWhere(p, slackKm)} from OpenStreetMap. Small towns are unevenly mapped, so a ✗ can mean not mapped rather than not there.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('needs', '🛒 Daily needs on the map')}</div>`;
 }

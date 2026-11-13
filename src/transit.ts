@@ -10,6 +10,7 @@ import type { Data, TransitAirport, TransitStation, TransitSystem } from './data
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { metric, link } from './report-kit';
 
 export const TRANSIT_COLOR = '#f28482';
 export const RAIL_COLOR = '#ffcf56';
@@ -230,4 +231,24 @@ export function transitLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Getting around: the drive to the nearest airport with scheduled flights; a VIA stop, an intercity bus stop and city buses in town. */
+export function transitRows(p: PlaceTransit, data: Data) {
+  const T = data.transit!;
+  const air = p.air ? `${p.air.min != null ? 'drive' : 'straight line'} to ${esc(p.air.name)} (${esc(p.air.iata)})${p.air.prov !== 'SK' ? `, ${esc(p.air.prov)}` : ''} · ${Math.round(p.air.km)} km` : 'none reachable by road';
+  const rail = p.rail.length ? `${p.rail.map((s) => `${esc(s.n)}${s.k === 'halt' ? ' (flag stop)' : ''}`).join(', ')}${p.rail[0].line ? ` · ${esc(p.rail[0].line)}` : ''}` : 'no VIA stop in town';
+  const bus = p.bus.stops ? `${p.bus.stops} stop${p.bus.stops === 1 ? '' : 's'} mapped · ${p.bus.ops.map(esc).join(', ')}` : 'none mapped in OpenStreetMap (partial)';
+  const sys = p.sys ? `${esc(p.sys.n)}: ${sysText(p.sys)}${p.sys.src === 'osm' ? ' (OpenStreetMap)' : ''}${p.sys.end && p.sys.end < T.asOf ? ` · timetable file ended ${esc(p.sys.end)}` : ''}` : 'no city bus';
+  return `<h3>Getting around</h3>
+    <div class="metric-grid">
+      ${metric('Airport', TRANSIT_COLOR, airText(p), air)}
+      ${metric('Train', RAIL_COLOR, p.rail.length ? 'VIA' : 'None', rail)}
+      ${metric('Intercity bus', BUS_COLOR, p.bus.stops ? 'Yes' : 'None mapped', bus)}
+      ${metric('City bus', CITY_COLOR, p.sys ? 'Yes' : 'No', sys)}
+    </div>
+    <p class="note" style="margin-top:6px">STC, the provincial bus, closed in 2017. Airports are those OurAirports marks with scheduled passenger service; trains and intercity buses are as mapped in OpenStreetMap (bus coverage is partial); city buses from the city’s GTFS feed. None of it says how often anything runs.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('transit', '✈ Getting around on the map')}</div>`;
 }

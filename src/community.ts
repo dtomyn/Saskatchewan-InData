@@ -12,6 +12,7 @@ import { esc } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing, pctText, share } from './subdivisions';
+import { metric, link } from './report-kit';
 
 export const COMMUNITY_COLOR = '#f0a6ca';
 
@@ -180,4 +181,27 @@ export function communityLayer(data: Data): AtlasLayer {
       };
   }
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Community: who already lives in the place (Census 2021) and its places of worship (OpenStreetMap). "—" = none, a
+ * handful or not published: census counts are rounded to a multiple of 5. */
+export function communityRows(p: PlaceCommunity, slackKm: number) {
+  const c = COMMUNITY_COLOR;
+  const list = (xs: [string, number][]) => xs.map(([n, v]) => `${esc(n)} (${people(v)})`).join(', ');
+  const recShare = p.imm && p.rec != null ? Math.round((p.rec / p.imm) * 100) : null;
+  const pw = p.pw.map((r) => `${r.n} ${r.id === 'unstated' ? 'with no faith tagged' : r.id === 'other' ? 'other faiths' : (RELIGIONS[r.id] ?? RELIGIONS.other).label}`).join(', ');
+  return `<h3>Community</h3>
+    <div class="metric-grid">
+      ${metric('Immigrants', c, pctText(p, 'imm', 'hhPop'), p.imm ? `${people(p.imm)} people born outside Canada who have settled here${recShare != null && p.rec ? `; ${recShare}% of them arrived 2016–2021` : ''}` : 'none, a handful, or not published')}
+      ${metric('Arrived 2016–21', c, pctText(p, 'rec', 'hhPop'), p.rec ? `${people(p.rec)} recent immigrants${p.npr ? ` · plus ${people(p.npr)} temporary residents (students, work permits)` : ''}` : 'none, a handful, or not published')}
+      ${metric('Born in', c, p.birth.length ? esc(p.birth[0][0]) : '—', p.birth.length ? `top birthplaces of immigrants: ${list(p.birth)}` : 'too few immigrants to say')}
+      ${metric('Home languages', c, pctText(p, 'nonOff', 'homeTot'), p.lang.length ? `speak a language other than English or French most often at home: ${list(p.lang)}` : 'speak a language other than English or French most often at home')}
+      ${metric('French', c, pctText(p, 'frKn', 'knTot'), `can hold a conversation in French (knowledge of official languages)${p.frMT ? `; ${pctText(p, 'frMT', 'mtTot')} have French as a mother tongue` : ''}`)}
+      ${metric('Indigenous identity', c, pctText(p, 'ind', 'indTot'), 'First Nations, Métis or Inuit, in the town itself (nearby reserves are counted separately)')}
+      ${metric('Places of worship', c, String(p.pw.reduce((a, r) => a + r.n, 0)), pw ? `mapped in town or within ${slackKm} km: ${pw}` : `none mapped in town or within ${slackKm} km (OpenStreetMap)`)}
+    </div>
+    <p class="note" style="margin-top:6px">Census 2021 for the place itself. Counts are rounded to a multiple of 5, so “—” means none, a handful or not published. This is here to help you find community, not to rank people.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('community', '🤝 Who lives here on the map')}</div>`;
 }

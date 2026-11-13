@@ -8,6 +8,7 @@ import type { ChildcareCentre, ChildcareHomes, Data } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { metric, na, link } from './report-kit';
 
 export const CHILDCARE_COLOR = '#ffc4a3';
 const HOMES_COLOR = '#b9a7ff';
@@ -208,4 +209,18 @@ export function childcareLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Childcare: the drive to the nearest licensed centre, and how many centres and family homes are in town. */
+export function childcareRows(p: PlaceChildcare, slackKm: number) {
+  const sub = (x: ChildcareTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  return `<h3>Childcare</h3>
+    <div class="metric-grid">
+      ${metric('Centre', CHILDCARE_COLOR, p.c ? childcareTripText(p.c) : na, sub(p.c))}
+      ${metric('In town', CHILDCARE_COLOR, `${p.nc} ${p.nc === 1 ? 'centre' : 'centres'}`, `and ${p.nh} family child care ${p.nh === 1 ? 'home' : 'homes'}${p.ni ? `, ${p.ni} taking infants` : ''}, inside town limits or within ${slackKm} km`)}
+    </div>
+    <p class="note" style="margin-top:6px">Licensed centres and family child care homes on the Ministry of Education’s list; it gives no capacity, so spaces are not counted. Licensed is not the same as a space being open: waitlists are common, especially for infants. $10 a day applies only to regulated spaces.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('childcare', '🧸 Childcare on the map')}</div>`;
 }

@@ -8,6 +8,8 @@ import type { Data, PostSec, School, Trip } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import type { TownMetrics } from './metrics';
+import { metric, na, link } from './report-kit';
 
 export const SECTORS: Record<School['s'], { label: string; plural: string; color: string }> = {
   pub: { label: 'Public', plural: 'public', color: '#5aa9ff' },
@@ -226,4 +228,22 @@ export function schoolsLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Schools & learning: the drive to the nearest elementary, high, French and post-secondary option, and schools in town. */
+export function schoolsRows(t: TownMetrics) {
+  const s = t.schools!;
+  const v = (x: SchoolTrip | null) => (x ? (x.min != null ? `${x.min} min` : `${Math.round(x.km)} km`) : na);
+  const sub = (x: SchoolTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  return `<h3>Schools &amp; learning</h3>
+    <div class="metric-grid">
+      ${metric('Elementary', '#9ad8ff', v(s.e), sub(s.e))}
+      ${metric('High school', '#ffb703', v(s.h), sub(s.h))}
+      ${metric('French schooling', '#ff7aa8', v(s.f), sub(s.f))}
+      ${metric('Post-secondary', '#ffffff', v(s.p), sub(s.p))}
+      ${metric('Schools in town', '#ffb703', String(s.n), 'open to any family, inside the town limits or within 1 km (ministry list, gaps filled from OpenStreetMap)')}
+    </div>
+    <div class="tr-falls" style="margin-top:8px">${link('schools', '🎓 Schools &amp; learning on the map')}</div>`;
 }

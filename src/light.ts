@@ -10,6 +10,7 @@ import { MONTHS } from './data';
 import { rampCSS } from './charts';
 import { esc, safeUrl } from './html';
 import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
+import { metric, na, link } from './report-kit';
 
 export const LIGHT_COLOR = '#a3b8ff';
 // night blue to pale sun, over the hours of daylight Saskatchewan sees through the year
@@ -232,4 +233,23 @@ function yearChart(el: HTMLElement, L: Light) {
   const line = d3.line<number>().x((_, i) => x(1 + i * 7)).y((v) => y(v)).curve(d3.curveMonotoneX);
   pick.forEach((c, i) => svg.append('path').attr('d', line(c.y)).attr('fill', 'none').attr('stroke', cols[i]).attr('stroke-width', 2));
   el.insertAdjacentHTML('beforeend', `<div class="legend">${pick.map((c, i) => `<span><i class="sw" style="background:${cols[i]}"></i>${c.lat}°N</span>`).join('')}</div>`);
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Light & dark: daylight on the shortest and longest days (computed from latitude), the aurora band (geomagnetic
+ * latitude, NOAA's Kp rule) and the drive to the nearest campground in a RASC dark-sky preserve. */
+export function lightRows(p: PlaceLight, data: Data) {
+  const L = data.light!;
+  const [dDec, , dJun] = L.dates.map((d) => d.label);
+  const civil = (h: number) => (h >= 24 ? 'civil twilight all night' : `${hm(h)} with civil twilight`);
+  return `<h3>Light &amp; dark</h3>
+    <div class="metric-grid">
+      ${metric(`${esc(dDec)} daylight`, DAY_RAMP(p.d[0]), hm(p.d[0]), `sunrise to sunset on the shortest day · ${civil(p.c[0])}`)}
+      ${metric(`${esc(dJun)} daylight`, DAY_RAMP(p.d[2]), hm(p.d[2]), `on the longest day · ${civil(p.c[2])}`)}
+      ${metric('Aurora overhead', AURORA_RAMP(p.ml), AURORA_BANDS[p.a].label, `${AURORA_BANDS[p.a].text} · geomagnetic latitude ${mlText(p.ml)}°`)}
+      ${metric('Dark-sky preserve', PRESERVE_COLOR, p.dark ? (p.dark.min != null ? `${p.dark.min} min` : `${Math.round(p.dark.km)} km`) : na, p.dark ? `${p.dark.min != null ? 'drive' : 'straight line'} to ${esc(p.dark.name)}, ${esc(p.dark.preserve)} · ${Math.round(p.dark.km)} km` : '')}
+    </div>
+    <p class="note" style="margin-top:6px">Computed from the place’s latitude (NOAA solar equations, ${L.year}) and the IGRF-14 geomagnetic dipole; the aurora band follows NOAA’s Kp rule and is not a probability.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('light', '☾ Light &amp; dark on the map')}</div>`;
 }
