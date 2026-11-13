@@ -63,6 +63,28 @@ npm run data crime justice      # selected stages
 
 Stages, in run order: `province places fires tornadoes hail rivers climate smoke drought normals population crime housing jobs needs treaties justice hospitals camping schools internet community newcomer doctors childcare industry water radon light transit commute`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice`, `hospitals`, `camping`, `schools`, `newcomer`, `doctors` and `childcare` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
 
+## The explainer film
+
+`video/` films a narrated how-to from the real app, one exact frame at a time (the framework from Island Atlas; `MAP-ATLAS-BLUEPRINT.md` Part 8). `video/storyboard.py` holds the scenes, narration, camera and sound: finding your way around, moving the map, layers and the timeline, the Settling in, Health and Around the property layers, a town report, Town Finder (workplace, sliders, the New to Saskatchewan preset), Data & sources and the shortcuts. The narration's counts come from the app's data, so re-film after `npm run data`.
+
+Setup (once; needs Microsoft Edge for the GPU map):
+
+```bash
+uv venv .venv --python 3.12
+uv pip install --python .venv/Scripts/python.exe playwright imageio-ffmpeg kokoro-onnx soundfile numpy
+```
+
+Put `kokoro-v1.0.onnx` and `voices-v1.0.bin` (github.com/thewh1teagle/kokoro-onnx releases) in `.venv/kokoro`. Then:
+
+```bash
+.venv/Scripts/python.exe video/render.py --check        # fill in every line from the data, no filming
+.venv/Scripts/python.exe video/render.py --storyboard   # video/out/storyboard.html, script.md, captions, youtube.txt
+.venv/Scripts/python.exe video/render.py --preview      # quick 960×540 cut with sound
+.venv/Scripts/python.exe video/render.py                # 2560×1440 master + 1080p copy
+```
+
+Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu must be renamed in `video/storyboard.py` too.
+
 ## Data sources
 
 | Layer | Source | Licence |
@@ -129,5 +151,7 @@ Stages, in run order: `province places fires tornadoes hail rivers climate smoke
 - **Treaty boundaries** are Canada's depiction; First Nations' understanding of their territories and of the treaty promises can differ.
 
 ## Next layers worth adding
+
+What people come to the atlas to do (how safe is a place, choose where to live, settle in as a newcomer…) is written up one file per intent in [intents/](intents/README.md), each with the layers and panels that answer it, what the atlas cannot tell you, and a `?film` check.
 
 See [ROADMAP.md](ROADMAP.md): a build order aimed at people new to the province choosing where to live (home costs, daily needs, Workday Reach, jobs, schools, internet, community, newcomer services), plus the Town Report rows, Finder criteria and "New to Saskatchewan" preset they feed, and the items still open.
