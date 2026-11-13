@@ -594,10 +594,12 @@ BOARD_TITLE = "Living Skies Atlas: explainer storyboard"
 
 def youtube(found, url, chapters):
     return f"""TITLE
-How to use Living Skies Atlas: a step-by-step guide
+Moving to (or Living in) Saskatchewan? An Unofficial Open-Data Map, Built with Claude Code
 
 DESCRIPTION
-A walkthrough of Living Skies Atlas, the 3D map of Saskatchewan's safety, justice and land in open data: where to click, step by step. Moving the map, showing and combining its {found['layers']} data layers, playing the timeline, the layers for settling in and for checking around a home, town reports, ranking the province's {found['towns']} towns with Town Finder, the data sources, and the keyboard shortcuts.
+An unofficial, independent guide to Living Skies Atlas: a free 3D map that brings Saskatchewan's open data together in one place, for people who already live here and for those who are new or thinking of moving. It is not affiliated with or endorsed by the Government of Saskatchewan or any agency whose data it uses. I put it together with Claude Code (Anthropic's AI coding tool).
+
+This video shows where to click, step by step: moving the map, showing and combining its {found['layers']} data layers, playing the timeline, the layers for settling in (newcomer services, doctors, childcare, getting around) and for checking around a home (water, radon, nearby industry), town reports, ranking the province's {found['towns']} towns with Town Finder, the data sources, and the keyboard shortcuts.
 
 Try it yourself: {url}
 
@@ -606,8 +608,9 @@ Everything in this video is the real application, filmed frame by frame. The nar
 {chapters}
 
 Data: Statistics Canada, Canadian Wildland Fire Information System, Environment and Climate Change Canada, Northern Tornadoes and Hail Projects, Agriculture and Agri-Food Canada, Government of Saskatchewan, Saskatchewan Health Authority, Health Canada, ISED Canada, IRCC, Natural Resources Canada, CMHC. Contains information licensed under the Open Government Licence – Canada, the Open Government Licence – Saskatchewan and the Statistics Canada Open Licence; some sources are Crown copyright for non-commercial use or CC BY-NC (each is listed under Data & sources in the app). Map data © OpenStreetMap contributors (ODbL); basemap © CARTO. Data extract {found['extract']}.
+
 This is an exploration tool, not legal, real-estate, insurance or health advice.
 
 TAGS
-Saskatchewan, tutorial, how to, open data, interactive map, moving to Saskatchewan, newcomers, Regina, Saskatoon
+Saskatchewan, moving to Saskatchewan, Saskatchewan newcomers, Saskatchewan residents, open data, interactive map, unofficial, Claude Code, AI built app, tutorial, Regina, Saskatoon
 """

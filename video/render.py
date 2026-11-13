@@ -499,9 +499,30 @@ def write_script(film, found):
     print("wrote", path, flush=True)
 
 
+def youtube_chapters(film, shortest=10000):
+    """Chapters as YouTube takes them: every one at least 10 s, or it drops them all.
+    A short chapter joins the next one, keeping its start time and adding its name, except the title card
+    (scene "intro"), which just hands 0:00 to the first step."""
+    total = film.marks["total"] * 1000
+    out, start, names = [], None, []
+    for i, c in enumerate(film.chapters):
+        end = film.chapters[i + 1]["at"] if i + 1 < len(film.chapters) else total
+        at = c["at"] if start is None else start
+        if c["id"] != "intro":
+            names.append(c["title"])
+        if end - at < shortest and i + 1 < len(film.chapters):
+            start = at
+            continue
+        out.append((at, " · ".join(names)))
+        start, names = None, []
+    if out and end - out[-1][0] < shortest and len(out) > 1:  # a short last chapter joins the one before
+        out.pop()
+    return out
+
+
 def write_youtube(film, found, url):
     url = url or SITE
-    chapters = "\n".join(f"{clock_label(c['at'])} {c['title']}" for c in film.chapters)
+    chapters = "\n".join(f"{clock_label(at)} {title}" for at, title in youtube_chapters(film))
     text = storyboard.youtube(found, url, chapters) if getattr(storyboard, "youtube", None) else ""
     path = OUT / f"{PREFIX}youtube.txt"
     path.write_text(text, encoding="utf-8")
