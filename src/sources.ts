@@ -7,6 +7,7 @@ import { Data, fmt } from './data';
 import { provinceAnomalies } from './metrics';
 import { esc } from './html';
 import { ago } from './now';
+import { HistoryFeed, loadHistoryIndex } from './data';
 
 type Ring = { v: number; label: string; proj?: boolean };
 type Source = {
@@ -765,6 +766,17 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   barkCards.forEach((card, i) => card.addEventListener('pointerenter', () => { hover = { b: i }; draw(); }));
   list.addEventListener('pointerleave', () => { if (hover && 'b' in hover) hover = null; draw(); });
   el.querySelectorAll<HTMLButtonElement>('.src-go').forEach((btn) => btn.addEventListener('click', () => { closeSources(); opts.onShow(btn.dataset.id!); }));
+  // each live feed's daily record (the data-history branch): first and last day, days kept, gaps, days with few runs
+  const HIST: Record<string, HistoryFeed> = { 'now-rivers': 'rivers', 'now-fires': 'fires', 'now-air': 'air', 'now-alerts': 'alerts', water: 'water' };
+  loadHistoryIndex().then((ix) => {
+    if (!ix || !root) return;
+    cards.forEach((card, i) => {
+      const h = ix.feeds[HIST[SOURCES[+(card.dataset.i ?? -1)]?.key ?? '']];
+      if (!h) return;
+      const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+      card.querySelector('code')?.insertAdjacentHTML('beforebegin', `<div class="src-hist">Daily record: ${fmtDay(h.first)} → ${fmtDay(h.last)} · ${h.days} day${h.days === 1 ? '' : 's'} · ${h.gaps} gap${h.gaps === 1 ? '' : 's'}${h.few ? ` · ${h.few} with few runs` : ''} · ${h.kb} KB</div>`);
+    });
+  });
   $('.close-x').addEventListener('click', closeSources);
   const cite = $<HTMLButtonElement>('.src-cite');
   cite.addEventListener('click', async () => {

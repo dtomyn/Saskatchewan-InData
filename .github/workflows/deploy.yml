@@ -36,6 +36,24 @@ jobs:
           for f in rivers fires air alerts manifest; do
             curl -fsS --max-time 30 -o "public/data/now/$f.json" "$SITE/data/now/$f.json" || rm -f "public/data/now/$f.json"
           done
+      # The daily record lives on the data-history branch (never on main). Read it into public/data/history/ so the site
+      # ships it (only live.yml adds to it).
+      - name: Is there a daily record yet?
+        id: hist
+        env:
+          URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          if git ls-remote --exit-code --heads "$URL" data-history > /dev/null; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.hist.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: data-history
+          path: .history-branch
+          persist-credentials: false
+      - name: Copy the daily record into the site
+        run: |
+          mkdir -p public/data/history
+          if [ -d .history-branch ]; then cp -r .history-branch/. public/data/history/ && rm -rf public/data/history/.git; fi
       - run: npm run data now
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3

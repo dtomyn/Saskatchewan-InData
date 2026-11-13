@@ -73,7 +73,16 @@ Four stages read today's feeds and write `public/data/now/` (in `.gitignore`), n
 
 On GitHub, `.github/workflows/live.yml` runs `npm run data now water`, builds and redeploys about once an hour (and on demand); `deploy.yml` runs the live stages too, so a push never deploys without them. Both start from the `now/` files the site is serving, so a feed that is down keeps its last reading. Scheduled runs can be late when GitHub is busy, and GitHub turns schedules off in a repository with no activity for 60 days (re-enable it under Actions), so the app never assumes a reading is fresh: see Caveats.
 
-A layer with a live reading ends its timeline at **Now**, where it opens; the years between its archive and today are hatched ("no record yet"). With `?film` the app skips the live files so the film stays repeatable; `?film&now` loads them.
+A layer with a live reading ends its timeline at **Now**, where it opens; the years between its archive and today are hatched ("no record yet") until the daily record begins.
+
+### The daily record
+
+```bash
+npm run data now history            # roll today's readings into public/data/history/
+npm run data now history-backfill   # once: reach back as far as each feed keeps
+```
+
+The hourly workflow also keeps a compact daily record of the live feeds, so the timeline runs from each archive's last year towards today and point-in-time layers gain a history: per gauge per day the lowest, highest and mean flow; every hotspot by day; each AQHI community's highest value per day; each weather alert and each drinking water advisory with the days it was in effect. One file per feed per month in `public/data/history/<feed>/`, plus `index.json`. They live on the **`data-history` branch**, not on main: `live.yml` checks it out before rolling up and its `archive` job (the only job allowed to push, and only there) appends the result. Clone it with `git clone -b data-history <repo> public/data/history` to see the record locally. To start the record, run the **Refresh live readings** workflow once by hand with **backfill** ticked. How far back it goes depends on the feed: the gauges keep about 30 days, AQHI about 3, CWFIS every season's hotspots; weather alerts and drinking water advisories start the day the record started. With `?film` the app skips the live files so the film stays repeatable; `?film&now` loads them.
 
 ## The explainer film
 
@@ -136,6 +145,7 @@ Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu 
 
 ## Caveats
 
+- **The daily record** is provisional and is never joined to the official archives: it is drawn only after an archive's last year, dashed on the sparkline, with a "provisional" badge, and a year drops out of view once HYDAT, the NFDB or NAPS publishes it. A day with no run is a gap, not a zero; a day built from few hourly runs is flagged. River days are each gauge's highest real-time flow against its normal annual peak. Recorded hotspots are not fires and never count in the wildfire statistics. AQHI days show on the map only, never on the smoke-day sparkline. Drinking water and weather alerts have no history before the record began, because their sources publish only what is in effect today.
 - **Right now** readings are point-in-time and show their age everywhere: older than 3 hours they are greyed and labelled stale, older than 24 hours they are not drawn. Real-time river data are provisional; readings flagged ice-affected or estimated get an amber ring, and a silent gauge (many shut for the winter) shows "no reading", not zero. A **hotspot** is heat seen from a satellite, not a confirmed fire: gas flares, farm and slash burning and hot industrial sites show up too; the perimeters CWFIS estimates from them are drawn dashed. The **AQHI** is an index of three pollutants (ozone, nitrogen dioxide, fine particles), not the smoke-day count, and the two are never drawn together; a place without its own reading borrows the nearest community within 150 km (Cold Lake and Medicine Hat included), named in its report. Alert regions come from Environment Canada's forecast regions; a place is "covered" when its centre is inside one. Live readings never feed the Town Finder.
 - **Crime** is reported by police service, not by town. Small towns' municipal RCMP series stop in 2011; after that the atlas uses the rural detachment of the same name, which also covers the surrounding area, including nearby First Nations. Northern detachments cover small populations, so their index swings hard on a few incidents. A high index in a service hub partly reflects people who come in from outside.
 - **Courts and police** come from OpenStreetMap, which is incomplete here. Where Statistics Canada lists a place with its own current municipal police service but nothing is mapped near its centre, the atlas counts police as "in town" and says so. Provincial Court circuit points held in halls or band offices are mostly unmapped.

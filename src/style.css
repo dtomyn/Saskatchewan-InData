@@ -881,3 +881,10 @@ body.cinema .maplibregl-ctrl-bottom-right { top: 8px; bottom: auto !important; r
 .now-alert summary { cursor: pointer; list-style: none; }
 .now-alert summary::-webkit-details-marker { display: none; }
 .now-alert p { margin: 6px 0 2px; color: var(--ink-2); font-size: 11.5px; }
+.month.prov { display: inline-block; height: auto; padding: 1px 6px; border-radius: 999px; border: 1px dashed var(--accent); color: var(--accent); letter-spacing: 1px; font-size: 9.5px; }
+.hist-strip { display: flex; align-items: flex-end; gap: 1px; height: 46px; margin: 6px 0 2px; }
+.hist-strip i { flex: 1; min-width: 1px; background: var(--c); opacity: .75; border-radius: 1px 1px 0 0; }
+.hist-strip i.gap { background: none; border-bottom: 1px dashed var(--ink-3); opacity: .6; height: 0 !important; }
+.hist-strip i.few { opacity: .4; }
+.hist-cap { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+.src-hist { font-size: 11.5px; color: var(--ink-2); margin-top: 4px; }

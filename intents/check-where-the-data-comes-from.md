@@ -8,6 +8,7 @@
 
 - **Data & sources** view: an aspen round, a wedge per source and a ring per year, with links (`.src-go`) to each source.
 - `public/data/manifest.json`: when each stage last ran and any error (a failing stage keeps its old JSON). The live stages keep `public/data/now/manifest.json`, merged in by the app.
+- The daily record of the live feeds (the `data-history` branch): each Right now card in Data & sources shows its first and last day, how many days it holds, its gaps and the days built from few runs. Recent days on the timeline are dashed and badged "provisional", and are never joined to the official record.
 - The **Right now** group in Data & sources: rivers, hotspots, air and alerts, each refreshed about hourly, with the time of its last refresh (and a failed last try, if any). Every live value on the map and in panels shows its own age.
 - Every layer panel and Town Report row names its source; borrowed and inferred values say so.
 - The README's Data sources and Caveats sections.
