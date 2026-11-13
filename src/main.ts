@@ -15,6 +15,8 @@ import { eventColor, eventDate, eventLayers, fromTooltip, momentsList, renderEve
 import { loadWeights, renderFinder, renderTownReport } from './panels';
 import { openSources, sourcesOpen } from './sources';
 import { Ranked } from './metrics';
+import { SCENARIO_LABEL, ScenarioKind, clearScenario, closedSites, scenarioOn, setClosed } from './scenario';
+import { esc } from './html';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -613,6 +615,33 @@ function drawSpark() {
       g.restore();
     }
   }
+  // past the record: model output (plan 3b). Hatched in the projection's red, with each scenario's range as a band on
+  // its own scale (a projection runs far past the record's few degrees), never as a line
+  if (l.projection) {
+    const x0 = x(l.projection.from);
+    g.save();
+    g.beginPath();
+    g.rect(x0, 0, w - x0, h);
+    g.clip();
+    g.strokeStyle = 'rgba(255,120,130,0.22)';
+    g.lineWidth = 1;
+    for (let i = x0 - h; i < w; i += 5) { g.beginPath(); g.moveTo(i, h); g.lineTo(i + h, 0); g.stroke(); }
+    const bands = l.projection.bands();
+    const bmax = Math.max(...bands.flatMap((b) => b.pts.map((p) => Math.abs(p.hi)))) || 1;
+    const yy = (v: number) => h / 2 + 1 - (v / bmax) * (h / 2 - 2);
+    for (const b of bands) {
+      if (!b.pts.length) continue;
+      g.beginPath();
+      b.pts.forEach((p, i) => (i ? g.lineTo(x(p.x), yy(p.hi)) : g.moveTo(x(p.x), yy(p.hi))));
+      [...b.pts].reverse().forEach((p) => g.lineTo(x(p.x), yy(p.lo)));
+      g.closePath();
+      g.fillStyle = b.color;
+      g.globalAlpha = 0.35;
+      g.fill();
+    }
+    g.restore();
+    g.globalAlpha = 1;
+  }
   const max = Math.max(...pts.map((p) => Math.abs(p.y))) || 1;
   const diverging = pts.some((p) => p.y < 0);
   const step = l.monthly ? 1 / 12 : 1;
@@ -678,8 +707,10 @@ function syncTimelineUI() {
   const first = rec?.first() ?? null;
   // inside the daily record: the day and a provisional badge; a day it lacks is a gap, before it "no record yet"
   const recorded = !!rec && first != null && state.time >= first;
+  const projected = !!l.projection && state.time >= l.projection.from;
   $('year').textContent = atNow ? 'Now' : String(Math.floor(state.time));
-  $('month').textContent = atNow ? '' : recorded ? (rec!.covers(state.time) ? `${tDay(state.time).slice(5)} · provisional` : 'no reading') : gap ? 'no record yet' : l.monthly || state.speed <= 1 ? MONTHS[Math.floor((state.time % 1) * 12)] : '';
+  $('month').classList.toggle('proj', projected);
+  $('month').textContent = atNow ? '' : projected ? 'projection, not a record' : recorded ? (rec!.covers(state.time) ? `${tDay(state.time).slice(5)} · provisional` : 'no reading') : gap ? 'no record yet' : l.monthly || state.speed <= 1 ? MONTHS[Math.floor((state.time % 1) * 12)] : '';
   $('month').classList.toggle('prov', recorded && rec!.covers(state.time));
   const y = Math.floor(state.time * (l.monthly ? 12 : 1));
   if (y !== lastSparkYear) {
@@ -817,6 +848,30 @@ function showSources() {
   openSources(data, { onShow: focus });
 }
 
+// ---------------------------------------------------------------------------------------------
+// what-if scenarios (src/scenario.ts): a banner on the map while any closure is on, until it is cleared
+
+function renderScenarioBanner() {
+  const b = $('scenario-banner');
+  const kinds = (Object.keys(SCENARIO_LABEL) as ScenarioKind[]).filter((k) => scenarioOn(k));
+  b.hidden = !kinds.length;
+  if (!kinds.length) return;
+  const names = kinds.flatMap((k) => closedSites(k).map((c) => c.name));
+  b.innerHTML = `<span class="sc-tag">Scenario</span><button class="sb-txt" title="Open the layer this scenario is on">What if ${names.map((n) => `<b>${esc(n)}</b>`).join(' and ')} closed?<small>your choice, not an announced plan · drive times only</small></button><button class="sb-clear">Clear</button>`;
+  b.querySelector('.sb-txt')!.addEventListener('click', () => { const id = SCENARIO_LABEL[kinds[0]].layer; if (byId[id]?.available) { if (state.mode === 'finder') closeFinder(); focus(id); } });
+  b.querySelector('.sb-clear')!.addEventListener('click', clearScenario);
+}
+
+function onScenario(kind: ScenarioKind | null) {
+  renderScenarioBanner();
+  // the Town Report and the Finder show real values only: leave them alone
+  if (state.mode === 'finder' || state.mode === 'town') return;
+  const id = kind ? SCENARIO_LABEL[kind].layer : null;
+  // a closure opens (or redraws) its layer's panel, where the affected towns are listed
+  if (id && byId[id]?.available) focus(id);
+  else if (state.mode === 'layer' && Object.values(SCENARIO_LABEL).some((x) => x.layer === state.focused)) showLayerPanel();
+}
+
 async function boot() {
   data = await loadAll();
   layers = buildLayers(data);
@@ -848,12 +903,13 @@ async function boot() {
     const right = $('panel').classList.contains('collapsed') ? 60 : Math.min(440, $('panel').offsetWidth + 40);
     map.fitBounds(b, { padding: { top: 90, bottom: 150, left: 60, right }, maxZoom: 9, pitch: 50, bearing: map.getBearing(), duration: 1800, essential: true });
   });
+  window.addEventListener('atlas:scenario', (e) => onScenario((e as CustomEvent).detail as ScenarioKind | null));
   window.addEventListener('atlas:town', (e) => { const k = (e as CustomEvent).detail; if (data.munis.some((m) => m.key === k)) openTown(k); });
   if (location.hash === '#sources') showSources();
   for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping', 'commute']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));
   // The explainer video (video/render.py) drives the atlas through this handle; only set with ?film.
   if (new URLSearchParams(location.search).has('film'))
-    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME };
+    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario };
 }
 
 boot();

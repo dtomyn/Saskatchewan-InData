@@ -1,7 +1,8 @@
 // Town Report and Town Finder side panels.
 import { Data, Muni, NowRiverRow, RiverStation, fmt, km } from './data';
-import { ageTag, alertList, alertsInEffect, aqhiText, aqhiWord, drawable, plainAge } from './now';
+import { ageTag, alertList, alertsInEffect, aqhiText, aqhiWord, drawable, outlookList, plainAge } from './now';
 import { lineChart } from './charts';
+import { townProjectionRow } from './projections';
 import { esc } from './html';
 import { startReach, campsWithin } from './camping';
 import { CRITERIA, CareTrip, TownMetrics, driveMin, getWork, rankTowns, setWork, townMetrics, workplace } from './metrics';
@@ -106,6 +107,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
       ${data.drought ? metric('Drought', '#e0a43a', t.drought ? String(t.drought.d2) : na, t.drought ? `months at D2+ (severe or worse) of ${t.drought.n}, ${t.drought.from.slice(0, 4)}–${t.drought.to.slice(0, 4)} · ${droughtNow(t.drought)}` : '') : ''}
       ${metric('Climate', '#f25f5c', t.climate ? `${t.climate.meanTemp.toFixed(1)} °C` : na, t.climate ? `mean since 1991${t.climate.precip ? ` · ${Math.round(t.climate.precip)} mm/yr` : ''} · ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)` : '')}
     </div>
+    ${townProjectionRow(data, key)}
     ${feelsRow(t, data, metric, na)}
     ${data.light && t.light ? lightRows(t.light, data, metric, na, link) : ''}
     ${data.drought && t.drought ? `<div class="dm-cap">Drought Monitor, every month since ${data.drought.months[0].slice(0, 4)}</div>${droughtStrip(data, key)}<div class="tr-falls" style="margin-top:8px">${link('drought', '🌾 Drought on the map')}</div>` : ''}
@@ -145,7 +147,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
 function rightNow(data: Data, m: Muni, metric: MetricFn, na: string, link: (layer: string, text: string) => string) {
   const nw = data.now;
   if (nw.skipped) return '';
-  if (!nw.rivers && !nw.fires && !nw.air && !nw.alerts)
+  if (!nw.rivers && !nw.fires && !nw.air && !nw.alerts && !nw.outlooks)
     return `<h3>Right now</h3><div class="unavail">This copy of the data has no live readings. Run <code>npm run data now</code>, then reload.</div>`;
   const dead = 'no reading in the past day';
   const cells: string[] = [];
@@ -173,13 +175,14 @@ function rightNow(data: Data, m: Muni, metric: MetricFn, na: string, link: (laye
     const c = pick ? nw.air.communities[pick[0]] : null;
     const ok = c && drawable(c.t);
     cells.push(metric('Air quality (AQHI)', '#e8a87c', ok ? aqhiText(c!.v) : na,
-      !c ? `no AQHI community within ${nw.air.reachKm} km` : !ok ? dead : `${aqhiWord(c.v)}${c.fv != null ? `, forecast up to ${aqhiText(c.fv)}` : ''} · ${pick![1] < 15 ? 'at' : 'borrowed from'} ${esc(c.name)}${pick![1] < 15 ? '' : ` (${pick![1]} km)`} · ${ageTag(c.t)}`));
+      !c ? `no AQHI community within ${nw.air.reachKm} km` : !ok ? dead : `${aqhiWord(c.v)} · ${pick![1] < 15 ? 'at' : 'borrowed from'} ${esc(c.name)}${pick![1] < 15 ? '' : ` (${pick![1]} km)`} · ${ageTag(c.t)}`));
   }
   const alerts = nw.alerts ? alertsInEffect(data).filter((a) => a.places.includes(m.key)) : [];
   if (nw.alerts) cells.push(metric('Weather alerts', '#ffd166', drawable(nw.alerts.asOf) ? String(alerts.length) : na,
     !drawable(nw.alerts.asOf) ? dead : alerts.length ? esc(alerts.map((a) => a.short ?? a.name).join(', ')) : `none in effect · read ${ageTag(nw.alerts.asOf)}`));
   return `<h3>Right now</h3>
     <div class="metric-grid">${cells.join('')}</div>
+    ${outlookList(data, m.key)}
     ${alertList(alerts, data)}
     <div class="tr-falls" style="margin-top:8px">${nw.rivers ? link('rivers', '≋ Rivers now') : ''}${nw.fires ? link('fires', '🔥 Hotspots now') : ''}${nw.air ? link('smoke', '🌫 Air now') : ''}</div>`;
 }

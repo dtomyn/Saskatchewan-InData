@@ -177,3 +177,67 @@ export function stripes(el: HTMLElement, opts: { cells: { x: number; color: stri
 export function rampCSS(interp: (t: number) => string, stops = 8) {
   return `linear-gradient(90deg, ${d3.range(stops + 1).map((i) => interp(i / stops)).join(', ')})`;
 }
+
+let hatchId = 0;
+/**
+ * A record and its projection on one axis (plan 3b): the record as bars, then from `from` a hatched background and each
+ * scenario's range as a band with its median dashed, never a single line. `bands` points sit at window centres.
+ */
+export function bandChart(
+  el: HTMLElement,
+  opts: {
+    bars: { x: number; y: number; color?: string }[];
+    bands: { label: string; color: string; pts: { x: number; lo: number; hi: number; med: number }[] }[];
+    from: number;
+    xDomain: [number, number];
+    height?: number;
+    yFormat?: (v: number) => string;
+    barTip: (d: { x: number; y: number }) => string;
+    bandTip: (x: number, rows: { label: string; color: string; lo: number; hi: number; med: number }[]) => string;
+  },
+): ChartHandle {
+  const f = frame(el, opts.height ?? 160);
+  const [x0, x1] = opts.xDomain;
+  const x = d3.scaleLinear().domain([x0, x1 + 1]).range([0, f.w]);
+  const ys = [...opts.bars.map((d) => d.y), ...opts.bands.flatMap((b) => b.pts.flatMap((p) => [p.lo, p.hi])), 0];
+  const y = d3.scaleLinear().domain(d3.extent(ys) as [number, number]).nice().range([f.h, 0]);
+  const yFmt = opts.yFormat ?? ((v) => d3.format('~s')(v));
+  const g = axes(f, x, y, yFmt);
+  // the projected years: hatched, so the eye never reads them as the record
+  const id = `bc-hatch-${++hatchId}`;
+  const pat = f.svg.append('defs').append('pattern').attr('id', id).attr('width', 6).attr('height', 6).attr('patternUnits', 'userSpaceOnUse').attr('patternTransform', 'rotate(45)');
+  pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 6).attr('stroke', 'rgba(255,255,255,.13)').attr('stroke-width', 2);
+  g.append('rect').attr('x', x(opts.from)).attr('width', Math.max(0, f.w - x(opts.from))).attr('height', f.h).attr('fill', `url(#${id})`);
+  g.append('line').attr('x1', x(opts.from)).attr('x2', x(opts.from)).attr('y1', 0).attr('y2', f.h).attr('stroke', 'rgba(255,255,255,.35)').attr('stroke-dasharray', '2 3');
+  g.append('text').attr('x', x(opts.from) + 4).attr('y', 10).attr('fill', 'rgba(255,255,255,.55)').attr('font-size', 9.5).text('projection');
+  const bw = Math.max(1, f.w / (x1 - x0 + 1) - 0.6);
+  g.append('g').selectAll('rect').data(opts.bars).join('rect')
+    .attr('x', (d) => x(d.x)).attr('width', bw)
+    .attr('y', (d) => y(Math.max(0, d.y))).attr('height', (d) => Math.max(1, Math.abs(y(d.y) - y(0))))
+    .attr('fill', (d) => d.color ?? '#fff');
+  g.append('line').attr('x1', 0).attr('x2', f.w).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'rgba(255,255,255,.35)');
+  const area = d3.area<{ x: number; lo: number; hi: number }>().x((d) => x(d.x)).y0((d) => y(d.lo)).y1((d) => y(d.hi)).curve(d3.curveMonotoneX);
+  const mid = d3.line<{ x: number; med: number }>().x((d) => x(d.x)).y((d) => y(d.med)).curve(d3.curveMonotoneX);
+  for (const b of opts.bands) {
+    const pts = b.pts.filter((p) => p.x >= opts.from - 15);
+    g.append('path').attr('d', area(pts)).attr('fill', b.color).attr('fill-opacity', 0.22).attr('stroke', b.color).attr('stroke-opacity', 0.5).attr('stroke-width', 0.8);
+    g.append('path').attr('d', mid(pts)).attr('fill', 'none').attr('stroke', b.color).attr('stroke-width', 1.5).attr('stroke-dasharray', '4 3');
+  }
+  const byX = new Map(opts.bars.map((d) => [d.x, d]));
+  const cross = g.append('line').attr('y1', 0).attr('y2', f.h).attr('stroke', 'rgba(255,255,255,.4)').attr('opacity', 0).style('pointer-events', 'none');
+  g.append('rect').attr('width', f.w).attr('height', f.h).attr('fill', 'transparent')
+    .on('mousemove', (ev: MouseEvent) => {
+      const xv = x.invert(d3.pointer(ev)[0]);
+      cross.attr('x1', x(xv)).attr('x2', x(xv)).attr('opacity', 1);
+      const bar = byX.get(Math.floor(xv));
+      if (bar && xv < opts.from) { showTip(ev, opts.barTip(bar)); return; }
+      if (xv < opts.from) { hideTip(); return; }
+      const rows = opts.bands.map((b) => {
+        const i = d3.bisector((p: { x: number }) => p.x).center(b.pts, xv);
+        return { label: b.label, color: b.color, ...b.pts[i] };
+      });
+      showTip(ev, opts.bandTip(xv, rows));
+    })
+    .on('mouseleave', () => { hideTip(); cross.attr('opacity', 0); });
+  return playhead(f, x, '#fff');
+}

@@ -1,6 +1,6 @@
 name: Refresh live readings
 
-# Rebuilds the live stages (rivers, fires, air, alerts, plus drinking-water advisories) about once an hour, rolls them
+# Rebuilds the live stages (rivers, fires, air, alerts, outlooks, plus drinking-water advisories) about once an hour, rolls them
 # into the daily record, and redeploys the site. Nothing is committed to main: public/data/now/ is not in git, and the
 # daily record (public/data/history/) is appended to the data-history branch by the archive job. GitHub runs scheduled jobs late when it is
 # busy, and turns schedules off in a repository with no activity for 60 days, so the app never assumes a reading is
@@ -51,7 +51,7 @@ jobs:
           SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
         run: |
           mkdir -p public/data/now
-          for f in rivers fires air alerts manifest; do
+          for f in rivers fires air alerts outlooks manifest; do
             curl -fsS --max-time 30 -o "public/data/now/$f.json" "$SITE/data/now/$f.json" || rm -f "public/data/now/$f.json"
           done
       # The daily record lives on the data-history branch (never on main). Read it into public/data/history/ so the site

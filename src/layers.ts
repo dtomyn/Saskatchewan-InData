@@ -4,9 +4,11 @@ import * as d3 from 'd3';
 import { ColumnLayer, LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { DataFilterExtension, PathStyleExtension } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { Data, Facility, FirePerimeter, FirePoint, HistoryFeed, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
+import { Data, Facility, FirePerimeter, FloodZone, FirePoint, HistoryFeed, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
 import { DAY_T, HistHotspot, dayT, dayText, firesHistory, riversHistory, tDay } from './history';
-import { barChart, lineChart, rampCSS, scatterChart, stripes, ChartHandle } from './charts';
+import { bandChart, barChart, lineChart, rampCSS, scatterChart, stripes, ChartHandle } from './charts';
+import { PROJ_BADGE, SCEN_COLOR, SCEN_SHORT, provinceBand, provinceMedian, projAt, rangeText, windowText } from './projections';
+import type { ProjScen, ProjVar } from './data';
 import { NormalVar, provinceAnomalies, slope, townMetrics } from './metrics';
 import { tornadoLayer } from './tornado';
 import { hailLayer } from './hail';
@@ -30,8 +32,9 @@ import { waterLayer } from './water';
 import { radonLayer } from './radon';
 import { lightLayer } from './light';
 import { transitLayer } from './transit';
-import { esc } from './html';
-import { NOW_T, ago, ageTag, plainAge, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, drawable, freshness, isNow, ms, nowBlock, skTime, tickAges } from './now';
+import { esc, safeUrl } from './html';
+import { Affected, CLOSED_COLOR, SCENARIO_CAVEAT, affectedTowns, closedSites, isClosed, scenarioBox, scenarioOn, scenarioTrip, scenarioVersion, setClosed } from './scenario';
+import { NOW_T, provinceOutlook, ago, ageTag, plainAge, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, drawable, freshness, isNow, ms, nowBlock, skTime, tickAges } from './now';
 
 
 /** `hovered` is the municipality key under the pointer (town pin or column), if any. */
@@ -103,6 +106,12 @@ export interface AtlasLayer {
    * (ms); at Now, main.ts draws `build` on top of the layer's own `build`.
    */
   now?: { asOf: () => number | null; archiveEnd: number; build: (ctx: Ctx) => Layer[]; recent?: RecentSpan };
+  /**
+   * Model output past the record (src/projections.ts): from `from` to the end of `range`, main.ts hatches the timeline,
+   * the readout says "projection", and `bands` (each scenario's range at window centres) draw on the sparkline as bands,
+   * never as a line.
+   */
+  projection?: { from: number; bands: () => { color: string; pts: { x: number; lo: number; hi: number }[] }[] };
 }
 /**
  * The recent span between a layer's archive and Now, drawn from the daily record of its live feed (src/history.ts).
@@ -274,6 +283,7 @@ function firesLayer(data: Data): AtlasLayer {
     const newest = hotspots.at(-1);
     const north = hotspots.filter((h) => h[1] >= 54).length;
     const body = `<p><b>${hotspots.length}</b> satellite hotspot${hotspots.length === 1 ? '' : 's'} in Saskatchewan in the ${nowF?.hours ?? 24} hours before this reading${newest ? `, the newest seen ${plainAge(newest[2])}` : ''}${hotspots.length && north ? `; ${north} north of 54° N` : ''}. ${perimeters.length ? `${perimeters.length} fire perimeter${perimeters.length === 1 ? '' : 's'} estimated from them (dashed), with heat seen in the last ${nowF?.keepDays ?? 7} days.` : 'No estimated perimeters with heat in the last week.'}</p>
+      ${provinceOutlook(data, 'fire')}
       ${fresh !== 'old' ? alertList(alertsInEffect(data, 'fires'), data) : ''}`;
     return nowBlock({ color, asOf: nowF?.asOf ?? null, body, source: nowF?.source ?? '', sourceUrl: nowF?.sourceUrl, missing: 'This copy of the data has no satellite hotspots.' });
   }
@@ -502,6 +512,17 @@ function riversLayer(data: Data): AtlasLayer {
   const color = '#4cc9f0';
   const stations = data.rivers?.stations ?? [];
   const ratio = (s: (typeof stations)[number], y: number) => (s.peaks[y] != null ? s.peaks[y] / s.median : null);
+  // flood-prone land: the Water Security Agency's published 1:500-year mapping, the same at every point of the timeline
+  const FL = data.floods;
+  const FLOOD_KIND: Record<FloodZone['kind'], { label: string; fill: RGBA; line: RGBA }> = {
+    '500': { label: '1:500-year flood extent', fill: [76, 201, 240, 60], line: [140, 225, 255, 170] },
+    fringe: { label: 'flood fringe (1:500-year)', fill: [60, 140, 235, 90], line: [120, 180, 255, 190] },
+    floodway: { label: 'floodway (1:500-year, deepest and fastest water)', fill: [40, 80, 220, 140], line: [110, 150, 255, 220] },
+    protected: { label: 'protected by dikes', fill: [150, 160, 180, 50], line: [190, 200, 220, 170] },
+  };
+  const floodPolys = (FL?.zones ?? []).flatMap((z) => z.polys.map((polygon) => ({ z, polygon })))
+    .sort((a, b) => ['500', 'protected', 'fringe', 'floodway'].indexOf(a.z.kind) - ['500', 'protected', 'fringe', 'floodway'].indexOf(b.z.kind));
+  const floodPlaces = [...new Set((FL?.zones ?? []).map((z) => z.place))].sort();
   const ratioColor = d3.scaleLinear<string>().domain([0.4, 1, 1.5, 2.5]).range(['#123a5c', '#1f78b4', '#4cc9f0', '#f1fbff']).clamp(true);
   const years = new Set<number>();
   for (const s of stations) for (const y of Object.keys(s.peaks)) years.add(+y);
@@ -635,6 +656,18 @@ function riversLayer(data: Data): AtlasLayer {
         .map((s) => ({ s, r: ratio(s, y), t: peakT(s, y) }))
         .filter((d) => d.r != null && d.r >= 1.5 && time >= d.t && time - d.t < W);
       return [
+        ...(floodPolys.length ? [new PolygonLayer<(typeof floodPolys)[number]>({
+          id: 'rivers-flood-base',
+          data: floodPolys,
+          getPolygon: (d) => d.polygon,
+          getFillColor: (d) => FLOOD_KIND[d.z.kind].fill,
+          getLineColor: (d) => FLOOD_KIND[d.z.kind].line,
+          lineWidthMinPixels: 1,
+          stroked: true,
+          extruded: false,
+          pickable: true,
+          parameters: NO_DEPTH,
+        } as any)] : []),
         new ScatterplotLayer<any>({
           id: 'rivers-base',
           data: stations,
@@ -704,6 +737,11 @@ function riversLayer(data: Data): AtlasLayer {
         <div class="ramp" style="background:${rampCSS((t) => ratioColor(0.4 + t * 2.1))}"></div>
         <div class="ramp-labels"><span>0.4×</span><span>1×</span><span>1.5×</span><span>2.5×+</span></div>
         <p class="note">Gauges measure river flow, not flooded area — a high ratio means high water, not necessarily property damage. Many prairie rivers are regulated by dams and reservoirs, and spring peaks often come from snowmelt and ice jams. For a specific property, check the Water Security Agency’s flood-risk information.</p>
+        ${FL ? `<h3>Flood-prone land · the 1:${FL.returnPeriod}-year flood</h3>
+        <p class="note" style="margin-top:0">Shaded on the map in ${floodPlaces.length} communities the Water Security Agency has studied: the land a <b>1:${FL.returnPeriod}-year flood</b> (a 0.2% chance in any year) would cover, as the agency modelled it, not as this atlas computes it. Where the Flood Damage Reduction Program mapped it, the darker floodway is where water runs deepest and fastest; the flood fringe is the rest. It is not a forecast, and it says nothing about this year’s river levels. Most of the province has no published flood map: no shading does not mean no risk.</p>
+        <div class="legend">${(['500', 'fringe', 'floodway', 'protected'] as const).map((k) => `<span><i class="sw" style="background:rgba(${FLOOD_KIND[k].fill.slice(0, 3).join(',')},${Math.max(0.35, FLOOD_KIND[k].fill[3] / 255)});box-shadow:0 0 0 1px rgba(${FLOOD_KIND[k].line.slice(0, 3).join(',')},.9)"></i>${FLOOD_KIND[k].label}</span>`).join('')}</div>
+        <p class="note">${floodPlaces.map(esc).join(' · ')}</p>
+        ${sourceLine(`${FL.source}, read ${FL.asOf}. ${FL.licence}`)}` : ''}
         ${sourceLine(data.rivers?.source ?? '')}`);
       return {
         update({ time }) {
@@ -730,6 +768,16 @@ function riversLayer(data: Data): AtlasLayer {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('rivers')) return null;
       if (o.a) return alertEvent(o.a, 'rivers', data, info.coordinate?.[0], info.coordinate?.[1]);
+      if (o.z && FL) {
+        const z = o.z as FloodZone;
+        const pdf = z.pdf ? safeUrl(z.pdf) : null;
+        return {
+          layer: 'rivers', kind: 'Flood-prone land', lon: info.coordinate?.[0], lat: info.coordinate?.[1], zoom: 12,
+          title: `${z.place}: ${FLOOD_KIND[z.kind].label}`,
+          body: `Land the Water Security Agency mapped as ${FLOOD_KIND[z.kind].label}${z.water ? ` along ${z.water}` : ''}: what a 1:${FL.returnPeriod}-year flood (a 0.2% chance in any year) would cover, as the agency modelled it${z.program ? ` for the ${z.program}` : ''}${z.year ? ` (${z.year})` : ''}. A published hazard map, not a forecast or a record.`,
+          sources: [{ label: 'Water Security Agency GeoHub', url: FL.sourceUrl }, ...(pdf ? [{ label: 'Flood map (PDF)', url: pdf }] : [])],
+        };
+      }
       const st = o.s ?? o;
       const lv = liveOf.get(st.id);
       const years = Object.keys(st.peaks).map(Number).sort((a, b) => a - b);
@@ -750,6 +798,7 @@ function riversLayer(data: Data): AtlasLayer {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('rivers')) return null;
       if (o.a) return alertTooltip(o.a);
+      if (o.z) return `<b>${esc(o.z.place)}</b><br><span class="tk">${FLOOD_KIND[o.z.kind as FloodZone['kind']].label}</span>${o.z.water ? `<br><span class="tk">${esc(o.z.water)}</span>` : ''}<br><span class="tk">Water Security Agency mapping, not a forecast</span>`;
       const s = o.s ?? o;
       const rec = Object.entries(s.peaks as Record<string, number>).reduce((a, b) => (b[1] > a[1] ? b : a));
       const lv = o.row as NowRiverRow | undefined;
@@ -772,15 +821,72 @@ function climateLayer(data: Data): AtlasLayer {
   const y0 = ys[0] ?? 1900, y1 = ys.at(-1) ?? 2020;
   const warmest = ys.reduce((a, b) => (anomalies[b] > anomalies[a] ? b : a), y0);
   const trend = slope(ys.filter((y) => y >= 1950).map((y) => [y, anomalies[y]]));
+  // past the record: ClimateData.ca's projections at the atlas's places (src/projections.ts), to 2100, hatched
+  const P = data.projections;
+  const PFROM = y1 + 1;
+  const SCENS: ProjScen[] = ['ssp126', 'ssp585'];
+  // the projections are changes from 1971–2000; the record's anomalies are from 1961–1990. The record's own mean anomaly
+  // over 1971–2000 moves one onto the other (a province-wide shift, from the atlas's own stations, not from a model)
+  const r7100 = ys.filter((y) => y >= 1971 && y <= 2000).map((y) => anomalies[y]);
+  const SHIFT = r7100.length >= 20 ? d3.mean(r7100) ?? 0 : 0;
+  const projRamp = d3.scaleLinear<string>().domain([0, 2, 4, 7]).range(['#9aa3b2', '#f4a08a', '#e0312b', '#7a1036']).clamp(true);
+  const projH = (v: number) => 3600 + Math.max(0, v) * 30000;
+  let bandsMemo: ReturnType<typeof provinceBand>[] | null = null;
+  const bands = () => (bandsMemo ??= P ? SCENS.map((sc) => provinceBand(P, sc, 'tg', SHIFT)) : []);
+  type ProjCol = { m: Muni; lo: number; hi: number; spreadLo: number; spreadHi: number; t: number };
+  let projMemo: { t: number; rows: ProjCol[] } | null = null;
+  const projCols = (time: number): ProjCol[] => {
+    if (!P) return [];
+    const t = Math.round(time * 4) / 4;
+    if (projMemo?.t === t) return projMemo.rows;
+    const rows = data.munis.flatMap((m) => {
+      const a = projAt(P, m.key, 'tg', 'ssp126', t, SHIFT), b = projAt(P, m.key, 'tg', 'ssp585', t, SHIFT);
+      return a && b ? [{ m, lo: a.med, hi: b.med, spreadLo: Math.min(a.lo, b.lo), spreadHi: Math.max(a.hi, b.hi), t }] : [];
+    });
+    projMemo = { t, rows };
+    return rows;
+  };
+  // the published window nearest a time (between centres the map interpolates, and says so)
+  const windowOf = (t: number) => {
+    const ws = P?.windows ?? [];
+    const w = ws.reduce((a, b) => (Math.abs(b + 15 - t) < Math.abs(a + 15 - t) ? b : a), ws[0] ?? 2041);
+    return Math.abs(w + 15 - t) < 1 || t >= ws[ws.length - 1] + 15 ? `${windowText(w)} average` : `near the ${windowText(w)} average (interpolated)`;
+  };
 
   const l: AtlasLayer = {
     id: 'climate',
     name: 'Climate',
     icon: '🌡',
     color,
-    range: [y0, y1 + 0.99],
+    range: [y0, P ? 2100.99 : y1 + 0.99],
     available: !!data.climate,
+    projection: P ? { from: PFROM, bands: () => bands().map((b, i) => ({ color: SCEN_COLOR[SCENS[i]], pts: b })) } : undefined,
     build({ time, focusedId }) {
+      if (P && time >= PFROM) {
+        // a projection: a wire frame for the high-emissions median around a solid core for the low one, so every place
+        // shows a range, and nothing on the map looks like a measured column
+        const rows = projCols(time);
+        const out: Layer[] = [
+          new ColumnLayer<ProjCol>({
+            id: 'climate-proj-hi', data: rows, getPosition: (d) => [d.m.lon, d.m.lat], radius: 9000, diskResolution: 6, extruded: true,
+            filled: false, wireframe: true, getElevation: (d) => projH(d.hi), getLineColor: (d) => rgb(projRamp(d.hi), 230), pickable: true,
+            updateTriggers: { getElevation: rows, getLineColor: rows },
+          } as any),
+          new ColumnLayer<ProjCol>({
+            id: 'climate-proj-lo', data: rows, getPosition: (d) => [d.m.lon, d.m.lat], radius: 4500, diskResolution: 6, extruded: true,
+            getElevation: (d) => projH(d.lo), getFillColor: (d) => rgb(projRamp(d.lo), 150), material: { ambient: 0.65, diffuse: 0.5 }, pickable: true,
+            updateTriggers: { getElevation: rows, getFillColor: rows },
+          }),
+        ];
+        if (focusedId === 'climate')
+          out.push(new TextLayer<ProjCol>({
+            id: 'climate-proj-labels', data: rows, getPosition: (d) => [d.m.lon, d.m.lat, projH(d.hi) + 7000],
+            getText: (d) => `${rangeText(d.lo, d.hi)}°`, getSize: 11, getColor: [255, 214, 200, 230], characterSet: 'auto',
+            fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, outlineWidth: 3, outlineColor: [6, 10, 18, 220], fontSettings: { sdf: true },
+            billboard: true, updateTriggers: { getText: rows, getPosition: rows }, parameters: NO_DEPTH,
+          } as any));
+        return out;
+      }
       const live = stations
         .map((s) => {
           const series = Object.fromEntries(Object.entries(s.temp).map(([k, v]) => [k, v - s.baseline]));
@@ -826,33 +932,66 @@ function climateLayer(data: Data): AtlasLayer {
     spark: () => ys.map((x) => ({ x, y: anomalies[x], color: div(anomalies[x]) })),
     events: () => [{ stats: [{ v: `${fmt.signed(anomalies[warmest])} °C`, l: 'above the 1961–1990 normal' }, { v: `${stations.length}`, l: 'stations averaged' }], t: warmest + 0.5, layer: 'climate', title: `${warmest}: warmest year in the provincial record`, body: `Province-average temperature ran ${fmt.signed(anomalies[warmest])} °C above the 1961–1990 normal.` }],
     panel(el) {
-      el.innerHTML = `${kicker(l, 'Homogenized temperature record')}
+      el.innerHTML = `${kicker(l, P ? 'Homogenized temperature record · and projections' : 'Homogenized temperature record')}
         <h2>A warming prairie</h2>
-        <p class="lede">Annual mean temperature at ${stations.length} long-running weather stations, shown as the difference from each station’s 1961–1990 average. Columns grow and redden as years run warm; blue means cooler than normal.</p>`;
+        <p class="lede">Annual mean temperature at ${stations.length} long-running weather stations, shown as the difference from each station’s 1961–1990 average. Columns grow and redden as years run warm; blue means cooler than normal.${P ? ` Past ${y1} the timeline runs on to 2100, hatched: there it shows <b>published model projections</b>, not a record, as a range between a low- and a high-emissions future.` : ''}</p>
+        <div class="proj-now" hidden>${PROJ_BADGE}</div>`;
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Saskatchewan warming stripes (${y0}–${y1})</h3>`);
       const setA = deferChart(el.appendChild(mk('div')), (c) =>
         stripes(c, { cells: ys.map((x) => ({ x, color: div(anomalies[x]), label: `<b>${x}</b><br>${fmt.signed(anomalies[x], 2)} °C vs 1961–90` })), xDomain: [y0, y1], height: 50 }),
       );
-      el.insertAdjacentHTML('beforeend', `<h3>Anomaly by year (°C)</h3>`);
+      const barTip = (d: { x: number; y: number }) => `<b>${d.x}</b><br>${fmt.signed(d.y, 2)} °C vs 1961–90`;
+      el.insertAdjacentHTML('beforeend', P ? `<h3>Anomaly by year, then projected (°C vs 1961–90)</h3>` : `<h3>Anomaly by year (°C)</h3>`);
       const setB = deferChart(el.appendChild(mk('div')), (c) =>
-        barChart(c, { data: l.spark(), xDomain: [y0, y1], color, height: 120, diverging: true, yFormat: (v) => fmt.signed(v, 1), tooltip: (d) => `<b>${d.x}</b><br>${fmt.signed(d.y, 2)} °C vs 1961–90` }),
+        P
+          ? bandChart(c, {
+              bars: l.spark(), from: PFROM, xDomain: [y0, 2100], height: 160, yFormat: (v) => fmt.signed(v, 0), barTip,
+              bands: bands().map((b, i) => ({ label: `${SCEN_SHORT[SCENS[i]]}`, color: SCEN_COLOR[SCENS[i]], pts: b })),
+              bandTip: (x, rows) => `<b>${windowOf(x)}</b> · projection<br>${rows.map((r) => `<span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${r.color};margin-right:6px"></span>${r.label}: <span class="tv">${fmt.signed(r.med, 1)}</span> (models ${fmt.signed(r.lo, 1)} to ${fmt.signed(r.hi, 1)})`).join('<br>')}`,
+            })
+          : barChart(c, { data: l.spark(), xDomain: [y0, y1], color, height: 120, diverging: true, yFormat: (v) => fmt.signed(v, 1), tooltip: barTip }),
       );
       el.insertAdjacentHTML('beforeend', `
         <div class="ramp" style="background:${rampCSS((t) => div(-1.5 + t * 3))}"></div>
         <div class="ramp-labels"><span>−1.5 °C</span><span>normal</span><span>+1.5 °C</span></div>
         <div class="callout" style="--c:${color}">Since 1950 Saskatchewan’s long-running stations have warmed about <b>${trend != null ? (trend * 10).toFixed(2) : '–'} °C per decade</b>. On the prairies the warming is strongest in winter.</div>
-        <p class="note">AHCCD data are adjusted by Environment and Climate Change Canada to remove artificial jumps from station moves and instrument changes, so long-term trends are comparable. Series currently end in ${y1}.</p>
-        ${sourceLine(data.climate?.source ?? '')}`);
+        <p class="note">AHCCD data are adjusted by Environment and Climate Change Canada to remove artificial jumps from station moves and instrument changes, so long-term trends are comparable. Series currently end in ${y1}.</p>`);
+      if (P) {
+        const VARS: ProjVar[] = ['tg', 'tx', 'tn', 'pr'];
+        const unit = (v: ProjVar) => (P.vars[v].unit === 'mm' ? ' mm' : ' °C');
+        const dp = (v: ProjVar) => (P.vars[v].unit === '°C' ? 1 : 0);
+        const cell = (v: ProjVar, w: number) => { const a = provinceMedian(P, v, 'ssp126', w), b = provinceMedian(P, v, 'ssp585', w); return a != null && b != null ? `${rangeText(a, b, dp(v))}${unit(v)}` : '–'; };
+        el.insertAdjacentHTML('beforeend', `
+          <h3>What the models project ${PROJ_BADGE}</h3>
+          <div class="legend"><span><i class="sw proj-sw" style="--c:${SCEN_COLOR.ssp126}"></i>${P.scenarios.ssp126}</span><span><i class="sw proj-sw" style="--c:${SCEN_COLOR.ssp585}"></i>${P.scenarios.ssp585}</span></div>
+          <table class="proj-table"><thead><tr><th>Change from ${esc(P.baseline)}</th>${P.windows.map((w) => `<th>${windowText(w)}</th>`).join('')}</tr></thead>
+          <tbody>${VARS.map((v) => `<tr><td>${esc(P.vars[v].label)}</td>${P.windows.map((w) => `<td>${cell(v, w)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+          <p class="note">Each cell runs from the low-emissions to the high-emissions projection: the middle (median) of ${'26'} models for the median place in the atlas, as a 30-year average. The models’ own spread, their ${P.percentiles[0]}th to ${P.percentiles[1]}th percentile, is wider still: hover the chart above. On the map, past ${y1}, each place shows a solid core for the low-emissions median and a wire frame for the high-emissions one. Between the published windows the map and the chart interpolate, and 1971–2000 is where every model’s change is zero. To continue the record, the chart and the map add ${fmt.signed(SHIFT, 2)} °C, the stations’ own average anomaly over 1971–2000, so both read against 1961–1990; the table does not. Projections are statistically downscaled CMIP6 models (CanDCS-U6) for each place’s ~10 km grid cell, not a forecast of any one year, and they never rank towns in the Town Finder.</p>
+          ${sourceLine(`${P.source}, read ${P.asOf}. ${P.licence}`)}`);
+      }
+      el.insertAdjacentHTML('beforeend', sourceLine(data.climate?.source ?? ''));
+      const badge = el.querySelector<HTMLElement>('.proj-now')!;
       return {
         update({ time }) {
-          const y = Math.floor(time);
-          const a = anomalies[y];
-          hero(0, a != null ? `${fmt.signed(a)}°` : '–', `provincial anomaly ${y}`);
-          hero(1, String(warmest), `warmest year (${fmt.signed(anomalies[warmest])}°)`);
-          const recent = ys.filter((x) => x > y1 - 10).map((x) => anomalies[x]);
-          hero(2, `${fmt.signed(d3.mean(recent) ?? 0)}°`, `${y1 - 9}–${y1} average`);
-          hero(3, trend != null ? `${fmt.signed(trend * 10, 2)}°` : '–', 'per decade since 1950');
+          const projected = !!P && time >= PFROM;
+          badge.hidden = !projected;
+          if (projected) {
+            const rows = projCols(time);
+            const lo = d3.mean(rows, (r) => r.lo) ?? 0, hi = d3.mean(rows, (r) => r.hi) ?? 0;
+            hero(0, `${rangeText(lo, hi)}°`, `projected, ${windowOf(time)}`);
+            hero(1, String(warmest), `warmest year on record (${fmt.signed(anomalies[warmest])}°)`);
+            hero(2, `${rangeText(d3.min(rows, (r) => r.spreadLo) ?? 0, d3.max(rows, (r) => r.spreadHi) ?? 0)}°`, `${P!.percentiles[0]}th–${P!.percentiles[1]}th pct., any place`);
+            hero(3, trend != null ? `${fmt.signed(trend * 10, 2)}°` : '–', 'per decade since 1950 (record)');
+          } else {
+            const y = Math.floor(time);
+            const a = anomalies[y];
+            hero(0, a != null ? `${fmt.signed(a)}°` : '–', `provincial anomaly ${y}`);
+            hero(1, String(warmest), `warmest year (${fmt.signed(anomalies[warmest])}°)`);
+            const recent = ys.filter((x) => x > y1 - 10).map((x) => anomalies[x]);
+            hero(2, `${fmt.signed(d3.mean(recent) ?? 0)}°`, `${y1 - 9}–${y1} average`);
+            hero(3, trend != null ? `${fmt.signed(trend * 10, 2)}°` : '–', 'per decade since 1950');
+          }
           setA(time); setB(time);
         },
       };
@@ -860,6 +999,17 @@ function climateLayer(data: Data): AtlasLayer {
     describe(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('climate')) return null;
+      if (info.layer.id.startsWith('climate-proj') && P) {
+        const c = o as ProjCol;
+        const row = (sc: ProjScen, w: number) => projAt(P, c.m.key, 'tg', sc, w + 15, SHIFT);
+        return {
+          layer: 'climate', kind: 'Climate projection', lon: c.m.lon, lat: c.m.lat, zoom: 8,
+          title: `${c.m.name}: projected warming`,
+          body: `Projection, not a record. Mean temperature, ${windowOf(c.t)}, against 1961–1990: ${rangeText(c.lo, c.hi)} °C, from the middle of the models under low emissions to the middle under high emissions; the models’ ${P.percentiles[0]}th–${P.percentiles[1]}th percentile ${rangeText(c.spreadLo, c.spreadHi)} °C.`,
+          stats: P.windows.map((w) => { const a = row('ssp126', w), b = row('ssp585', w); return { v: a && b ? `${rangeText(a.med, b.med)}°` : '–', l: `${windowText(w)} (projection)` }; }),
+          sources: [{ label: 'CanDCS-U6 (open.canada.ca)', url: P.sourceUrl }],
+        };
+      }
       const st = o.s;
       const ys = Object.keys(st.temp).map(Number).sort((a, b) => a - b);
       if (!ys.length) return null;
@@ -878,6 +1028,10 @@ function climateLayer(data: Data): AtlasLayer {
     tooltip(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('climate')) return null;
+      if (info.layer.id.startsWith('climate-proj')) {
+        const c = o as ProjCol;
+        return `<b>${esc(c.m.name)}</b> <span class="proj-badge">projection</span><br><span class="tk">${windowOf(c.t)}</span> <span class="tv">${rangeText(c.lo, c.hi)} °C vs 1961–90</span><br><span class="tk">low to high emissions (model medians); ${P!.percentiles[0]}th–${P!.percentiles[1]}th percentile ${rangeText(c.spreadLo, c.spreadHi)} °C</span>`;
+      }
       const s = o.s;
       const yrs = Object.keys(s.temp);
       return `<b>${esc(s.name)}</b><br><span class="tk">This year</span> <span class="tv">${fmt.signed(o.a, 2)} °C vs normal</span><br><span class="tk">1961–90 normal</span> <span class="tv">${s.baseline.toFixed(1)} °C</span><br><span class="tk">Record</span> <span class="tv">${yrs[0]}–${yrs.at(-1)}</span>`;
@@ -1213,7 +1367,7 @@ function crimeLayer(data: Data): AtlasLayer {
 // ---------------------------------------------------------------------------------------------
 // HOSPITAL ACCESS — a static layer: where emergency care is today, and how long the drive takes
 
-const dashExt = [new PathStyleExtension({ dash: true })];
+export const dashExt = [new PathStyleExtension({ dash: true })];
 
 function hospitalsLayer(data: Data): AtlasLayer {
   const color = '#6c8cff';
@@ -1221,28 +1375,53 @@ function hospitalsLayer(data: Data): AtlasLayer {
   const fac: Facility[] = H?.facilities ?? [];
   const routed = !!H && H.routing !== 'straight-line';
   const unit = routed ? 'min' : 'km';
-  const er = new Map((H ? townMetrics(data) : []).map((t) => [t.muni.key, t.hospital]));
-  // minutes to the nearest 24/7 ER, avoiding ferries where possible (km if no drive times could be computed)
-  const val = (key: string) => { const e = er.get(key); return e ? e.min ?? e.km : null; };
+  const tripsOf = (key: string) => H?.towns[key];
+  const tv = (t: Trip) => t.min ?? t.km;
+  // a place's trip to its nearest hospital: the real one, or under a closure scenario (src/scenario.ts) the nearest open
+  // one the stage kept; `beyond` when every kept hospital is closed (the drive is then longer than the last kept one)
+  const nearest = (key: string): { t: Trip; beyond: boolean } | null => {
+    const trips = tripsOf(key);
+    if (!trips?.length) return null;
+    if (!scenarioOn('hospitals')) return { t: trips[0], beyond: false };
+    const { trip, beyond } = scenarioTrip('hospitals', trips);
+    return trip ? { t: trip, beyond: false } : beyond ? { t: beyond, beyond: true } : null;
+  };
+  const val = (key: string) => { const n = nearest(key); return n ? tv(n.t) : null; };
   const ramp = d3.scaleLinear<string>().domain([5, 45, 150]).range(['#e3f1ff', color, '#e0457b']).interpolate(d3.interpolateRgb).clamp(true);
   const height = (v: number) => 3600 + Math.min(v, 300) * 600;
   const edColor = (f: Facility) => (f.hospital ? color : '#7d879c');
   const tripText = (t: Trip) => (t.min != null ? `${t.min} min` : `${Math.round(t.km)} km (straight line)`);
+  const addText = (a: Affected) => (a.added == null ? `more than +${Math.round(tv(a.beyond!) - tv(a.before))} ${unit}` : `+${Math.round(a.added)} ${unit}`);
 
-  // road lines for the hovered / selected town, with cumulative lengths for the travelling pulse
-  type Row = { t: Trip; i: number; path: [number, number][]; cum: number[] };
+  // road lines: the hovered / selected town's (its nearest and next, or under a scenario its closed and new routes), and
+  // with a scenario and nothing hovered, every affected town's new route. Cumulative lengths drive the travelling pulse.
+  type RowKind = 'near' | 'alt' | 'closed' | 'new';
+  type Row = { t: Trip; kind: RowKind; label: boolean; path: [number, number][]; cum: number[] };
+  const row = (m: Muni, t: Trip, kind: RowKind, label: boolean): Row => {
+    const path: [number, number][] = t.line ?? [[m.lon, m.lat], [fac[t.f].lon, fac[t.f].lat]];
+    const cum = [0];
+    for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + Math.hypot(path[k][0] - path[k - 1][0], (path[k][1] - path[k - 1][1]) * 1.5));
+    return { t, kind, label, path, cum };
+  };
   let memoKey: string | null = null;
   let memoRows: Row[] = [];
   const rowsFor = (key: string | null) => {
-    if (key === memoKey) return memoRows;
-    memoKey = key;
+    const mk = `${key}|${scenarioVersion}`;
+    if (mk === memoKey) return memoRows;
+    memoKey = mk;
     const m = data.munis.find((x) => x.key === key);
-    memoRows = !m || !H ? [] : (H.towns[m.key] ?? []).map((t, i) => {
-      const path: [number, number][] = t.line ?? [[m.lon, m.lat], [fac[t.f].lon, fac[t.f].lat]];
-      const cum = [0];
-      for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + Math.hypot(path[k][0] - path[k - 1][0], (path[k][1] - path[k - 1][1]) * 1.5));
-      return { t, i, path, cum };
-    });
+    const trips = m ? tripsOf(m.key) ?? [] : [];
+    if (!scenarioOn('hospitals')) {
+      memoRows = m ? trips.slice(0, 2).map((t, i) => row(m, t, i === 0 ? 'near' : 'alt', true)) : [];
+    } else if (m) {
+      const n = nearest(m.key);
+      memoRows = [
+        ...(trips[0] && isClosed('hospitals', trips[0].f) ? [row(m, trips[0], 'closed', true)] : []),
+        ...(n && !n.beyond ? [row(m, n.t, n.t === trips[0] ? 'near' : 'new', true)] : []),
+      ];
+    } else {
+      memoRows = affectedTowns('hospitals', data.munis, tripsOf).flatMap((a) => [row(a.m, a.before, 'closed', false), ...(a.after ? [row(a.m, a.after, 'new', false)] : [])]);
+    }
     return memoRows;
   };
   const along = (r: Row, q: number): [number, number] => {
@@ -1252,6 +1431,7 @@ function hospitalsLayer(data: Data): AtlasLayer {
     const f = (d - r.cum[k - 1]) / (r.cum[k] - r.cum[k - 1] || 1);
     return [r.path[k - 1][0] + (r.path[k][0] - r.path[k - 1][0]) * f, r.path[k - 1][1] + (r.path[k][1] - r.path[k - 1][1]) * f];
   };
+  const ROW_COLOR: Record<RowKind, RGBA> = { near: rgb('#ffffff', 235), new: rgb('#ffffff', 235), alt: rgb(color, 200), closed: rgb(CLOSED_COLOR, 210) };
 
   const l: AtlasLayer = {
     id: 'hospitals',
@@ -1265,44 +1445,48 @@ function hospitalsLayer(data: Data): AtlasLayer {
     unavailable: 'Statistics Canada’s Open Database of Healthcare Facilities could not be downloaded when this copy of the data was built. Run <code>npm run data hospitals</code>, then reload.',
     build({ selected, hovered, focusedId, clock }) {
       const focused = focusedId === 'hospitals';
+      const sc = scenarioOn('hospitals');
       const out: Layer[] = [];
-      if (focused) out.push(...townColumns('hospitals', data.munis, (m) => val(m.key), height, (v) => rgb(ramp(v), 235), 0, selected));
+      if (focused) out.push(...townColumns('hospitals', data.munis, (m) => val(m.key), height, (v, m) => (sc && nearest(m.key)?.beyond ? rgb(CLOSED_COLOR, 235) : rgb(ramp(v), 235)), scenarioVersion, selected));
 
       const rows = rowsFor(hovered ?? selected);
       if (rows.length) {
         const q = (clock % 2600) / 2600;
+        const moving = rows.filter((r) => r.kind !== 'closed' && r.kind !== 'alt');
         out.push(
           new PathLayer<Row>({
             id: 'hospitals-trips',
             data: rows,
             getPath: (r) => r.path,
-            getColor: (r) => (r.i === 0 ? rgb('#ffffff', 235) : rgb(color, 200)),
-            getWidth: (r) => (r.i === 0 ? 4 : 2.5),
+            getColor: (r) => ROW_COLOR[r.kind],
+            getWidth: (r) => (r.kind === 'near' || r.kind === 'new' ? (r.label ? 4 : 3) : 2.5),
             widthUnits: 'pixels',
             capRounded: true,
             jointRounded: true,
             extensions: dashExt,
-            getDashArray: (r) => (!r.t.line ? [3, 2] : [0, 0]),
+            // a closed hospital's route is dashed, like a straight line standing in for a road
+            getDashArray: (r) => (r.kind === 'closed' ? [4, 3] : !r.t.line ? [3, 2] : [0, 0]),
             dashJustified: true,
+            updateTriggers: { getColor: scenarioVersion, getDashArray: scenarioVersion, getWidth: scenarioVersion },
             parameters: NO_DEPTH,
           } as any),
           new ScatterplotLayer<Row>({
             id: 'hospitals-pulse',
-            data: rows,
+            data: moving,
             getPosition: (r) => along(r, q),
             getRadius: 2600,
             radiusMinPixels: 3,
-            getFillColor: (r) => (r.i === 0 ? [255, 255, 255, 230] : rgb(color, 230)),
+            getFillColor: [255, 255, 255, 230],
             updateTriggers: { getPosition: q },
             parameters: ADDITIVE,
           }),
           new TextLayer<Row>({
             id: 'hospitals-mins',
-            data: rows,
+            data: rows.filter((r) => r.label),
             getPosition: (r) => r.path[r.path.length - 1],
-            getText: (r) => `${tripText(r.t)}\n${fac[r.t.f].name}`,
-            getSize: (r) => (r.i === 0 ? 13 : 11),
-            getColor: (r) => (r.i === 0 ? [255, 255, 255, 255] : [214, 222, 255, 235]),
+            getText: (r) => `${r.kind === 'closed' ? 'closed · ' : ''}${tripText(r.t)}\n${fac[r.t.f].name}`,
+            getSize: (r) => (r.kind === 'near' || r.kind === 'new' ? 13 : 11),
+            getColor: (r) => (r.kind === 'closed' ? rgb(CLOSED_COLOR) : r.kind === 'alt' ? [214, 222, 255, 235] : [255, 255, 255, 255]),
             getPixelOffset: [0, -14],
             getAlignmentBaseline: 'bottom',
             fontFamily: 'Inter, sans-serif',
@@ -1311,17 +1495,19 @@ function hospitalsLayer(data: Data): AtlasLayer {
             outlineWidth: 3,
             outlineColor: [6, 10, 18, 230],
             fontSettings: { sdf: true },
+            updateTriggers: { getText: scenarioVersion, getColor: scenarioVersion },
             parameters: { depthCompare: 'always' },
           } as any),
         );
       }
 
-      // round-the-clock ERs breathe; smaller sites are drawn dimmer
+      // round-the-clock ERs breathe; smaller sites are drawn dimmer; a hospital closed in a scenario is red and still
       const p = (clock % 2400) / 2400;
+      const shut = (i: number) => sc && isClosed('hospitals', i);
       out.push(
         new ScatterplotLayer<Facility>({
           id: 'hospitals-halo',
-          data: fac.filter((f) => f.hospital),
+          data: fac.filter((f, i) => f.hospital && !shut(i)),
           getPosition: (f) => [f.lon, f.lat],
           getRadius: 4000 + p * 15000,
           radiusMinPixels: 5,
@@ -1339,14 +1525,33 @@ function hospitalsLayer(data: Data): AtlasLayer {
           getRadius: (f) => (f.hospital ? 3400 : 2400),
           radiusMinPixels: focused ? 5 : 4,
           radiusMaxPixels: 13,
-          getFillColor: (f) => (f.hospital ? [255, 255, 255, 255] : [16, 22, 38, 235]),
+          getFillColor: (f, { index }) => (shut(index) ? rgb(CLOSED_COLOR) : f.hospital ? [255, 255, 255, 255] : [16, 22, 38, 235]),
           stroked: true,
-          getLineColor: (f) => rgb(edColor(f)),
+          getLineColor: (f, { index }) => (shut(index) ? [255, 255, 255, 255] : rgb(edColor(f))),
           lineWidthMinPixels: 2.5,
           pickable: true,
+          updateTriggers: { getFillColor: scenarioVersion, getLineColor: scenarioVersion },
           parameters: { depthCompare: 'always' },
         } as any),
       );
+      if (sc)
+        out.push(new TextLayer<{ f: number; name: string }>({
+          id: 'hospitals-closed',
+          data: closedSites('hospitals'),
+          getPosition: (c) => [fac[c.f].lon, fac[c.f].lat],
+          getText: () => 'closed (scenario)',
+          getSize: 11,
+          getColor: rgb(CLOSED_COLOR),
+          getPixelOffset: [0, 16],
+          getAlignmentBaseline: 'top',
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 700,
+          outlineWidth: 3,
+          outlineColor: [6, 10, 18, 230],
+          fontSettings: { sdf: true },
+          updateTriggers: { getPosition: scenarioVersion },
+          parameters: { depthCompare: 'always' },
+        } as any));
       return out;
     },
     spark: () => [],
@@ -1358,28 +1563,39 @@ function hospitalsLayer(data: Data): AtlasLayer {
         el.insertAdjacentHTML('beforeend', `<div class="unavail">${l.unavailable}</div>`);
         return { update() {} };
       }
+      const sc = scenarioOn('hospitals');
       const n24 = fac.filter((f) => f.hospital).length;
       el.insertAdjacentHTML('beforeend', `<p class="lede">The ${fac.length} Saskatchewan sites Statistics Canada’s Open Database of Healthcare Facilities files as hospitals, ${n24} of them hospitals proper (the rest are health centres and clinics). Column height shows the ${routed ? '<b>typical drive</b>' : '<b>straight-line distance</b>'} from each town centre to its nearest hospital. Hover or click a town to see its routes.</p>`);
+      if (sc) el.appendChild(scenarioBox('hospitals', data.munis, tripsOf, (f) => fac[f]?.name ?? '', addText, tripText));
       const hero = heroStats(el, 4);
-      const rows = data.munis.flatMap((m) => { const e = er.get(m.key), v = val(m.key); return e && v != null ? [{ m, v, e }] : []; });
+      const rows = data.munis.flatMap((m) => { const n = nearest(m.key); return n ? [{ m, v: tv(n.t), n }] : []; });
       rows.sort((a, b) => a.v - b.v);
       const near = routed ? 20 : 15;
-      hero(0, String(n24), 'hospitals');
+      hero(0, sc ? `${n24 - closedSites('hospitals').length} of ${n24}` : String(n24), sc ? 'hospitals open in this scenario' : 'hospitals');
       hero(1, `${Math.round(d3.median(rows, (r) => r.v) ?? 0)} ${unit}`, 'median place to a hospital');
-      hero(2, `${rows.filter((r) => r.v <= near).length} of ${rows.length}`, `towns within ${near} ${unit}`);
+      hero(2, `${rows.filter((r) => r.v <= near && !r.n.beyond).length} of ${rows.length}`, `towns within ${near} ${unit}`);
       const far = rows.at(-1);
-      hero(3, far ? `${Math.round(far.v)} ${unit}` : '–', far ? `farthest: ${far.m.name}` : '');
+      hero(3, far ? `${far.n.beyond ? '>' : ''}${Math.round(far.v)} ${unit}` : '–', far ? `farthest: ${far.m.name}` : '');
       const max = d3.max(rows, (r) => r.v) ?? 1;
       const small = fac.filter((f) => f.ed !== '24/7');
+      const hosp = fac.map((f, i) => ({ f, i })).filter((x) => x.f.hospital).sort((a, b) => a.f.name.localeCompare(b.f.name));
       el.insertAdjacentHTML('beforeend', `
-        <h3>${routed ? 'Drive' : 'Distance'} to the nearest hospital</h3>
-        <ol class="rank-list">${rows.map((r, i) => `<li><span class="rk">${i + 1}</span><span><span class="nm">${r.m.name}</span><br><span class="rd">${esc(r.e.name)} · ${Math.round(r.e.km)} km</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
+        <h3>${routed ? 'Drive' : 'Distance'} to the nearest hospital${sc ? ' <span class="sc-tag">scenario</span>' : ''}</h3>
+        <ol class="rank-list">${rows.map((r, i) => `<li data-key="${r.m.key}"><span class="rk">${i + 1}</span><span><span class="nm">${r.m.name}</span><br><span class="rd">${esc(fac[r.n.t.f].name)} · ${Math.round(r.n.t.km)} km${r.n.beyond ? ' · <b class="sc-closed">every hospital kept for it is closed</b>' : ''}</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${r.n.beyond ? CLOSED_COLOR : ramp(r.v)}"></i></div><div class="bar-v">${r.n.beyond ? '>' : ''}${Math.round(r.v)}</div></span></li>`).join('')}</ol>
         <div class="ramp" style="background:${rampCSS((t) => ramp(5 + t * 145))}"></div>
         <div class="ramp-labels"><span>5 ${unit}</span><span>45</span><span>150+ ${unit}</span></div>
-        <div class="legend"><span><i class="sw" style="background:#fff;box-shadow:0 0 0 2px ${color}"></i>hospital</span><span><i class="sw" style="background:#101626;box-shadow:0 0 0 2px #7d879c"></i>health centre or clinic</span></div>
+        <div class="legend"><span><i class="sw" style="background:#fff;box-shadow:0 0 0 2px ${color}"></i>hospital</span><span><i class="sw" style="background:#101626;box-shadow:0 0 0 2px #7d879c"></i>health centre or clinic</span>${sc ? `<span><i class="sw" style="background:${CLOSED_COLOR}"></i>closed in this scenario</span>` : ''}</div>
+        <h3>What if a hospital closed?</h3>
+        <p class="note" style="margin-top:0">Pick a hospital (or click one on the map) to see which towns would drive farther, and how much farther. Each town keeps its ${H.towns[data.munis[0]?.key]?.length ?? 3} fastest hospitals by road, so up to two closures can be combined.</p>
+        <select class="sc-pick" aria-label="Close a hospital in a scenario"><option value="">Close a hospital…</option>${hosp.map((x) => `<option value="${x.i}"${isClosed('hospitals', x.i) ? ' disabled' : ''}>${esc(x.f.name)} · ${esc(x.f.city)}</option>`).join('')}</select>
         ${small.length ? `<div class="callout" style="--c:${color}">${small.length} health centres and clinics are on the map but left out of the ranking: they may not offer emergency or in-patient care.</div>` : ''}
         <p class="note">${routed ? 'Drive times are the OSRM router’s estimate for normal free-flowing traffic on OpenStreetMap roads, from the town centre. They don’t include winter roads, gravel, or air ambulance, which serves much of the far north.' : 'No routing service was reachable when this data was built, so these are straight-line distances, not drive times.'} The facility list is Statistics Canada’s 2020 compilation: rural emergency departments in Saskatchewan have had temporary closures for staffing since, and services (surgery, maternity, emergency hours) differ by hospital — check the Saskatchewan Health Authority before relying on one.</p>
         ${sourceLine(`${H.source}. ${H.routingSource ?? 'Straight-line distances.'}`)}`);
+      el.querySelector<HTMLSelectElement>('.sc-pick')!.addEventListener('change', (e) => {
+        const i = +(e.target as HTMLSelectElement).value;
+        if (fac[i]) setClosed('hospitals', i, fac[i].name, true);
+      });
+      el.querySelector('.rank-list')!.addEventListener('click', (e) => { const k = (e.target as HTMLElement).closest('li')?.dataset.key; if (k) window.dispatchEvent(new CustomEvent('atlas:town', { detail: k })); });
       return { update() {} };
     },
     tooltip(info) {
@@ -1387,12 +1603,30 @@ function hospitalsLayer(data: Data): AtlasLayer {
       if (!info.object || !id.startsWith('hospitals')) return null;
       if (id === 'hospitals-sites') {
         const f = info.object as Facility;
-        return `<b>${esc(f.name)}</b><br><span class="tk">${f.hospital ? 'Hospital' : 'Health centre or clinic'} · ${esc(f.city)}</span>${f.type ? `<br><span class="tk">Listed as</span> <span class="tv">${esc(f.type)}</span>` : ''}`;
+        const shut = isClosed('hospitals', info.index);
+        return `<b>${esc(f.name)}</b><br><span class="tk">${f.hospital ? 'Hospital' : 'Health centre or clinic'} · ${esc(f.city)}</span>${f.type ? `<br><span class="tk">Listed as</span> <span class="tv">${esc(f.type)}</span>` : ''}${shut ? '<br><span class="tk sc-closed">Closed in your scenario</span>' : ''}${f.hospital ? `<br><span class="tk tk-click">Click: ${shut ? 'reopen it' : 'what if this closed?'}</span>` : ''}`;
       }
       const o: any = info.object;
-      const e = er.get(o.m?.key);
-      if (!e) return null;
-      return `<b>${o.m.name}</b><br><span class="tk">Nearest hospital</span> <span class="tv">${e.min != null ? `${e.min} min` : `${Math.round(e.km)} km`}</span><br><span class="tk">${esc(e.name)} · ${Math.round(e.km)} km by ${e.min != null ? 'road' : 'straight line'}</span><br><span class="tk">Click for town report</span>`;
+      const n = o.m ? nearest(o.m.key) : null;
+      if (!n) return null;
+      const e = n.t, sc = scenarioOn('hospitals');
+      return `<b>${o.m.name}</b><br><span class="tk">Nearest ${sc ? 'open ' : ''}hospital${sc ? ' (scenario)' : ''}</span> <span class="tv">${n.beyond ? 'more than ' : ''}${e.min != null ? `${e.min} min` : `${Math.round(e.km)} km`}</span><br><span class="tk">${n.beyond ? 'every hospital kept for it is closed' : `${esc(fac[e.f].name)} · ${Math.round(e.km)} km by ${e.min != null ? 'road' : 'straight line'}`}</span><br><span class="tk">Click for town report</span>`;
+    },
+    describe(info) {
+      if (info.layer?.id !== 'hospitals-sites') return null;
+      const f = info.object as Facility, i = info.index;
+      const near = data.munis.filter((m) => tripsOf(m.key)?.[0]?.f === i);
+      const shut = isClosed('hospitals', i);
+      return {
+        layer: 'hospitals', kind: f.hospital ? 'Hospital' : 'Health centre or clinic', lon: f.lon, lat: f.lat, zoom: 8,
+        title: f.name,
+        body: `${f.hospital ? 'Hospital' : 'Health centre or clinic'} in ${f.city}${f.type ? `, listed as ${f.type}` : ''}. ${f.hospital ? `It is the nearest hospital by road for ${near.length} of the atlas’s places${near.length ? `: ${near.map((m) => m.name).join(', ')}` : ''}.` : 'The ranking counts hospitals proper only, so no town’s drive leads here.'}`,
+        stats: near.length ? [{ v: String(near.length), l: 'places it is nearest to' }, { v: `${Math.round(d3.max(near, (m) => tv(tripsOf(m.key)![0])) ?? 0)} ${unit}`, l: 'longest of those drives' }] : [],
+        detail: f.hospital ? (el) => {
+          el.insertAdjacentHTML('beforeend', `<button class="sc-btn" style="--c:${CLOSED_COLOR}">${shut ? '↺ Reopen it' : scenarioOn('hospitals') ? '✕ Close this one too' : '✕ What if this closed?'}</button><p class="note">${esc(SCENARIO_CAVEAT)}</p>`);
+          el.querySelector('.sc-btn')!.addEventListener('click', () => setClosed('hospitals', i, f.name, !shut));
+        } : undefined,
+      };
     },
   };
   return l;

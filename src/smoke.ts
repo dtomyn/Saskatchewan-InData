@@ -10,7 +10,7 @@ import { barChart } from './charts';
 import { esc } from './html';
 import { AtlasLayer, NO_DEPTH, RecentSpan, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layers';
 import { airHistory, dayT, dayText, tDay } from './history';
-import { NOW_T, ageTag, ago, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, aqhiColor, aqhiText, aqhiWord, drawable, freshness, isNow, ms, nowBlock, skTime, tickAges } from './now';
+import { NOW_T, ageTag, ago, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, aqhiColor, aqhiText, aqhiWord, drawable, freshness, isNow, ms, nowBlock, provinceOutlook, skTime, tickAges } from './now';
 
 export const SMOKE_COLOR = '#e8a87c';
 /** haze → amber → the fire layer's ember red, by smoke days in a year */
@@ -98,7 +98,8 @@ export function smokeLayer(data: Data): AtlasLayer {
     if (data.now.skipped) return '';
     const live = comms.filter((c) => drawable(c.t));
     const body = `<p>Environment Canada’s Air Quality Health Index, the latest hour at each community it reports for, and the highest value its newest forecast expects. AQHI rolls three pollutants (ozone, nitrogen dioxide and fine particles) into one 1–10+ health-risk scale: it is not the smoke-day count below, and the two are never drawn together. A place without its own reading borrows the nearest community within ${nowA?.reachKm ?? 150} km; its Town Report says which.</p>
-      <div class="now-list">${live.map((c) => `<div><span class="sw" style="background:${aqhiColor(c.v)}"></span><b>${aqhiText(c.v)}</b> ${esc(c.name)}${c.out ? ' <span class="tk">(outside Sask.)</span>' : ''} <span class="tk">${aqhiWord(c.v)}${c.fv != null ? ` · forecast up to ${aqhiText(c.fv)}` : ''}</span> ${ageTag(c.t)}</div>`).join('') || '<div class="tk">No community has reported in the past day.</div>'}</div>
+      <div class="now-list">${live.map((c) => `<div><span class="sw" style="background:${aqhiColor(c.v)}"></span><b>${aqhiText(c.v)}</b> ${esc(c.name)}${c.out ? ' <span class="tk">(outside Sask.)</span>' : ''} <span class="tk">${aqhiWord(c.v)}${c.fv != null && c.ft && Date.parse(c.fto ?? c.ft) > Date.now() ? ` · forecast up to ${aqhiText(c.fv)} by ${esc(skTime(c.fto ?? c.ft))}${c.pub ? `, issued ${esc(skTime(c.pub))}` : ''}` : ''}</span> ${ageTag(c.t)}</div>`).join('') || '<div class="tk">No community has reported in the past day.</div>'}</div>
+      ${provinceOutlook(data, 'smoke')}
       ${alertList(alertsInEffect(data, 'smoke'), data)}`;
     return nowBlock({ color, asOf: nowA?.asOf ?? null, body, source: nowA?.source ?? '', sourceUrl: nowA?.sourceUrl, missing: 'This copy of the data has no air-quality readings.' });
   }
