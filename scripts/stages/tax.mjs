@@ -69,7 +69,11 @@ export default async function tax() {
   const places = await getPlaces();
   const want = new Map(places.map((p) => [norm(p.name), p]));
   const found = {};
-  const STATUS = new Set(['C', 'T', 'NT', 'V', 'NV']);
+  // the municipal status, as a code (to 2023) or spelled out (2025 on); resort villages and northern hamlets are not places
+  const STATUS = { c: 'C', city: 'C', t: 'T', town: 'T', nt: 'NT', 'northern town': 'NT', v: 'V', village: 'V', nv: 'NV', 'northern village': 'NV' };
+  const status = (v) => STATUS[String(v ?? '').trim().toLowerCase()] ?? null;
+  // the levy for schools: "School Tax Levy" to 2023, "Education Tax Levy" from 2025
+  const colAny = (col, sections, sub) => sections.map((s) => col(s, sub)).find((c) => c != null) ?? null;
   for (const sh of sheets.filter((s) => /^(city|cities|towns?|villages?|north)/i.test(s.name))) {
     const rows = readSheet(sh.file);
     const sec = Object.entries(rows[2] ?? {}).map(([k, v]) => [+k, v]).sort((a, b) => a[0] - b[0]);
@@ -87,13 +91,14 @@ export default async function tax() {
       min: +Object.entries(hdr).find(([, v]) => /^min tax$/i.test(v))?.[0],
       mrf: col('Municipal Mill Rate Factors', 'Residential'),
       fac: col('Factored Municipal Mill Rate', 'Residential'),
-      sA: col('School Taxable Assessment', 'Residential'),
-      sL: col('School Tax Levy', 'Residential'),
+      sA: colAny(col, ['School Taxable Assessment', 'Education Taxable Assessment'], 'Residential'),
+      sL: colAny(col, ['School Tax Levy', 'Education Tax Levy'], 'Residential'),
       mA: col('Municipal Taxable Assessment', 'Residential'),
     };
     if (!C.uniform || !C.sA || !C.sL) { log(`  sheet ${sh.name}: columns not found, skipped`); continue; }
     for (const [n, r] of Object.entries(rows)) {
-      if (+n <= 3 || !r[4] || !STATUS.has(r[3])) continue;
+      const s = status(r[3]);
+      if (+n <= 3 || !r[4] || !s) continue;
       const p = want.get(norm(r[4]));
       if (!p || found[p.key]) continue;
       const uniform = num(r[C.uniform]);
@@ -102,7 +107,7 @@ export default async function tax() {
       const factored = num(r[C.fac]) || (f ? uniform * f : uniform);
       const sA = num(r[C.sA]), sL = num(r[C.sL]);
       found[p.key] = {
-        n: r[4], s: r[3], mr: round(uniform, 4), f: f && f !== 1 ? round(f, 4) : undefined, r: round(factored, 4),
+        n: r[4], s, mr: round(uniform, 4), f: f && f !== 1 ? round(f, 4) : undefined, r: round(factored, 4),
         e: sA && sL ? round((sL / sA) * 1000, 2) : null,
         bt: /^y/i.test(r[C.base] ?? '') || undefined, mt: /^y/i.test(r[C.min] ?? '') || undefined,
       };
@@ -110,9 +115,12 @@ export default async function tax() {
   }
   const missing = places.filter((p) => !found[p.key]).map((p) => p.name);
   log(`  ${Object.keys(found).length} of ${places.length} places matched${missing.length ? `; not found: ${missing.join(', ')}` : ''}`);
+  // a workbook whose layout changed again would match next to nothing: fail, so the old tax.json stays
+  if (Object.keys(found).length < places.length * 0.8) throw new Error(`only ${Object.keys(found).length} of ${places.length} places found in the ${latest.year} workbook (has its layout changed?)`);
 
   // the province sets the residential education mill rate: the typical per-place school levy ÷ assessment
   const eds = Object.values(found).map((o) => o.e).filter((v) => v != null).sort((a, b) => a - b);
+  if (!eds.length) throw new Error(`no school (education) levy columns found in the ${latest.year} workbook`);
   const edu = eds[Math.floor(eds.length / 2)];
   let housing = null;
   try { housing = await readOut('housing'); } catch { log('  housing.json missing: no indicative tax'); }
