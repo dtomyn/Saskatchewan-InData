@@ -9,7 +9,8 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, RadonArea } from './data';
 import { rampCSS } from './charts';
 import { esc, safeUrl } from './html';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
+import { metric, link } from './report-kit';
 
 export const RADON_COLOR = '#b48cff';
 // low share stays dark and cool; a quarter or more of homes over the guideline glows
@@ -151,4 +152,20 @@ export function radonLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Radon: the share of tested homes at or above the guideline in the place's 2007 health region and in its own postal
+ * area(s), from Health Canada's survey. A regional odds, never a verdict on a house. */
+export function radonRows(p: PlaceRadon, data: Data) {
+  const R = data.radon!;
+  const f = p.fsa;
+  return `<h3>Radon</h3>
+    <div class="metric-grid">
+      ${metric('Radon', RADON_RAMP(p.region.pct), `${Math.round(p.region.pct)}%`, `of ${p.region.n} homes tested in the ${esc(p.region.name)} health region were at or above ${R.guide} Bq/m³ (${esc(R.years)})`)}
+      ${f ? metric(`Postal area${f.ids.length > 1 ? 's' : ''}`, RADON_RAMP(f.pct), `${Math.round(f.pct)}%`, `${f.hi} of ${f.n} homes tested in ${esc(f.ids.join(', '))}${f.few ? ' · <b>few tests</b>: a rough figure' : ''}`) : ''}
+    </div>
+    <p class="note" style="margin-top:6px">Radon varies from house to house; the only way to know is a long-term test (three months or more) in the home itself, which Health Canada advises for every home. Survey of volunteer homes, ${esc(R.years)}.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('radon', '☢ Radon on the map')}</div>`;
 }

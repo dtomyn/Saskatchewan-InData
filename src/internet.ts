@@ -10,7 +10,8 @@ import { fmt } from './data';
 import type { Data, NetHex, NetTown } from './data';
 import { esc } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { metric, link } from './report-kit';
 
 /** What the map can show, in the order of the panel's chips. */
 export const NET_MEASURES = [
@@ -150,4 +151,19 @@ export function internetLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Internet: the fixed speed offered to homes in town (ISED), and mobile service. */
+export function internetRows(p: PlaceNet) {
+  const c = '#e9a8ff';
+  return `<h3>Internet</h3>
+    <div class="metric-grid">
+      ${metric('Fast internet', c, `${p.f50}%`, `of homes in town offered 50/10 Mbps or better (wired or fixed wireless); ${p.w50}% by wire`)}
+      ${metric('Best offered', c, p.best >= 5 ? '50/10+' : esc(p.bestText.replace(/ Mbps.*/, '')), `${p.best > 0 ? 'Mbps down/up, ' : ''}the fastest tier ISED records in town (it tops out at 50/10)${p.techText ? ` · ${esc(p.techText)}` : ''}`)}
+      ${metric('Mobile', c, p.mobile, p.mobile === 'none' ? 'no LTE recorded in town' : `${p.lte ?? 0}% of homes reached by LTE or better${p.mob.length ? ` · ${esc(p.mob.join(', '))}` : ''} (5G is not in the open data)`)}
+    </div>
+    <p class="note" style="margin-top:6px">ISED National Broadband Data: where providers say a service is offered, not the speed people actually get or what it costs.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('internet', '📶 Internet &amp; mobile on the map')}</div>`;
 }

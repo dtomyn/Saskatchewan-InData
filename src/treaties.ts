@@ -5,7 +5,7 @@ import { PolygonLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import { Reserve, Treaty, fmt } from './data';
 import { esc } from './html';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 import type { Data } from './data';
 
 const PALETTE = ['#f4a261', '#e9c46a', '#2a9d8f', '#8ab17d', '#e76f51', '#9d8df1', '#64b5f6'];

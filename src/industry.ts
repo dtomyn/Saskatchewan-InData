@@ -13,7 +13,8 @@ import { fmt } from './data';
 import type { Data, IndustryLine, Mine, NpriSite, PowerPlant, WellHex } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { metric, link } from './report-kit';
 
 export const INDUSTRY_COLOR = '#d4e157';
 
@@ -294,4 +295,25 @@ export function industryLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Hidden neighbours: wells, pipelines, NPRI emitters and mines near the town limits (neutral: also where the jobs are). */
+export function industryRows(p: PlaceIndustry, data: Data, key: string) {
+  const pw = placePower(data, key);
+  const I = data.industry!;
+  const c = INDUSTRY_COLOR;
+  const [a, s, b] = p.wells;
+  const lines = p.pl + p.fed.length;
+  return `<h3>Hidden neighbours</h3>
+    <div class="metric-grid">
+      ${metric('Wells', c, fmt.int(p.wellsAll), p.wellsAll ? `oil and gas wells within ${I.wellKm} km of town limits: ${fmt.int(a)} active, ${fmt.int(s)} suspended, ${fmt.int(b)} abandoned${p.fac ? ` · ${fmt.int(p.fac)} oil and gas facilities` : ''}` : `no oil or gas well within ${I.wellKm} km of town limits${p.fac ? ` · ${fmt.int(p.fac)} oil and gas facilities` : ''}`)}
+      ${metric('Pipelines', c, String(lines), lines ? `in use within ${I.pipeKm} km${p.sour ? ` · <b>${p.sour} carrying sour gas</b>` : ''}${p.fed.length ? ` · federal: ${esc(p.fed.join(', '))}` : ''}` : `no licensed line in use within ${I.pipeKm} km (flowlines not counted)`)}
+      ${metric('Nearest emitter', c, p.np ? kmText(p.np.km) : 'n/a', p.np ? `${esc(p.np.site.n)} (${esc(p.np.site.k.toLowerCase())}), ${tonnes(p.np.site.t)} released in ${I.npriYear}${p.n5 > 1 ? ` · ${p.n5} NPRI sites within ${I.npriKm} km` : ''}` : 'no NPRI site')}
+      ${metric('Mine nearby', c, p.mine ? 'Yes' : 'No', p.mine ? `${esc(p.mine.mine.n)} (${esc(p.mine.mine.cm.toLowerCase())}), ${p.mine.km > 0 ? `${kmText(p.mine.km)} from town limits` : 'inside the town limits'}` : `no producing mine within ${I.mineKm} km`)}
+      ${pw ? metric('Power line', '#b4c6ff', pw.line ? kmText(pw.line.km) : 'n/a', `${pw.line ? `nearest mapped high-voltage line from town limits (${esc(kvText(pw.line.kv))})` : 'no mapped line within 30 km'}${pw.sub != null ? ` · substation ${kmText(pw.sub)}` : ''}${pw.plant ? `<br>generating station ${kmText(pw.plant.km)}: ${esc(plantText(pw.plant.plant))}` : ''} · OpenStreetMap, partial`) : ''}
+    </div>
+    <p class="note" style="margin-top:6px">Counted from the town limits. Wells include suspended and abandoned ones, which can restrict where you build. Neutral: these are also where many of the jobs are.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('industry', '🛢 Hidden neighbours on the map')}</div>`;
 }

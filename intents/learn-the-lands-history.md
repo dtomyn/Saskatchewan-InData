@@ -7,7 +7,7 @@
 ## What answers it
 
 - **◈ Treaties & reserves**: the six numbered treaty areas (1871–1906) and 826 reserve parcels.
-- **Historic events** (`CURATED_EVENTS` in `src/layers.ts`, each with a source link): Treaty 4 (1874), Treaty 6 (1876), the Riel trial and execution in Regina (1885), Saskatchewan becomes a province (1905), the Regina Cyclone (1912), the Souris River floods (2011), the 2015 northern fires; plus data-driven events from the history layers.
+- **Historic events** (`CURATED_EVENTS` in `src/curated-events.ts`, each with a source link): Treaty 4 (1874), Treaty 6 (1876), the Riel trial and execution in Regina (1885), Saskatchewan becomes a province (1905), the Regina Cyclone (1912), the Souris River floods (2011), the 2015 northern fires; plus data-driven events from the history layers.
 - The **timeline** from 1871 to today; **Town Report** Region / treaty row.
 
 ## How

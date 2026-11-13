@@ -55,7 +55,7 @@ Parts 2–8 are the house style and architecture. Change them only on purpose, s
 | normals | Climate normals | ☀ | #c5e86c | static | 1981–2010 | columns with chips | ECCC normals | OGL – Canada |
 | light | Light & dark | ☾ | #a3b8ff | static (computed) | computed from latitude | 0.25° latitude rows tinted by hours from sunrise to sunset (chips: Dec 21, Mar 20, Jun 21) or, by the Aurora chip, 0.25°×0.5° cells tinted by geomagnetic latitude; RASC dark-sky preserves outlined in violet; place dots in the same colour; when focused, one labelled place per degree of latitude (the largest) and the preserve names; panel chart of day length through the year at 49°, 54° and 60° N | Computed in the `light` stage: NOAA solar position equations (sunrise/sunset at 90.833°, civil twilight at 96°); geomagnetic latitude from the IGRF-14 dipole (g₁⁰, g₁¹, h₁¹ of the newest epoch, read from IAGA's coefficient file) with NOAA SWPC's Kp rule (oval edge ≈ 66° − 2°·Kp) for the bands often (≥ 62°) / sometimes (58–62°) / rarely (< 58°); RASC Dark-Sky Sites table (designation) matched by name to the `camping` stage's park outlines; OSRM drive to the nearest campground inside a preserve | Computed; IGRF freely available; park outlines OGL – Saskatchewan / Canada; routes ODbL |
 | population | Population | ◍ | #3ecf8e | time | 2001 → 2025 | place columns (colour = 5-yr growth) | StatCan 17-10-0155-01 | StatCan Open Licence |
-| housing | Home costs | ⌂ | #e6a57e | time (CMHC) + static (census) | 2000 → 2025; Census 2021 | place columns (chips: home value, rent paid, stretched 30 %+, market rent coloured by vacancy, property tax: the indicative yearly tax on the median home); for the three census chips, every census subdivision tinted by the same measure (suppressed left clear; click one outside the 62 for its census report) | StatCan Census Profile 2021 (SDMX API); CMHC Rental Market Survey via StatCan 34-10-0133/0130/0132; Ministry of Government Relations Mill Rate Survey Results (Publications Centre, latest year, 2023) | StatCan Open Licence; mill rates Crown copyright (non-commercial) |
+| housing | Home costs | ⌂ | #e6a57e | time (CMHC) + static (census) | 2000 → 2025; Census 2021 | place columns (chips: home value, rent paid, stretched 30 %+, market rent coloured by vacancy, property tax: the indicative yearly tax on the median home); for the three census chips, every census subdivision tinted by the same measure (suppressed left clear; click one outside the 62 for its census report) | StatCan Census Profile 2021 (SDMX API); CMHC Rental Market Survey via StatCan 34-10-0133/0130/0132; Ministry of Government Relations Mill Rate Survey Results (Publications Centre, latest year, 2025) | StatCan Open Licence; mill rates Crown copyright (non-commercial) |
 | jobs | Jobs & income | ⚒ | #7fd1b9 | time (LFS) + static (census) | 2011 → 2025; Census 2021 | economic regions tinted by unemployment or employment rate (chips), labelled when focused; place columns of median household income; chip *Income by subdivision* swaps the region tint for every census subdivision's median household income | StatCan LFS Table 14-10-0464-01 (annual, by economic region); Census Profile 2021 (SDMX API); 2021 economic-region boundaries | StatCan Open Licence |
 | needs | Daily needs | 🛒 | #2ec4b6 | static | as mapped today | site dots coloured by need (grocery, pharmacy, school, bank, gas, library, post office, clinic); when focused, town-limit outlines and place columns (needs met of 8, or one need's count via chips) | OSM via Overpass; StatCan 2021 census subdivision boundaries (town limits + 1 km) | ODbL; StatCan Open Licence |
 | schools | Schools & learning | 🎓 | #ffb703 | static | listed today | K-12 school dots coloured by sector (public, separate, Fransaskois, First Nations, independent; pink ring = French-language or French immersion); post-secondary rings by kind (university, polytechnic/technical, regional college); when focused, drive-time columns (chips: high school, elementary, French, post-secondary) and the hovered/selected place's four routes | Sask. Ministry of Education SchoolsAndDivisions and Ministry of Advanced Education institutions (GeoHub ArcGIS REST); OSM `amenity=school` for schools the ministry layer lacks and `amenity=university\|college` for missing Sask Polytech campuses; OSRM | OGL – Saskatchewan; ODbL |
@@ -132,18 +132,25 @@ Not built yet.
 ```
 index.html                 app shell: map, appbar, panel, top actions, timeline (with its event ticker), tooltip, modal, loader
 src/main.ts                state, map init, render loop, focus/menu/timeline, keyboard, hashes, ?film handle
-src/layers.ts              AtlasLayer interface + one factory per layer + CURATED_EVENTS
+src/layer-kit.ts           AtlasLayer interface + the helpers layer modules share
+src/<layer>.ts             one factory per layer (fires.ts, rivers.ts, …)
+src/layers.ts              the registry: buildLayers() in menu order
+src/curated-events.ts      CURATED_EVENTS
 src/data.ts                types for every JSON file, loadAll(), formatters (fmt), helpers (km, lowerBound…)
 src/metrics.ts             per-place derived metrics, CRITERIA, rankPlaces()
-src/panels.ts              Place Report and Place Finder panels, weights in localStorage
+src/panels.ts              Place Report and Place Finder panels; each layer's report rows live in its module
+src/report-kit.ts          the report's tile, link and trip helpers, shared by panels and layers
 src/charts.ts              d3 barChart, lineChart, scatterChart, stripes, rampCSS — all with a playhead
 src/sources.ts             the Data & sources view
+src/sources-catalog.ts     every source's entry: owner, licence, records read, rings
+src/sources-round.ts       the tree-ring canvas
 src/<deepfinder>.ts        optional deep finder (rail, funnel, report, shortlist)
 src/html.ts                esc(), safeUrl()
 src/style.css              the whole design system (Part 4)
-scripts/fetch-data.mjs     pipeline: SOURCES stages, cache, manifest
+scripts/fetch-data.mjs     pipeline runner: stage order, manifest
+scripts/stages/<name>.mjs  one stage per source (default export), imported only when it runs
+scripts/lib/*.mjs          shared helpers: config, io (cache, fetch, writeOut), apis, parse, geo, places…
 scripts/places.mjs         the place list and any hand-typed facts
-scripts/<big-stage>.mjs    large stages split into their own module, imported lazily
 public/data/*.json         committed outputs + manifest.json
 video/storyboard.py        main film scenes; storyboard_<film>.py for supplements
 video/render.py            the renderer (Film class)
@@ -304,7 +311,7 @@ Menu in: 0.18s fade/slide down. Panel swap: fade + 6px rise. Ticker in: 0.4s spr
 
 ### 5.1 The layer contract
 
-Every layer is one factory in `layers.ts` returning:
+Every layer is one factory in its own module (`src/<layer>.ts`, importing the contract from `layer-kit.ts`) returning:
 
 ```ts
 export type Ctx = { time: number; speed: number; data: Data; selected: string | null; hovered: string | null; focusedId: string; clock: number };
@@ -433,17 +440,20 @@ A few hazard layers carry a reading of today next to their archive (Living Skies
 
 ## Part 6 – Data pipeline
 
-`scripts/fetch-data.mjs` is a dictionary of **stages**, one per source:
+The pipeline is a set of **stages**, one per source, each its own module in `scripts/stages/`, with shared helpers in `scripts/lib/`. `scripts/fetch-data.mjs` is only the runner:
 
 ```js
-const SOURCES = {
-  async base() { /* outline geometry → base.json */ },
-  async fires() { /* fetch, clip to outline, simplify, quantize, writeOut('fires', …) */ },
-  async places() { /* … */ },
-  async deep() { const { buildDeep } = await import('./deep.mjs'); await buildDeep({ log, cached, writeOut, … }); },
-};
-const order = ['base', /* …stages that others read come first… */, 'deep'];
+// scripts/stages/fires.mjs
+import { cached, fetchBuf, writeOut } from '../lib/io.mjs';
+import { getProvince, inSask } from '../lib/places.mjs';
+export default async function fires() { /* fetch, clip to outline, simplify, quantize, writeOut('fires', …) */ }
+
+// scripts/fetch-data.mjs
+const ORDER = ['base', 'places', /* …stages that others read come first… */];
+for (const name of run) await (await import(`./stages/${name}.mjs`)).default();
 ```
+
+A stage's file stays a few hundred lines at most; a helper two stages need moves to `scripts/lib/`.
 
 - `npm run data` runs all in order; `npm run data fires crime` runs some.
 - Helpers: `cached(name, producer)` (raw responses in `.cache/`), `fetchBuf(url, { retries: 3, timeout })` with backoff, `fetchJSON`, `cachedJSON`, `pool(items, size, fn)` for polite concurrency, paged readers for the common APIs (WFS, OGC API), `writeOut(name, data)` (compact JSON + KB log).
@@ -454,7 +464,7 @@ const order = ['base', /* …stages that others read come first… */, 'deep'];
 - Huge global files sorted by a spatial key (e.g. quadkey-sorted parquet): read only the region's rows with HTTP range requests and cache the clipped rows, never the whole file.
 - Validate a response before caching it: a busy BC WFS answers HTTP 200 with an XML `ExceptionReport`, which a plain cache would keep forever. Parse it, check for `features`, retry with backoff.
 - Area questions (share of land logged, what's next door) are answered on a raster: rasterize polygons onto a grid (scanline fill with per-row edge buckets) and count cells, so overlaps count once. Remove slivers (road allowances, trail corridors) from ownership masks with a morphological opening.
-- Big stages live in their own module and receive the helpers as arguments.
+- Stages import the helpers they use from `scripts/lib/`; a stage that fills a memo other stages read (the place list) does it through a setter in that helper module, never by assigning another module's variable.
 - Feeds that change seasonally (timetables) take the most common value over the next few weeks and fail with a clear message when the feed runs out.
 - **The daily record** (5.9): `scripts/history.mjs` (`npm run data history`, after the live stages) rolls each live feed into `history/<feed>/<YYYY-MM>.json`, one file per feed per month, as daily roll-ups (per gauge per day: min, max, mean flow and the number of readings; per day: hotspots; per community per day: highest AQHI and hours reported; one row per alert and per advisory with first and last seen). Every file records `source`, its first and last run, the hours a run was counted each day and the days backfilled; `history/index.json` lists each feed's months, first and last day, gaps and days with few runs. It is safe to run twice in an hour: feeds that keep a window (gauges ~30 days, AQHI ~3 days) are recomputed for whole days, hotspots are de-duplicated by position and time, alerts and advisories are keyed. `npm run data history-backfill` reaches back once as far as each feed keeps (CWFIS keeps every season's hotspots). A missed run is a gap, never a zero.
 - **Live stages** (5.9) are named `now-<name>`, write `now/<name>.json` with `asOf` (the newest reading; for a list of what is in effect, when it was read), `fetched`, `source`, `sourceUrl` and the licence, cache nothing, and record themselves in `now/manifest.json` (which the app merges with `manifest.json`), so running them never changes a committed file. `npm run data now` runs them all.

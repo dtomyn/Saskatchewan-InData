@@ -7,7 +7,7 @@ import type { Layer } from '@deck.gl/core';
 import { TornadoRow, fmt, lowerBound, MONTHS } from './data';
 import { barChart } from './charts';
 import { esc } from './html';
-import { ADDITIVE, AtlasLayer, NO_DEPTH, RGBA, TimedEvent, deferChart, filterExt, glowWindow, heroStats, isoDate, kicker, mk, nearestTown, rgb, sourceLine } from './layers';
+import { ADDITIVE, AtlasLayer, NO_DEPTH, RGBA, TimedEvent, deferChart, filterExt, glowWindow, heroStats, isoDate, kicker, mk, nearestTown, rgb, sourceLine } from './layer-kit';
 import type { Data } from './data';
 
 const F_COLORS = ['#9ad8ff', '#ffe08a', '#ffad5c', '#ff5d5d', '#ff3dbb', '#ffffff'];

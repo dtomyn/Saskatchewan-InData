@@ -9,7 +9,8 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, NewcomerAgency, NewcomerOffice, Trip } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { metric, na, link } from './report-kit';
 
 export const NEWCOMER_COLOR = '#4fd1c5';
 
@@ -228,4 +229,17 @@ export function newcomerLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Newcomer help: the drive to the nearest settlement agency, English classes, Service Canada office and SGI issuer. */
+export function newcomerRows(p: PlaceNewcomer) {
+  const sub = (x: NewcomerTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  return `<h3>Newcomer help</h3>
+    <div class="metric-grid">
+      ${ERRANDS.map((g) => metric(g.label, g.color, p[g.id] ? tripText(p[g.id]!) : na, sub(p[g.id]))).join('')}
+    </div>
+    <p class="note" style="margin-top:6px">Settlement and language offices from IRCC’s list and the province’s; Service Canada (for a Social Insurance Number) and SGI motor licence issuers as mapped in OpenStreetMap, which misses many issuers. A health card is applied for online, by mail or at eHealth Saskatchewan in Regina.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('newcomer', '🧭 Newcomer services on the map')}</div>`;
 }

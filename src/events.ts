@@ -7,7 +7,7 @@
 import { barChart } from './charts';
 import { Data, MONTHS, km } from './data';
 import { esc, safeUrl } from './html';
-import type { AtlasEvent, AtlasLayer, TimedEvent } from './layers';
+import type { AtlasEvent, AtlasLayer, TimedEvent } from './layer-kit';
 
 /** A stable key for an event, so it can be found again after the list is rebuilt. */
 export const eventKey = (ev: TimedEvent) => `${ev.layer}@${ev.t.toFixed(3)}`;

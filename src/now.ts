@@ -4,8 +4,10 @@
 import { PathLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import type { Layer } from '@deck.gl/core';
-import { Data, WeatherAlert } from './data';
+import { Data, WeatherAlert, km } from './data';
 import { esc, safeUrl } from './html';
+import type { Muni, RiverStation, NowRiverRow } from './data';
+import { metric, na, link } from './report-kit';
 
 export const STALE_H = 3;
 export const DROP_H = 24;
@@ -217,4 +219,51 @@ export function provinceOutlook(data: Data, kind: 'fire' | 'smoke') {
     return `<div class="ol-line"><span class="tk">Outlook · wildfire smoke to ${esc(skTime(o.smoke.valid))}, RAQDPS run ${esc(skTime(o.smoke.issued))}</span><br>${v.length && v[0][1] >= 1 ? `highest fire-smoke PM2.5 ${v[0][1].toFixed(0)} µg/m³ at ${name(v[0][0])}` : 'no place above 1 µg/m³ of fire smoke'}</div>`;
   }
   return '';
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Live readings around a place: the nearest gauge reporting, hotspots within 50 km, AQHI (its own or borrowed), and
+ *  weather alerts covering it. Each shows its age; none feeds the Town Finder. */
+export function rightNow(data: Data, m: Muni) {
+  const nw = data.now;
+  if (nw.skipped) return '';
+  if (!nw.rivers && !nw.fires && !nw.air && !nw.alerts && !nw.outlooks)
+    return `<h3>Right now</h3><div class="unavail">This copy of the data has no live readings. Run <code>npm run data now</code>, then reload.</div>`;
+  const dead = 'no reading in the past day';
+  const cells: string[] = [];
+  if (nw.rivers && data.rivers) {
+    const gauges = new Map(data.rivers.stations.map((s) => [s.id, s]));
+    let best: { s: RiverStation; row: NowRiverRow; d: number } | null = null;
+    for (const row of nw.rivers.rows) {
+      const s = gauges.get(row[0]);
+      if (!s || !drawable(row[1])) continue;
+      const d = km(m.lon, m.lat, s.lon, s.lat);
+      if (d <= 100 && (!best || d < best.d)) best = { s, row, d };
+    }
+    const r = best?.row;
+    cells.push(metric('Nearest river gauge', '#4cc9f0', r ? (r[4] != null ? `${r[4] >= 0.095 ? r[4].toFixed(r[4] >= 1 ? 1 : 2) : '<0.1'}×` : `${r[2]} m`) : na,
+      best && r ? `${r[4] != null ? 'flow against its normal annual peak' : 'water level'}${r[5] ? ` (${r[5] === 'ice' ? 'ice-affected' : r[5] === 'est' ? 'estimated' : 'flagged'})` : ''} · ${esc(best.s.name)} (${Math.round(best.d)} km) · ${ageTag(r[1])}` : `no gauge within 100 km has reported in the past day`));
+  }
+  if (nw.fires) {
+    const ok = drawable(nw.fires.asOf);
+    const near = ok ? nw.fires.hotspots.map((h) => ({ h, d: km(m.lon, m.lat, h[0], h[1]) })).filter((x) => x.d <= 50).sort((a, b) => a.d - b.d) : [];
+    cells.push(metric('Hotspots within 50 km', '#ff8a3d', ok ? String(near.length) : na,
+      !ok ? dead : near.length ? `satellite heat, last 24 h, not confirmed fires · nearest ${Math.round(near[0].d)} km, seen ${plainAge(near[0].h[2])}` : `none in the last 24 h · read ${ageTag(nw.fires.asOf)}`));
+  }
+  if (nw.air) {
+    const pick = nw.air.towns[m.key];
+    const c = pick ? nw.air.communities[pick[0]] : null;
+    const ok = c && drawable(c.t);
+    cells.push(metric('Air quality (AQHI)', '#e8a87c', ok ? aqhiText(c!.v) : na,
+      !c ? `no AQHI community within ${nw.air.reachKm} km` : !ok ? dead : `${aqhiWord(c.v)} · ${pick![1] < 15 ? 'at' : 'borrowed from'} ${esc(c.name)}${pick![1] < 15 ? '' : ` (${pick![1]} km)`} · ${ageTag(c.t)}`));
+  }
+  const alerts = nw.alerts ? alertsInEffect(data).filter((a) => a.places.includes(m.key)) : [];
+  if (nw.alerts) cells.push(metric('Weather alerts', '#ffd166', drawable(nw.alerts.asOf) ? String(alerts.length) : na,
+    !drawable(nw.alerts.asOf) ? dead : alerts.length ? esc(alerts.map((a) => a.short ?? a.name).join(', ')) : `none in effect · read ${ageTag(nw.alerts.asOf)}`));
+  return `<h3>Right now</h3>
+    <div class="metric-grid">${cells.join('')}</div>
+    ${outlookList(data, m.key)}
+    ${alertList(alerts, data)}
+    <div class="tr-falls" style="margin-top:8px">${nw.rivers ? link('rivers', '≋ Rivers now') : ''}${nw.fires ? link('fires', '🔥 Hotspots now') : ''}${nw.air ? link('smoke', '🌫 Air now') : ''}</div>`;
 }

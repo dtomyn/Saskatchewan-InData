@@ -12,7 +12,7 @@ import type { Layer } from '@deck.gl/core';
 import { Camp, FirePoint, Muni, Park, Trip, fmt, km, lowerBound } from './data';
 import { esc, safeUrl } from './html';
 import { lineChart, rampCSS, ChartHandle } from './charts';
-import { ADDITIVE, AtlasEvent, AtlasLayer, NO_DEPTH, detailBars, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { ADDITIVE, AtlasEvent, AtlasLayer, NO_DEPTH, detailBars, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import type { Data } from './data';
 
 export const PARK_TYPES: Record<Park['type'], { label: string; plural: string; color: string }> = {

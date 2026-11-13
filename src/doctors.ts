@@ -8,7 +8,8 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, DoctorSite, Trip } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { metric, na, link } from './report-kit';
 
 export const DOCTORS_COLOR = '#ff8fab';
 
@@ -192,3 +193,17 @@ export function doctorsLayer(data: Data): AtlasLayer {
   return l;
 }
 
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Doctors & clinics: the drive to the nearest clinic and pharmacy, and how many are in town. */
+export function doctorsRows(p: PlaceDoctors, slackKm: number) {
+  const sub = (x: DoctorTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  return `<h3>Doctors &amp; clinics</h3>
+    <div class="metric-grid">
+      ${metric('Clinic', DOCTORS_COLOR, p.c ? (p.c.inferred ? 'In town' : doctorTripText(p.c)) : na, p.c?.inferred ? `${esc(p.c.name)}. ${esc(p.c.note)}` : sub(p.c))}
+      ${metric('Pharmacy', SITE_KINDS.rx.color, p.p ? doctorTripText(p.p) : na, sub(p.p))}
+      ${metric('In town', DOCTORS_COLOR, `${p.nc} ${p.nc === 1 ? 'clinic' : 'clinics'}${p.nc ? '' : ' mapped'}`, `and ${p.np} ${p.np === 1 ? 'pharmacy' : 'pharmacies'}, inside town limits or within ${slackKm} km`)}
+    </div>
+    <p class="note" style="margin-top:6px">Clinics and health centres from the Saskatchewan Health Authority’s list (ODHF) and OpenStreetMap; pharmacies from OpenStreetMap. A clinic on the map is not a doctor taking new patients, and temporary closures are posted only as notices, so call first.</p>
+    <div class="tr-falls" style="margin-top:8px">${link('doctors', '🩺 Doctors &amp; clinics on the map')}</div>`;
+}

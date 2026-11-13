@@ -7,9 +7,11 @@ import { PolygonLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import { Data, Jobs, JobsRegion, fmt, interpYearly } from './data';
 import { lineChart, rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { AtlasLayer, NO_DEPTH, deferChart, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { esc } from './html';
 import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing } from './subdivisions';
+import type { TownMetrics } from './metrics';
+import { metric, na, link } from './report-kit';
 
 type MeasureKey = 'ur' | 'er';
 type Measure = { key: MeasureKey; chip: string; label: string; ramp: d3.ScaleSequential<string> };
@@ -217,4 +219,21 @@ export function jobsLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** Jobs & income: the Labour Force Survey region's latest unemployment rate, and Census 2021 income and industries for the place. */
+export function jobsIncome(t: TownMetrics) {
+  const c = '#7fd1b9';
+  const r = t.jobsRegion;
+  const ind = t.industries;
+  return `<h3>Jobs &amp; income</h3>
+    <div class="metric-grid">
+      ${metric('Regional unemployment', c, r ? `${r.ur.toFixed(1)}%` : na, r ? `${esc(r.name)}${r.combined ? ' (two regions reported together)' : ''}, ${r.year} · Labour Force Survey; the whole region, not just this place` : 'no survey region for this place')}
+      ${metric('Household income', c, t.income != null ? fmt.money(t.income) : na, t.income != null ? 'median total income of households, 2020 (Census 2021)' : 'not published for this place')}
+      ${t.censusUnemp != null ? metric('Unemployed in town', c, `${t.censusUnemp.toFixed(1)}%`, 'census week, May 2021, during the pandemic') : ''}
+    </div>
+    ${ind.length ? `<div class="metric" style="margin-top:8px"><div class="mk"><span class="dot" style="background:${c}"></span>Top industries</div><div class="ms">${ind.map((s) => `<b>${esc(s.name)}</b> ${s.pct.toFixed(0)}%`).join(' · ')}<br>share of the labour force by industry (NAICS sectors), Census 2021</div></div>` : ''}
+    <div class="tr-falls" style="margin-top:8px">${link('jobs', '⚒ Jobs &amp; income on the map')}</div>`;
 }

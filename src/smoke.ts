@@ -8,7 +8,7 @@ import type { Layer } from '@deck.gl/core';
 import { AqhiCommunity, Data, MONTHS, SmokeStation, interpYearly, km } from './data';
 import { barChart } from './charts';
 import { esc } from './html';
-import { AtlasLayer, NO_DEPTH, RecentSpan, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layers';
+import { AtlasLayer, NO_DEPTH, RecentSpan, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 import { airHistory, dayT, dayText, tDay } from './history';
 import { NOW_T, ageTag, ago, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, aqhiColor, aqhiText, aqhiWord, drawable, freshness, isNow, ms, nowBlock, provinceOutlook, skTime, tickAges } from './now';
 

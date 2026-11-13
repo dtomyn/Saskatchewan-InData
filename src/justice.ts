@@ -6,7 +6,7 @@ import type { Layer } from '@deck.gl/core';
 import { JusticeSite, Trip, fmt, lowerBound } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { ADDITIVE, AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layers';
+import { ADDITIVE, AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { Affected, CLOSED_COLOR, SCENARIO_CAVEAT, affectedTowns, closedSites, isClosed, scenarioBox, scenarioOn, scenarioTrip, scenarioVersion, setClosed } from './scenario';
 import type { Data } from './data';
 

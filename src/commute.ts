@@ -10,10 +10,10 @@ import { ArcLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import { Muni, fmt, km } from './data';
 import { esc } from './html';
-import { ADDITIVE, AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layers';
-import { COMMUTE_LIMITS, driveMin, getWork, rankTowns, setWork, townMetrics, workplace } from './metrics';
-import { loadWeights } from './panels';
+import { ADDITIVE, AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
+import { COMMUTE_LIMITS, driveMin, getWork, loadWeights, rankTowns, setWork, townMetrics, workplace } from './metrics';
 import type { Data } from './data';
+import { metric } from './report-kit';
 
 const COLOR = '#c9a7ff';
 /** Timeline speed of the wave: milliseconds of animation per minute of driving. */
@@ -259,4 +259,16 @@ export function commuteLayer(data: Data): AtlasLayer {
     },
   };
   return l;
+}
+
+// ---- the Town Report section (src/panels.ts places it)
+
+/** The drive to the viewer's workplace ("I work in…"), when one is set. */
+export function commuteMetric(data: Data, key: string) {
+  const w = workplace(data);
+  if (!w) return '';
+  const wn = esc(data.munis.find((m) => m.key === w)!.name);
+  if (w === key) return metric('Commute', '#c9a7ff', 'Here', 'this is where you work (“I work in…”)');
+  const min = driveMin(data, key, w);
+  return metric('Commute', '#c9a7ff', min == null ? 'n/a' : min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`, `${data.commute!.routed ? 'drive' : 'rough estimate'} to ${wn}, where you work`);
 }
