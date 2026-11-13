@@ -372,7 +372,19 @@ export type WeatherAlert = {
 };
 export type NowAlerts = NowBase & { alerts: WeatherAlert[] };
 /** `skipped`: live readings were deliberately not loaded (the film), so the app shows no trace of them, not even the dashed box. */
-export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; skipped: boolean };
+/**
+ * Short-range outlooks (plan 3c), each a published forecast with its issue and valid times: thunderstorm outlook areas
+ * (MSC; `places` inside each), today's fire danger class per place (CWFIS, 0 low … 4 extreme), and the next day's highest
+ * wildfire-smoke PM2.5 per place (RAQDPS, µg/m³). A part that could not be read is absent.
+ */
+export type NowOutlooks = {
+  asOf: string; fetched: string;
+  sources: { name: string; by: string; url: string; licence: string }[];
+  thunder?: { items: { issued: string; valid: string; expires: string | null; thunder: string | null; severity: string | null; risk: string | null; tornado: boolean; hail: string | null; gust: string | null; places: string[] }[] };
+  fire?: { valid: string; model: string; towns: Record<string, number> };
+  smoke?: { issued: string; valid: string; towns: Record<string, number> };
+};
+export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; outlooks: NowOutlooks | null; skipped: boolean };
 
 export type Data = {
   outline: GeoJSON.Feature | null;
@@ -385,6 +397,8 @@ export type Data = {
   smoke: Smoke | null;
   drought: Drought | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;
+  projections: Projections | null;
+  floods: Floods | null;
   population: { munis: Record<string, PopSeries>; source: string } | null;
   crime: Crime | null;
   hospitals: { facilities: Facility[]; towns: Record<string, Trip[]>; source: string; routing: string; routingSource: string | null } | null;
@@ -412,6 +426,28 @@ export type Data = {
   manifest: Record<string, { ok: boolean; updated?: string; lastError?: string }>;
 };
 
+/**
+ * Flood-prone land (plan 3d): the Water Security Agency's published flood mapping. `500`: the 1:500-year flood extent;
+ * `floodway` and `fringe`: its deep, fast part and the rest, where the Flood Damage Reduction Program mapped them;
+ * `protected`: land behind dikes. Polygons are rings of [lon, lat].
+ */
+export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; place: string; water?: string | null; year?: number | null; program?: string | null; pdf?: string | null; polys: [number, number][][][] };
+export type Floods = { source: string; sourceUrl: string; licence: string; returnPeriod: number; asOf: string; zones: FloodZone[] };
+
+/** A projection's variable and scenario keys (ECCC CanDCS-U6): mean temperature, daily high, daily low, precipitation. */
+export type ProjVar = 'tg' | 'tx' | 'tn' | 'pr';
+export type ProjScen = 'ssp126' | 'ssp585';
+/** One 30-year window's change from 1971–2000: [window start, median, 10th, 90th percentile of the models]. */
+export type ProjWindow = [number, number, number, number];
+/** Climate projections per place (plan 3b): model output, never a record. Per variable and scenario, each window's change. */
+export type Projections = {
+  source: string; sourceUrl: string; licence: string; asOf: string; baseline: string; windowYears: number; percentiles: [number, number];
+  vars: Record<ProjVar, { label: string; unit: string }>;
+  scenarios: Record<ProjScen, string>;
+  windows: number[];
+  towns: Record<string, Record<ProjVar, Record<ProjScen, ProjWindow[]>>>;
+};
+
 const base = import.meta.env.BASE_URL;
 
 async function load<T>(name: string): Promise<T | null> {
@@ -425,17 +461,19 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, climate, smoke, drought, normals, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
     load<Data['tornadoes']>('tornadoes'),
     load<Data['hail']>('hail'),
     load<Data['rivers']>('rivers'),
+    load<Floods>('floods'),
     load<Data['climate']>('climate'),
     load<Smoke>('smoke'),
     load<Drought>('drought'),
     load<Data['normals']>('normals'),
+    load<Projections>('projections'),
     load<Data['population']>('population'),
     load<Crime>('crime'),
     load<Data['hospitals']>('hospitals'),
@@ -463,9 +501,9 @@ export async function loadAll(): Promise<Data> {
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
   const q = new URLSearchParams(location.search);
   const live = !q.has('film') || q.has('now');
-  const [nRivers, nFires, nAir, nAlerts, nManifest] = live
-    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<Data['manifest']>('now/manifest')])
-    : [null, null, null, null, null];
+  const [nRivers, nFires, nAir, nAlerts, nOutlooks, nManifest] = live
+    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<NowOutlooks>('now/outlooks'), load<Data['manifest']>('now/manifest')])
+    : [null, null, null, null, null, null];
   return {
     outline,
     munis: munis ?? [],
@@ -477,6 +515,8 @@ export async function loadAll(): Promise<Data> {
     smoke: smoke?.stations?.length ? smoke : null,
     drought: drought?.months?.length && drought.maps?.length === drought.months.length ? drought : null,
     normals: normals?.stations?.length ? normals : null,
+    projections: projections && Object.keys(projections.towns ?? {}).length ? projections : null,
+    floods: floods?.zones?.length ? floods : null,
     population: population && Object.keys(population.munis ?? {}).length ? population : null,
     // crime is only useful if at least one place matched
     crime: crime && Object.keys(crime.munis ?? {}).length ? crime : null,
@@ -505,6 +545,7 @@ export async function loadAll(): Promise<Data> {
       fires: nFires?.asOf && Array.isArray(nFires.hotspots) ? nFires : null,
       air: nAir?.asOf && Array.isArray(nAir.communities) ? nAir : null,
       alerts: nAlerts?.asOf && Array.isArray(nAlerts.alerts) ? nAlerts : null,
+      outlooks: nOutlooks?.asOf && Array.isArray(nOutlooks.sources) ? nOutlooks : null,
       skipped: !live,
     },
     manifest: { ...(manifest ?? {}), ...(nManifest ?? {}) },

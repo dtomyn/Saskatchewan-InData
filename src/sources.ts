@@ -162,6 +162,14 @@ const ALL_SOURCES: Source[] = [
     },
   },
   {
+    id: 'rivers', key: 'floods', name: 'Flood-prone land', color: '#3c8ceb', group: 'Hazards',
+    owner: 'Water Security Agency', title: 'Flood Hazard (Flood Damage Reduction Program floodway and fringe) and 1:500 Year Flood mapping', url: 'https://geohub-wsask.hub.arcgis.com',
+    endpoint: 'services1.arcgis.com/7MBdlVpjqbfBhQer · 1_500yr_Flood/FeatureServer/2, Flood_Hazard_All/FeatureServer/33', licence: 'Government of Saskatchewan Standard Unrestricted Use Data Licence v2.0',
+    gives: 'The land a 1:500-year flood would cover in the communities the agency has studied, as it modelled it, with the floodway and flood fringe where mapped. A published hazard map, not a forecast.',
+    read: (d) => d.floods && { n: d.floods.zones.length, what: `${d.floods.zones.length} flood-hazard areas in ${new Set(d.floods.zones.map((z) => z.place)).size} communities` },
+    rings: () => ({}),
+  },
+  {
     id: 'climate', key: 'climate', name: 'Climate', color: '#f25f5c', group: 'Climate',
     owner: 'Environment and Climate Change Canada', title: 'Adjusted and Homogenized Canadian Climate Data (AHCCD)', url: 'https://api.weather.gc.ca/collections/ahccd-annual',
     endpoint: 'api.weather.gc.ca/collections/ahccd-annual', licence: OGL_CA,
@@ -172,6 +180,14 @@ const ALL_SOURCES: Source[] = [
       const a = provinceAnomalies(d);
       return Object.fromEntries(Object.entries(a).map(([y, v]) => [y, { v, label: `${fmt.signed(v, 2)} °C against ${d.climate!.baselinePeriod}` }]));
     },
+  },
+  {
+    id: 'climate', key: 'projections', name: 'Climate projections', color: '#e0312b', group: 'Climate',
+    owner: 'Environment and Climate Change Canada', title: 'Statistically downscaled climate scenarios from CMIP6 global climate models (CanDCS-U6): 30-year averages of projected annual anomalies', url: 'https://open.canada.ca/data/en/dataset/f73d6939-912a-4add-a291-c233fc5d1946',
+    endpoint: 'api.weather.gc.ca/collections/climate:candcsu6:projected:annual:P30Y-Avg/coverage · one grid per window, scenario and percentile', licence: 'ECCC Data Servers End-use Licence',
+    gives: 'Model projections, not a record: the change in mean temperature, daily highs and lows and precipitation from 1971–2000, for 2021–2050, 2041–2070 and 2071–2100, under low (SSP1-2.6) and high (SSP5-8.5) emissions, as the median and 10th–90th percentile of 26 models at each place.',
+    read: (d) => d.projections && { n: Object.keys(d.projections.towns).length, what: `projections for ${Object.keys(d.projections.towns).length} places, ${d.projections.windows.length} windows to 2100` },
+    rings: (d) => Object.fromEntries((d.projections?.windows ?? []).map((w) => [w + 15, { v: 0.45, label: `projection, ${w}–${w + 29} average (not a record)` }])),
   },
   {
     id: 'normals', key: 'normals', name: 'Climate normals', color: '#c5e86c', group: 'Climate',

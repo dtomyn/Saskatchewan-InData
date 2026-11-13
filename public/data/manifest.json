@@ -41,11 +41,11 @@
   },
   "justice": {
     "ok": true,
-    "updated": "2026-11-10T23:57:58.417Z"
+    "updated": "2026-11-13T18:16:22.988Z"
   },
   "hospitals": {
     "ok": true,
-    "updated": "2026-11-12T23:55:31.398Z"
+    "updated": "2026-11-13T18:17:43.883Z"
   },
   "camping": {
     "ok": true,
@@ -126,5 +126,13 @@
   "drought": {
     "ok": true,
     "updated": "2026-11-13T13:15:46.877Z"
+  },
+  "projections": {
+    "ok": true,
+    "updated": "2026-11-13T18:27:49.105Z"
+  },
+  "floods": {
+    "ok": true,
+    "updated": "2026-11-13T18:35:17.765Z"
   }
 }

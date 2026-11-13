@@ -14,7 +14,7 @@ Living Skies Atlas today is a **digital model**: its data arrives in batches thr
 |---|---|---|---|---|
 | 1 | ✅ [A "now" on existing layers](1-live-now.md) | Hourly river, hotspot, air quality and weather alert readings, each with its age | M | — |
 | 2 | ✅ [Accumulated state](2-accumulated-state.md) | A daily history of those readings, so the timeline reaches today | M | 1 |
-| 3 | [Forecasts and what-ifs](3-forecasts-and-what-ifs.md) | Closure scenarios, climate projections, short-range outlooks | S to L by part | 1 for outlooks only |
+| 3 | ✅ [Forecasts and what-ifs](3-forecasts-and-what-ifs.md) | Closure scenarios, climate projections, short-range outlooks | S to L by part | 1 for outlooks only |
 | 4 | [Physical systems](4-physical-systems.md) | Fire perimeters, crops and land cover, the power grid, roads, buildings | M each, L for buildings | A decision on tiles for buildings |
 | 5 | [Finer entities](5-finer-entities.md) | Every census subdivision and community, then city neighbourhoods | M to L by part | — |
 

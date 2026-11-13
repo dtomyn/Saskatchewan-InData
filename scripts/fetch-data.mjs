@@ -318,7 +318,7 @@ async function osrm(name, url) {
  * For every place, the fastest few `targets` by road: [{ f: target index, min, km, line }]. Candidates are the
  * `pre` nearest in a straight line; only the best `keep` get a routed line. Falls back to straight lines.
  */
-async function driveTimes(places, targets, tag, { pre = 6, keep = 2 } = {}) {
+async function driveTimes(places, targets, tag, { pre = 6, keep = 3 } = {}) {
   const out = {};
   let routed = true;
   for (const p of places) {
@@ -703,6 +703,44 @@ const SOURCES = {
   },
 
   // ECCC Adjusted & Homogenized Canadian Climate Data.
+  // Flood-prone land (plans/digital-twin/3-forecasts-and-what-ifs.md, 3d): the Water Security Agency's published flood
+  // hazard mapping, never modelled here. The 1:500-year flood extent for the communities it has studied, and where the
+  // Flood Damage Reduction Program split it, the floodway (deep, fast water) and the flood fringe. The historic 1978
+  // Radville extent is a record, not a return period, and is left out.
+  async floods() {
+    const B = 'https://services1.arcgis.com/7MBdlVpjqbfBhQer/arcgis/rest/services';
+    const title = (s) => (s ?? '').replace(/\s+/g, ' ').replace(/Qu' Appelle/i, 'Qu’Appelle').replace(/Ile-A-La-Crosse/i, 'Île-à-la-Crosse').trim();
+    const zones = [];
+    const add = (f, kind, extra = {}) => {
+      const ps = polys(f.geometry ?? { type: 'none' }, 0.0002, 5).filter((p) => Math.abs(ringArea(p[0])) > 1e-7);
+      if (ps.length) zones.push({ kind, place: title(f.properties.Location ?? f.properties.Community), ...extra, polys: ps });
+    };
+    const ext = await arcgisAll(`${B}/1_500yr_Flood/FeatureServer/2`, { where: '1=1', outFields: 'Location,Line_Type' }, 'wsa-flood-500');
+    for (const f of ext) {
+      const t = f.properties.Line_Type ?? '';
+      if (/500/.test(t)) add(f, '500'); else if (/protected/i.test(t)) add(f, 'protected');
+    }
+    const fh = await arcgisAll(`${B}/Flood_Hazard_All/FeatureServer/33`, { where: '1=1', outFields: 'Location,Community,Line_Type,Water_body,Year,Program,Hlink_PDF' }, 'wsa-flood-hazard');
+    for (const f of fh) {
+      const p = f.properties, t = p.Line_Type ?? '';
+      const kind = /floodway/i.test(t) ? 'floodway' : /fringe/i.test(t) ? 'fringe' : null;
+      if (!kind) continue;
+      const pdf = /^https?:\/\//.test(p.Hlink_PDF ?? '') ? p.Hlink_PDF : null;
+      add(f, kind, { water: p.Water_body ? title(p.Water_body) : null, year: p.Year ? +p.Year || null : null, program: p.Program || null, pdf });
+    }
+    if (!zones.some((z) => z.kind === '500')) throw new Error('no 1:500-year flood extents in the answer');
+    const count = (k) => zones.filter((z) => z.kind === k).length;
+    log(`  ${count('500')} 1:500-year extents in ${new Set(zones.filter((z) => z.kind === '500').map((z) => z.place)).size} places; ${count('floodway')} floodway, ${count('fringe')} fringe, ${count('protected')} protected`);
+    await writeOut('floods', {
+      source: 'Water Security Agency, Flood Hazard and 1:500 Year Flood mapping (Saskatchewan GeoHub)',
+      sourceUrl: 'https://geohub-wsask.hub.arcgis.com',
+      licence: 'Government of Saskatchewan Standard Unrestricted Use Data Licence v2.0',
+      returnPeriod: 500,
+      asOf: new Date().toISOString().slice(0, 10),
+      zones,
+    });
+  },
+
   async climate() {
     await getProvince();
     const stations = (await ogcAll('ahccd-stations', { bbox: `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north}` }, 'ahccd-stations'))
@@ -978,6 +1016,81 @@ const SOURCES = {
   },
 
   // Statistics Canada Table 17-10-0155-01: population estimates, 1 July, by census subdivision (2021 boundaries).
+  // Climate projections (plans/digital-twin/3-forecasts-and-what-ifs.md, 3b): Environment and Climate Change Canada's
+  // CMIP6 statistically downscaled projections (CanDCS-U6, 26 models, BCCAQv2, ~10 km grid), as 30-year averages of the
+  // change from 1971–2000, from MSC GeoMet's OGC API coverage. One request per window, scenario and percentile over the
+  // province (18, cached in .cache/projections/); each place takes its grid cell. Kept as published, never recomputed:
+  // for a low (SSP1-2.6) and a high (SSP5-8.5) scenario, the ensemble's 10th, 50th and 90th percentile change.
+  // (ClimateData.ca serves richer indices from the same models, such as days above 30 °C, but its terms reserve all
+  // rights, so they are not used: ROADMAP.md, Still open.)
+  async projections() {
+    const places = await getPlaces();
+    const COV = `${OGC}/climate:candcsu6:projected:annual:P30Y-Avg/coverage`;
+    const VARS = {
+      tg: { prop: 'AirTempAnomaly', label: 'Mean temperature', unit: '°C' },
+      tx: { prop: 'AirTempMaxAnomaly', label: 'Daily high', unit: '°C' },
+      tn: { prop: 'AirTempMinAnomaly', label: 'Daily low', unit: '°C' },
+      pr: { prop: 'PrecipAnomaly', label: 'Precipitation', unit: 'mm' },
+    };
+    const SCEN = { ssp126: { id: 'SSP126', label: 'Low emissions (SSP1-2.6)' }, ssp585: { id: 'SSP585', label: 'High emissions (SSP5-8.5)' } };
+    const WINDOWS = ['2021-2050', '2041-2070', '2071-2100'];
+    const PCT = [10, 50, 90];
+    const bbox = `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north}`;
+    const props = Object.values(VARS).map((v) => v.prop).join(',');
+    const grids = {};
+    for (const sc of Object.keys(SCEN)) for (const w of WINDOWS) for (const p of PCT) {
+      const q = `f=json&bbox=${bbox}&properties=${props}&subset=${encodeURIComponent(`scenario(${SCEN[sc].id}),percentile(${p}),P30Y-Avg(${w})`)}`;
+      const cov = await cachedJSON(`projections/candcsu6-${sc}-${w}-p${p}.json`, `${COV}?${q}`, { timeout: 300_000 });
+      if (cov.type !== 'Coverage' || cov.domain?.axes?.t?.values?.[0] !== w.slice(0, 4)) throw new Error(`projections ${sc} ${w} p${p}: unexpected answer`);
+      grids[`${sc}|${w}|${p}`] = cov;
+    }
+    // a place's value: its grid cell, or the nearest cell with data within two cells (lakes and the border have none)
+    const sample = (cov, prop, lon, lat) => {
+      const { x, y } = cov.domain.axes;
+      const dx = (x.stop - x.start) / (x.num - 1), dy = (y.stop - y.start) / (y.num - 1);
+      const vals = cov.ranges[prop].values;
+      const i0 = Math.round((lon - x.start) / dx), j0 = Math.round((lat - y.start) / dy);
+      let best = null, bd = Infinity;
+      for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+        const i = i0 + di, j = j0 + dj;
+        if (i < 0 || j < 0 || i >= x.num || j >= y.num) continue;
+        const v = vals[j * x.num + i];
+        if (v == null || !Number.isFinite(v) || Math.abs(v) > 1e6) continue;
+        const d = di * di + dj * dj;
+        if (d < bd) { bd = d; best = v; }
+      }
+      return best;
+    };
+    const r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
+    const towns = {};
+    for (const pl of places) {
+      const t = {};
+      for (const [k, v] of Object.entries(VARS)) {
+        t[k] = {};
+        for (const sc of Object.keys(SCEN)) {
+          // [window start, median, 10th, 90th percentile] of the change from 1971–2000
+          t[k][sc] = WINDOWS.map((w) => [+w.slice(0, 4), ...[50, 10, 90].map((p) => r2(sample(grids[`${sc}|${w}|${p}`], v.prop, pl.lon, pl.lat)))]);
+          if (t[k][sc].some((r) => r.includes(null))) throw new Error(`projections: no ${k} value near ${pl.name}`);
+        }
+      }
+      towns[pl.key] = t;
+    }
+    log(`  ${Object.keys(towns).length} places × ${Object.keys(VARS).length} variables × ${WINDOWS.length} windows`);
+    await writeOut('projections', {
+      source: 'Environment and Climate Change Canada, CMIP6 statistically downscaled climate scenarios (CanDCS-U6), 30-year averages, via MSC GeoMet',
+      sourceUrl: 'https://open.canada.ca/data/en/dataset/f73d6939-912a-4add-a291-c233fc5d1946',
+      licence: 'ECCC Data Servers End-use Licence (Data Source: Environment and Climate Change Canada)',
+      asOf: new Date().toISOString().slice(0, 10),
+      baseline: '1971–2000',
+      windowYears: 30,
+      percentiles: [10, 90],
+      vars: Object.fromEntries(Object.entries(VARS).map(([k, v]) => [k, { label: v.label, unit: v.unit }])),
+      scenarios: Object.fromEntries(Object.entries(SCEN).map(([k, v]) => [k, v.label])),
+      windows: WINDOWS.map((w) => +w.slice(0, 4)),
+      towns,
+    });
+  },
+
   async population() {
     const csv = await statcanTable('17100155');
     const rows = parseCSV(csv);
@@ -1478,7 +1591,7 @@ const SOURCES = {
     facilities.sort((a, b) => b.lat - a.lat);
     const hosp = facilities.map((f, i) => ({ ...f, i })).filter((f) => f.hospital);
     log(`  ${facilities.length} facilities, ${hosp.length} counted as hospitals`);
-    const d = await driveTimes(places, hosp, 'hosp', { keep: 2 });
+    const d = await driveTimes(places, hosp, 'hosp', { keep: 3 });
     const towns = Object.fromEntries(Object.entries(d.towns).map(([k, v]) => [k, v.map((t) => ({ ...t, f: hosp[t.f].i }))]));
     await writeOut('hospitals', {
       source: 'Statistics Canada, Open Database of Healthcare Facilities (ODHF v1), Saskatchewan rows',
@@ -3619,6 +3732,81 @@ const SOURCES = {
     });
   },
 
+  // Short-range outlooks (plans/digital-twin/3-forecasts-and-what-ifs.md, 3c): published forecasts at each place, each
+  // with the time it was issued and the time it is valid for. Thunderstorm outlook (MSC, May–October; none out of season),
+  // today's fire danger class (CWFIS, from the SCRIBE weather forecast) and tomorrow's highest wildfire-smoke PM2.5
+  // (ECCC's RAQDPS, which carries FireWork). AQHI forecasts come with `now-air`. A part that fails is left out, never zero.
+  async 'now-outlooks'() {
+    await getProvince();
+    const places = await getPlaces();
+    const fetched = new Date().toISOString();
+    const inside = (geom, pl) => { try { return booleanPointInPolygon([pl.lon, pl.lat], geom); } catch { return false; } };
+    const out = { asOf: fetched.slice(0, 16) + 'Z', fetched, sources: [] };
+
+    // thunderstorm outlook: every outlook polygon in effect, and the places inside each
+    try {
+      const res = asJSON(await fetchBuf(`${OGC}/thunderstorm_outlook/items?${new URLSearchParams({ f: 'json', limit: '1000', bbox: `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north}` })}`), 'thunderstorm_outlook');
+      const now = Date.now();
+      const v = (o) => (o && typeof o === 'object' ? o.value ?? null : o ?? null);
+      const items = (res.features ?? []).filter((f) => f.geometry && Date.parse(f.properties.expiration_datetime ?? f.properties.validity_datetime) > now).map((f) => {
+        const p = f.properties, mo = p.metobject ?? {};
+        return {
+          issued: p.publication_datetime, valid: p.validity_datetime, expires: p.expiration_datetime ?? null,
+          thunder: v(mo.thunderstorm), severity: v(mo.severity), risk: v(mo.risk_swo), tornado: v(mo.tornado_risk) === true || v(mo.tornado_risk) === 'true',
+          hail: mo.hail?.value != null ? `${mo.hail.value} ${mo.hail.unit ?? ''}`.trim() : null, gust: mo.gust?.value != null ? `${mo.gust.value} ${mo.gust.unit ?? ''}`.trim() : null,
+          places: places.filter((pl) => inside(f.geometry, pl)).map((pl) => pl.key),
+        };
+      }).filter((it) => it.places.length);
+      out.thunder = { items };
+      out.sources.push({ name: 'Thunderstorm outlook', by: 'Environment and Climate Change Canada (MSC GeoMet, experimental)', url: 'https://api.weather.gc.ca/collections/thunderstorm_outlook', licence: 'ECCC Data Servers End-use Licence' });
+      log(`  thunderstorm outlook: ${items.length} area(s) covering a place`);
+    } catch (e) { log(`  thunderstorm outlook failed: ${e.message}`); }
+
+    // fire danger: CWFIS's "current" classes (0 low … 4 extreme), for the day its map service names
+    try {
+      const caps = (await fetchBuf('https://cwfis.cfs.nrcan.gc.ca/geoserver/public/fdr_current/wms?service=WMS&request=GetCapabilities&version=1.3.0', { timeout: 60_000 })).toString('utf8');
+      const valid = caps.match(/<Title>[^<]*Fire Danger[^<]*?(\d{4}-\d{2}-\d{2})<\/Title>/)?.[1];
+      if (!valid) throw new Error('no date in the fire danger layer title');
+      const q = new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: 'public:fdr_current_shp', bbox: `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north},EPSG:4326`, srsName: 'EPSG:4326', outputFormat: 'application/json' });
+      const fc = asJSON(await fetchBuf(`https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs?${q}`, { timeout: 120_000 }), 'fdr_current');
+      const towns = {};
+      for (const pl of places) {
+        const f = (fc.features ?? []).find((x) => x.geometry && inside(x.geometry, pl));
+        if (f && f.properties.GRIDCODE >= 0 && f.properties.GRIDCODE <= 4) towns[pl.key] = f.properties.GRIDCODE;
+      }
+      out.fire = { valid, model: 'SCRIBE', towns };
+      out.sources.push({ name: 'Fire danger', by: 'Natural Resources Canada, Canadian Wildland Fire Information System', url: 'https://cwfis.cfs.nrcan.gc.ca/maps/fw', licence: 'Open Government Licence – Canada' });
+      log(`  fire danger for ${valid}: ${Object.keys(towns).length} places classed`);
+    } catch (e) { log(`  fire danger failed: ${e.message}`); }
+
+    // wildfire smoke: RAQDPS's daily highest surface PM2.5 from fire plumes, for the next day it covers
+    try {
+      const WMS = 'https://geo.weather.gc.ca/geomet';
+      const LAYER = 'RAQDPS.Sfc_PM2.5-WildireSmokePlume-DMax'; // sic: ECCC's own spelling
+      const caps = (await fetchBuf(`${WMS}?service=WMS&version=1.3.0&request=GetCapabilities&layer=${LAYER}`, { timeout: 60_000 })).toString('utf8');
+      const times = caps.match(/<Dimension name="time"[^>]*>([^<]+)<\/Dimension>/)?.[1].split(',') ?? [];
+      const ref = caps.match(/<Dimension name="reference_time"[^>]*default="([^"]+)"/)?.[1];
+      const valid = times.find((t) => Date.parse(t) > Date.now());
+      if (!valid || !ref) throw new Error('no forecast time in the smoke layer');
+      const towns = {};
+      await pool(places, 4, async (pl) => {
+        const b = `${pl.lat - 0.05},${pl.lon - 0.05},${pl.lat + 0.05},${pl.lon + 0.05}`;
+        const q = new URLSearchParams({ service: 'WMS', version: '1.3.0', request: 'GetFeatureInfo', layers: LAYER, query_layers: LAYER, crs: 'EPSG:4326', bbox: b, width: '3', height: '3', i: '1', j: '1', info_format: 'application/json', time: valid, dim_reference_time: ref });
+        try {
+          const r = asJSON(await fetchBuf(`${WMS}?${q}`, { timeout: 60_000 }), 'smoke GFI');
+          const v = r.features?.[0]?.properties?.value;
+          if (v != null && v >= 0 && v < 1) towns[pl.key] = round(v * 1e9, 1); // kg/m³ → µg/m³
+        } catch { /* a place with no answer is left out */ }
+      });
+      out.smoke = { issued: ref, valid, towns };
+      out.sources.push({ name: 'Wildfire smoke forecast', by: 'Environment and Climate Change Canada, RAQDPS (FireWork), MSC GeoMet', url: 'https://eccc-msc.github.io/open-data/msc-data/nwp_raqdps/readme_raqdps_en/', licence: 'ECCC Data Servers End-use Licence' });
+      log(`  smoke forecast to ${valid} (run ${ref}): ${Object.keys(towns).length} places`);
+    } catch (e) { log(`  smoke forecast failed: ${e.message}`); }
+
+    if (!out.thunder && !out.fire && !out.smoke) throw new Error('no outlook could be read');
+    await writeNow('outlooks', { ...out, source: out.sources.map((s) => s.by).join('; '), sourceUrl: 'https://api.weather.gc.ca', licence: 'ECCC Data Servers End-use Licence; Open Government Licence – Canada (CWFIS)' });
+  },
+
   // ECCC public weather alerts in effect whose area is in Saskatchewan: one row per alert, with every forecast region it
   // covers (simplified outlines) and the atlas's places inside them.
   async 'now-alerts'() {
@@ -3658,7 +3846,7 @@ const SOURCES = {
   },
 };
 /** The live stages, which `npm run data now` runs. */
-const NOW_STAGES = ['now-rivers', 'now-fires', 'now-air', 'now-alerts'];
+const NOW_STAGES = ['now-rivers', 'now-fires', 'now-air', 'now-alerts', 'now-outlooks'];
 
 // The daily record of the live feeds (scripts/history.mjs; plans/digital-twin/2-accumulated-state.md). Run only when
 // named: `history` rolls today in, `history-backfill` also reaches back as far as each feed keeps. Both read the live
@@ -3751,7 +3939,7 @@ async function statcanTable(pid) {
 
 // `now` stands for the four live stages
 const wanted = process.argv.slice(2).flatMap((n) => (n === 'now' ? NOW_STAGES : [n]));
-const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'climate', 'smoke', 'drought', 'normals', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
+const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'climate', 'smoke', 'drought', 'normals', 'projections', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES, ...ON_REQUEST];
 const unknown = wanted.filter((n) => !order.includes(n));
 if (unknown.length) { console.error(`Unknown stage(s): ${unknown.join(', ')}`); process.exit(1); }
 const run = wanted.length ? order.filter((n) => wanted.includes(n)) : order.filter((n) => !ON_REQUEST.includes(n));

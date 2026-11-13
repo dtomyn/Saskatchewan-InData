@@ -157,3 +157,64 @@ export function alertEvent(a: WeatherAlert, layer: string, data: Data, lon?: num
     sources: [{ label: 'Environment and Climate Change Canada, public weather alerts', url: data.now.alerts?.sourceUrl ?? 'https://weather.gc.ca/' }],
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Short-range outlooks (plan 3c): published forecasts only, each shown with when it was issued and what it is valid
+// for, and dropped once that time has passed. Like every live value, they never feed the Town Finder.
+
+export const FIRE_DANGER = ['Low', 'Moderate', 'High', 'Very high', 'Extreme'];
+export const FIRE_DANGER_COLOR = ['#4caf50', '#3f8edc', '#ffd23f', '#ff8a3d', '#e0312b'];
+/** Today in Saskatchewan, as YYYY-MM-DD. */
+const skToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Regina' });
+const skDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const future = (iso: string | null | undefined) => !!iso && Date.parse(iso) > Date.now();
+const times = (issued: string | null | undefined, valid: string) => `<span class="tk">${issued ? `issued ${esc(skTime(issued))} · ` : ''}valid ${valid}</span>`;
+
+type OutlookRow = { k: string; c: string; v: string; sub: string };
+/** The outlooks still valid at a place: AQHI forecast, thunderstorm outlook, fire danger, smoke tomorrow. */
+export function placeOutlooks(data: Data, key: string): OutlookRow[] {
+  const nw = data.now, o = nw.outlooks, rows: OutlookRow[] = [];
+  const pick = nw.air?.towns[key];
+  const c = pick ? nw.air!.communities[pick[0]] : null;
+  if (c?.fv != null && c.ft && future(c.fto ?? c.ft))
+    rows.push({ k: 'Air quality forecast', c: '#e8a87c', v: `AQHI up to ${c.fv}`, sub: `${times(c.pub, `to ${esc(skTime(c.fto ?? c.ft))}`)} · highest at ${esc(skTime(c.ft))} · ${pick![1] < 15 ? 'for' : 'borrowed from'} ${esc(c.name)}` });
+  if (o?.thunder) {
+    const its = o.thunder.items.filter((it) => it.places.includes(key) && future(it.expires ?? it.valid));
+    for (const it of its)
+      rows.push({ k: 'Thunderstorm outlook', c: '#ffd166', v: esc(it.severity ?? it.thunder ?? it.risk ?? 'in an outlook area'), sub: `${[it.tornado ? 'tornado risk' : '', it.hail ? `hail ${esc(it.hail)}` : '', it.gust ? `gusts ${esc(it.gust)}` : ''].filter(Boolean).join(' · ')}${it.tornado || it.hail || it.gust ? ' · ' : ''}${times(it.issued, `from ${esc(skTime(it.valid))}${it.expires ? ` to ${esc(skTime(it.expires))}` : ''}`)}` });
+    if (!its.length) rows.push({ k: 'Thunderstorm outlook', c: '#ffd166', v: 'None', sub: '<span class="tk">no outlook area covers this place (outlooks are issued May to October)</span>' });
+  }
+  if (o?.fire && o.fire.valid >= skToday()) {
+    const cl = o.fire.towns[key];
+    rows.push({ k: 'Fire danger', c: cl != null ? FIRE_DANGER_COLOR[cl] : '#ff8a3d', v: cl != null ? FIRE_DANGER[cl] : 'Not rated', sub: cl != null ? `${times(null, esc(skDay(o.fire.valid)))} · CWFIS class from the ${esc(o.fire.model)} weather forecast` : '<span class="tk">outside the area CWFIS rates today</span>' });
+  }
+  if (o?.smoke && future(o.smoke.valid)) {
+    const v = o.smoke.towns[key];
+    if (v != null) rows.push({ k: 'Wildfire smoke forecast', c: '#b9a48a', v: v < 1 ? 'Under 1 µg/m³' : `${v.toFixed(v < 10 ? 1 : 0)} µg/m³`, sub: `<span class="tk">highest fine particles from fire smoke over the day to ${esc(skTime(o.smoke.valid))} · model run ${esc(skTime(o.smoke.issued))}</span>` });
+  }
+  return rows;
+}
+
+/** The Town Report's outlook list, under its Right now readings. */
+export function outlookList(data: Data, key: string) {
+  const rows = placeOutlooks(data, key);
+  if (!rows.length) return '';
+  return `<div class="outlooks"><div class="ol-h">Outlooks <span class="tk">published forecasts, not readings</span></div>
+    ${rows.map((r) => `<div class="ol-row" style="--c:${r.c}"><span class="ol-k">${r.k}</span><b>${r.v}</b><div class="ol-s">${r.sub}</div></div>`).join('')}</div>`;
+}
+
+/** A layer's one-line outlook for the province: fire danger on Wildfires, the smoke forecast on Smoke & air. */
+export function provinceOutlook(data: Data, kind: 'fire' | 'smoke') {
+  const o = data.now.outlooks;
+  if (kind === 'fire' && o?.fire && o.fire.valid >= skToday()) {
+    const n = FIRE_DANGER.map((_, i) => Object.values(o.fire!.towns).filter((c) => c === i).length);
+    const top = n.map((c, i) => ({ c, i })).filter((x) => x.c).reverse()[0];
+    return `<div class="ol-line"><span class="tk">Outlook · fire danger ${esc(skDay(o.fire.valid))} (CWFIS, ${esc(o.fire.model)} forecast)</span><br>${n.map((c, i) => (c ? `<span class="sw" style="background:${FIRE_DANGER_COLOR[i]}"></span>${FIRE_DANGER[i]} ${c}` : '')).filter(Boolean).join(' · ') || 'no place rated'}${top ? ` <span class="tk">of the atlas’s places</span>` : ''}</div>`;
+  }
+  if (kind === 'smoke' && o?.smoke && future(o.smoke.valid)) {
+    const v = Object.entries(o.smoke.towns).sort((a, b) => b[1] - a[1]);
+    const name = (k: string) => esc(data.munis.find((m) => m.key === k)?.name ?? k);
+    return `<div class="ol-line"><span class="tk">Outlook · wildfire smoke to ${esc(skTime(o.smoke.valid))}, RAQDPS run ${esc(skTime(o.smoke.issued))}</span><br>${v.length && v[0][1] >= 1 ? `highest fire-smoke PM2.5 ${v[0][1].toFixed(0)} µg/m³ at ${name(v[0][0])}` : 'no place above 1 µg/m³ of fire smoke'}</div>`;
+  }
+  return '';
+}

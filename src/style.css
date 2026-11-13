@@ -888,3 +888,53 @@ body.cinema .maplibregl-ctrl-bottom-right { top: 8px; bottom: auto !important; r
 .hist-strip i.few { opacity: .4; }
 .hist-cap { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
 .src-hist { font-size: 11.5px; color: var(--ink-2); margin-top: 4px; }
+
+/* What-if scenarios (src/scenario.ts): a closure the visitor chose. Red, and labelled "scenario" everywhere it shows. */
+.scenario-banner { position: absolute; top: 76px; left: 16px; z-index: 6; display: flex; align-items: center; gap: 10px; max-width: min(640px, calc(100vw - 440px)); padding: 7px 8px 7px 12px; border-radius: 999px; background: var(--glass-strong); border: 1px dashed #ff5a6e; box-shadow: var(--shadow), 0 0 18px rgba(255, 90, 110, .2); backdrop-filter: blur(14px); font-size: 12.5px; color: var(--ink); }
+.scenario-banner[hidden] { display: none; }
+.scenario-banner .sb-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; padding: 0; text-align: left; }
+.scenario-banner .sb-txt small { color: var(--ink-3); margin-left: 6px; }
+.scenario-banner .sb-clear { flex: none; border: 1px solid var(--line-strong); background: rgba(255,255,255,.06); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; }
+.sc-tag { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; color: #ffd6db; background: repeating-linear-gradient(135deg, rgba(255, 90, 110, .35) 0 4px, rgba(255, 90, 110, .15) 4px 8px); border: 1px solid rgba(255, 90, 110, .6); vertical-align: 2px; }
+.sc-closed { color: #ff8a98; }
+.sc-box { border: 1px dashed rgba(255, 90, 110, .65); border-radius: 12px; padding: 10px 12px; margin: 10px 0 12px; background: rgba(255, 90, 110, .05); }
+.sc-head { font-size: 13.5px; line-height: 1.45; }
+.sc-closed-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.sc-closed-list button { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-strong); background: rgba(255,255,255,.04); color: var(--ink-2); }
+.sc-closed-list .sc-clear { border-color: rgba(255, 90, 110, .6); color: var(--ink); }
+.sc-sum { margin: 6px 0; font-size: 12.5px; color: var(--ink-2); }
+.sc-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.sc-list li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 6px 4px; border-top: 1px solid var(--line); cursor: pointer; }
+.sc-list li:hover { background: rgba(255,255,255,.04); }
+.sc-list .nm { font-weight: 600; }
+.sc-list .sc-add { font-family: var(--mono); color: #ff8a98; text-align: right; }
+.sc-list .rd { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-3); }
+.sc-pick { width: 100%; margin: 4px 0 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: rgba(255,255,255,.04); }
+.sc-pick option { background: #0b1220; }
+.sc-btn { display: block; width: 100%; margin: 10px 0 4px; padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--ink); font-weight: 600; }
+@media (max-width: 820px) { .scenario-banner { max-width: calc(100vw - 32px); } }
+
+/* Projections (src/projections.ts): model output, never a record. Hatched, dashed and badged wherever they show. */
+.proj-badge { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; color: #ffd9d4; border: 1px dashed rgba(224, 49, 43, .8); background: repeating-linear-gradient(135deg, rgba(224, 49, 43, .28) 0 4px, rgba(224, 49, 43, .08) 4px 8px); vertical-align: 2px; font-family: var(--font); }
+.proj-now { margin: 4px 0 8px; }
+.proj-now[hidden] { display: none; }
+.month.proj { display: inline-block; height: auto; padding: 1px 6px; border-radius: 999px; border: 1px dashed #e0312b; color: #ff9b94; letter-spacing: 1px; font-size: 9.5px; background: repeating-linear-gradient(135deg, rgba(224, 49, 43, .2) 0 4px, transparent 4px 8px); }
+.proj-row { margin: 10px 0; padding: 10px 12px; border-radius: 10px; border: 1px dashed rgba(224, 49, 43, .6); background: repeating-linear-gradient(135deg, rgba(224, 49, 43, .07) 0 6px, transparent 6px 12px); }
+.proj-row .pr-v { font-size: 15px; margin: 6px 0 4px; }
+.proj-row .pr-v b { font-family: var(--display); font-size: 18px; }
+.proj-row .pr-s { font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+.proj-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.proj-table th, .proj-table td { padding: 5px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.proj-table th:first-child, .proj-table td:first-child { text-align: left; white-space: normal; color: var(--ink-2); }
+.proj-table th { font-size: 10.5px; color: var(--ink-3); font-weight: 600; }
+.proj-table td { font-family: var(--mono); font-size: 11px; }
+.sw.proj-sw { background: repeating-linear-gradient(135deg, var(--c) 0 3px, transparent 3px 6px); border: 1px dashed var(--c); }
+
+/* Outlooks (src/now.ts): published forecasts under the Right now readings, dashed to read as forecasts */
+.outlooks { margin: 10px 0 4px; padding: 8px 10px; border-radius: 10px; border: 1px dashed var(--line-strong); }
+.outlooks .ol-h { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.ol-row { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; padding: 5px 0 5px 8px; border-left: 2px dashed var(--c); margin: 4px 0; font-size: 12.5px; }
+.ol-row .ol-k { color: var(--ink-2); }
+.ol-row .ol-s { grid-column: 1 / -1; font-size: 11px; color: var(--ink-3); }
+.ol-line { margin: 8px 0; font-size: 12px; line-height: 1.6; }
+.ol-line .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 2px; }
