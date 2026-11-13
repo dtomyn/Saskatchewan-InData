@@ -43,4 +43,4 @@ Settings the newcomer sets once: "I work in…" (feeds Workday Reach and a drive
 - Incident-level crime from Table 35-10-0182-01 (impaired driving, break-ins, by service).
 - Saskatchewan's own wildfire perimeters if they become open; NTP's 1980–2023 historical set (needs a Western University account).
 - Courts of King's Bench and Provincial Court locations from an official list, if one is published openly.
-- The explainer film from the blueprint (Part 8).
+- Per-layer films and an overview (blueprint Part 8, `storyboard_layers.py` in Island Atlas); the how-to explainer is in `video/`.
