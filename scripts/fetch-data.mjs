@@ -5,6 +5,7 @@
 //
 //   node scripts/fetch-data.mjs                 # all stages
 //   node scripts/fetch-data.mjs fires crime     # selected stages
+//   node scripts/fetch-data.mjs now             # the four live stages (now-rivers, now-fires, now-air, now-alerts)
 //
 // Raw downloads are cached in .cache/ so re-runs are quick. Delete it to force a refresh.
 
@@ -3474,7 +3475,196 @@ const SOURCES = {
       treaties, reserves,
     });
   },
+
+  // ---- Right now: live readings, rebuilt hourly by .github/workflows/live.yml and never committed (public/data/now/ is
+  // in .gitignore). Nothing here is cached: each run reads the feeds as they are. `asOf` is the newest reading's time
+  // (for hotspots and alerts, which are lists of what is in effect, the moment the list was read).
+
+  // ECCC real-time hydrometric data: the latest level and discharge at each gauge in rivers.json, from the last 24 hours.
+  async 'now-rivers'() {
+    const { stations } = await readOut('rivers');
+    const want = new Map(stations.map((s) => [s.id, s]));
+    const since = new Date(Date.now() - 864e5).toISOString().slice(0, 19) + 'Z';
+    const PAGE = 10000;
+    const best = new Map(); // station → newest row with a discharge, else newest row with a level
+    for (let offset = 0; offset < 200_000; offset += PAGE) {
+      const q = new URLSearchParams({
+        f: 'json', limit: String(PAGE), offset: String(offset), PROV_TERR_STATE_LOC: 'SK', datetime: `${since}/..`, skipGeometry: 'true',
+        properties: 'STATION_NUMBER,DATETIME,LEVEL,DISCHARGE,LEVEL_SYMBOL_EN,DISCHARGE_SYMBOL_EN', sortby: '-DATETIME',
+      });
+      const page = asJSON(await fetchBuf(`${OGC}/hydrometric-realtime/items?${q}`, { timeout: 120_000 }), 'hydrometric-realtime');
+      for (const f of page.features ?? []) {
+        const p = f.properties;
+        if (!want.has(p.STATION_NUMBER) || (p.LEVEL == null && p.DISCHARGE == null)) continue;
+        const prev = best.get(p.STATION_NUMBER);
+        if (!prev || (prev.DISCHARGE == null && p.DISCHARGE != null)) best.set(p.STATION_NUMBER, p);
+      }
+      if ((page.features ?? []).length < PAGE) break;
+    }
+    // HYDAT's symbols: B ice conditions (backwater), E estimated, A partial day, D dry
+    const flag = (...ss) => {
+      const s = ss.filter(Boolean).join(' ');
+      return /\bice\b|^B\b|\bB$/i.test(s) ? 'ice' : /estim|^E\b|\bE$/i.test(s) ? 'est' : /dry|^D\b/i.test(s) ? 'dry' : s ? 'other' : null;
+    };
+    const rows = [];
+    for (const [id, p] of best) {
+      const s = want.get(id);
+      const q = p.DISCHARGE == null ? null : round(p.DISCHARGE, 3);
+      // [id, time, level m, discharge m³/s, discharge ÷ the station's median annual peak, flag]
+      rows.push([id, p.DATETIME.slice(0, 16) + 'Z', round(p.LEVEL, 3), q, q == null || !s.median ? null : round(q / s.median, 3), flag(p.LEVEL_SYMBOL_EN, p.DISCHARGE_SYMBOL_EN)]);
+    }
+    rows.sort((a, b) => a[0].localeCompare(b[0]));
+    if (!rows.length) throw new Error('no real-time readings in the last 24 hours for any gauge in rivers.json');
+    const asOf = rows.reduce((a, r) => (r[1] > a ? r[1] : a), rows[0][1]);
+    log(`  ${rows.length} of ${stations.length} gauges reported in the last 24 h (${rows.filter((r) => r[3] != null).length} with discharge), newest ${asOf}`);
+    await writeNow('rivers', {
+      asOf, fetched: new Date().toISOString(),
+      source: 'Environment and Climate Change Canada, real-time hydrometric data (provisional, api.weather.gc.ca)',
+      sourceUrl: 'https://wateroffice.ec.gc.ca/', licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada',
+      rows,
+    });
+  },
+
+  // CWFIS satellite hotspots of the last 24 hours, and the perimeters it estimates from them (season to date; kept while heat
+  // was seen within 7 days).
+  async 'now-fires'() {
+    await getProvince();
+    const WFS = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs';
+    // WFS 1.0.0 takes the box as lon,lat (2.0.0 with EPSG:4326 swaps the axes)
+    const wfs = async (layer) => asJSON(await fetchBuf(`${WFS}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: layer, outputFormat: 'application/json', srsName: 'EPSG:4326', bbox: `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north},EPSG:4326` })}`, { timeout: 180_000 }), layer);
+    const fetched = new Date().toISOString();
+    const hs = await wfs('public:hotspots_last24hrs');
+    const hotspots = [];
+    for (const f of hs.features ?? []) {
+      const [lon, lat] = f.geometry?.coordinates ?? [];
+      if (!Number.isFinite(lon) || !inSask(lon, lat, 0.01)) continue;
+      const p = f.properties;
+      // [lon, lat, time, fire radiative power MW, sensor]
+      hotspots.push([round(lon, 3), round(lat, 3), String(p.rep_date).slice(0, 16) + 'Z', round(p.frp, 1), p.sensor ?? null]);
+    }
+    hotspots.sort((a, b) => (a[2] < b[2] ? -1 : 1));
+    const KEEP_DAYS = 7;
+    const m3 = await wfs('public:m3_polygons_current');
+    const perimeters = [];
+    for (const f of m3.features ?? []) {
+      const p = f.properties;
+      if (!f.geometry || !p.lastdate || Date.now() - Date.parse(p.lastdate) > KEEP_DAYS * 864e5) continue;
+      const ps = polys(f.geometry, 0.002);
+      if (!ps.some((poly) => poly[0].some(([x, y]) => inSask(x, y, 0.01)))) continue;
+      perimeters.push({ first: p.firstdate.slice(0, 16) + 'Z', last: p.lastdate.slice(0, 16) + 'Z', ha: round(p.area, 0), n: p.hcount, polys: ps });
+    }
+    log(`  ${hotspots.length} hotspots in the last 24 h, ${perimeters.length} estimated perimeters with heat in the last ${KEEP_DAYS} days`);
+    await writeNow('fires', {
+      asOf: fetched, fetched, hours: 24, keepDays: KEEP_DAYS,
+      source: 'Natural Resources Canada, Canadian Wildland Fire Information System: satellite hotspots (last 24 hours) and fire perimeters estimated from them (M3)',
+      sourceUrl: 'https://cwfis.cfs.nrcan.gc.ca/maps/fm3', licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada',
+      hotspots, perimeters,
+    });
+  },
+
+  // ECCC AQHI: the latest hourly observation and the latest forecast's highest value for each community near Saskatchewan;
+  // each place borrows the nearest community within 150 km (the smoke layer's rule).
+  async 'now-air'() {
+    await getProvince();
+    const places = await getPlaces();
+    const REACH = 150;
+    const box = `${BBOX.west - 1.5},${BBOX.south - 0.4},${BBOX.east + 1.3},${BBOX.north + 0.4}`;
+    const obs = asJSON(await fetchBuf(`${OGC}/aqhi-observations-realtime/items?${new URLSearchParams({ f: 'json', limit: '1000', latest: 'true', bbox: box })}`), 'aqhi-observations');
+    const now = Date.now();
+    const fc = [];
+    for (let offset = 0; offset < 50_000; offset += 10000) {
+      const page = asJSON(await fetchBuf(`${OGC}/aqhi-forecasts-realtime/items?${new URLSearchParams({ f: 'json', limit: '10000', offset: String(offset), bbox: box })}`), 'aqhi-forecasts');
+      fc.push(...(page.features ?? []));
+      if ((page.features ?? []).length < 10000) break;
+    }
+    // each location's newest forecast, and its highest hourly value from now on
+    const pub = new Map();
+    for (const f of fc) { const p = f.properties; if (!pub.has(p.location_id) || p.publication_datetime > pub.get(p.location_id)) pub.set(p.location_id, p.publication_datetime); }
+    const fmax = new Map();
+    for (const f of fc) {
+      const p = f.properties;
+      if (p.publication_datetime !== pub.get(p.location_id) || p.aqhi == null || Date.parse(p.forecast_datetime) < now - 36e5) continue;
+      const m = fmax.get(p.location_id);
+      if (!m || p.aqhi > m.v) fmax.set(p.location_id, { v: p.aqhi, t: p.forecast_datetime, last: m?.last ?? p.forecast_datetime });
+      const mm = fmax.get(p.location_id);
+      if (p.forecast_datetime > mm.last) mm.last = p.forecast_datetime;
+    }
+    const all = (obs.features ?? []).filter((f) => f.geometry && f.properties.aqhi != null).map((f) => {
+      const p = f.properties, [lon, lat] = f.geometry.coordinates, m = fmax.get(p.location_id);
+      return {
+        id: p.location_id, name: p.location_name_en, lon: round(lon), lat: round(lat), sk: inSask(lon, lat, 0.05),
+        t: p.observation_datetime.slice(0, 16) + 'Z', v: round(p.aqhi, 1),
+        ...(m ? { fv: round(m.v, 1), ft: m.t.slice(0, 16) + 'Z', fto: m.last.slice(0, 16) + 'Z', pub: pub.get(p.location_id).slice(0, 16) + 'Z' } : {}),
+      };
+    });
+    // a place's community: the nearest within REACH; communities outside Saskatchewan stay only if some place borrows them
+    const nearest = (pl) => {
+      let b = null;
+      for (const c of all) { const d = distKm(pl.lon, pl.lat, c.lon, c.lat); if (d <= REACH && (!b || d < b.d)) b = { c, d }; }
+      return b;
+    };
+    const picks = places.map((pl) => [pl.key, nearest(pl)]);
+    const used = new Set(picks.filter(([, b]) => b).map(([, b]) => b.c));
+    const communities = all.filter((c) => c.sk || used.has(c)).sort((a, b) => b.lat - a.lat);
+    const towns = Object.fromEntries(picks.filter(([, b]) => b).map(([k, b]) => [k, [communities.indexOf(b.c), round(b.d, 0)]]));
+    if (!communities.length) throw new Error('no AQHI observations near Saskatchewan');
+    const asOf = communities.reduce((a, c) => (c.t > a ? c.t : a), communities[0].t);
+    log(`  ${communities.length} AQHI communities (${communities.filter((c) => c.sk).length} in Saskatchewan), ${Object.keys(towns).length} of ${places.length} places within ${REACH} km of one`);
+    await writeNow('air', {
+      asOf, fetched: new Date().toISOString(), reachKm: REACH,
+      source: 'Environment and Climate Change Canada, Air Quality Health Index: real-time observations and forecasts (api.weather.gc.ca)',
+      sourceUrl: 'https://weather.gc.ca/airquality/pages/provincial_summary/sk_e.html', licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada',
+      communities: communities.map(({ sk, ...c }) => ({ ...c, ...(sk ? {} : { out: true }) })), towns,
+    });
+  },
+
+  // ECCC public weather alerts in effect whose area is in Saskatchewan: one row per alert, with every forecast region it
+  // covers (simplified outlines) and the atlas's places inside them.
+  async 'now-alerts'() {
+    const places = await getPlaces();
+    const fetched = new Date().toISOString();
+    const res = asJSON(await fetchBuf(`${OGC}/weather-alerts/items?${new URLSearchParams({ f: 'json', limit: '10000', bbox: `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north}` })}`), 'weather-alerts');
+    const now = Date.now();
+    const groups = new Map();
+    for (const f of res.features ?? []) {
+      const p = f.properties;
+      if (!/\bSK\b/.test(p.province ?? '') || /ended|cancel/i.test(p.status_en ?? '') || !f.geometry) continue;
+      if (p.expiration_datetime && Date.parse(p.expiration_datetime) < now) continue;
+      const key = `${p.alert_code}|${p.alert_type}|${p.alert_text_en}`;
+      const g = groups.get(key) ?? {
+        code: p.alert_code, type: p.alert_type, name: p.alert_name_en, short: p.alert_short_name_en, colour: p.risk_colour_en ?? null,
+        status: p.status_en ?? null, issued: p.publication_datetime, ends: p.event_end_datetime ?? null, expires: p.expiration_datetime ?? null,
+        text: (p.alert_text_en ?? '').trim(), areas: [], places: new Set(), polys: [],
+      };
+      groups.set(key, g);
+      if (p.publication_datetime > g.issued) g.issued = p.publication_datetime;
+      if (p.event_end_datetime && (!g.ends || p.event_end_datetime > g.ends)) g.ends = p.event_end_datetime;
+      if (!g.areas.includes(p.feature_name_en)) g.areas.push(p.feature_name_en);
+      for (const pl of places) if (booleanPointInPolygon([pl.lon, pl.lat], f)) g.places.add(pl.key);
+      g.polys.push(...polys(f.geometry, 0.01, 3));
+    }
+    const ORDER = { warning: 0, watch: 1, advisory: 2, statement: 3 };
+    const alerts = [...groups.values()]
+      .map((g) => ({ ...g, places: [...g.places].sort() }))
+      .sort((a, b) => (ORDER[a.type] ?? 9) - (ORDER[b.type] ?? 9) || (a.issued < b.issued ? 1 : -1));
+    log(`  ${alerts.length} alerts in effect over Saskatchewan (${alerts.map((a) => a.short ?? a.name).join(', ') || 'none'})`);
+    await writeNow('alerts', {
+      asOf: fetched, fetched,
+      source: 'Environment and Climate Change Canada, public weather alerts (api.weather.gc.ca)',
+      sourceUrl: 'https://weather.gc.ca/?province=sk', licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada',
+      alerts,
+    });
+  },
 };
+/** The live stages, which `npm run data now` runs. */
+const NOW_STAGES = ['now-rivers', 'now-fires', 'now-air', 'now-alerts'];
+
+async function writeNow(name, data) {
+  await fs.mkdir(path.join(OUT, 'now'), { recursive: true });
+  const text = JSON.stringify(data);
+  await fs.writeFile(path.join(OUT, 'now', `${name}.json`), text);
+  log(`wrote now/${name}.json (${(text.length / 1024).toFixed(0)} KB)`);
+}
 
 /** Text items {page, x, y, s} from a simple PDF: Flate-compressed page streams, text placed with `Tm` and drawn with
  * `Tj` in standard (WinAnsi) fonts, as the province's OpenPDF reports are. Not a general PDF reader. */
@@ -3548,16 +3738,23 @@ async function statcanTable(pid) {
 
 // ---------------------------------------------------------------------------------------------
 
-const wanted = process.argv.slice(2);
-const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'climate', 'smoke', 'drought', 'normals', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute'];
+// `now` stands for the four live stages
+const wanted = process.argv.slice(2).flatMap((n) => (n === 'now' ? NOW_STAGES : [n]));
+const order = ['province', 'places', 'fires', 'tornadoes', 'hail', 'rivers', 'climate', 'smoke', 'drought', 'normals', 'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools', 'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'water', 'radon', 'light', 'transit', 'commute', ...NOW_STAGES];
+const unknown = wanted.filter((n) => !order.includes(n));
+if (unknown.length) { console.error(`Unknown stage(s): ${unknown.join(', ')}`); process.exit(1); }
 const run = wanted.length ? order.filter((n) => wanted.includes(n)) : order;
 
-let manifest = {};
-try { manifest = JSON.parse(await fs.readFile(path.join(OUT, 'manifest.json'), 'utf8')); } catch { /* first run */ }
+// The live stages keep their own manifest beside their files (public/data/now/, not committed), so the committed
+// manifest.json never changes just because the live stages ran.
+const readManifest = async (file) => { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return {}; } };
+const MANIFEST = path.join(OUT, 'manifest.json'), NOW_MANIFEST = path.join(OUT, 'now', 'manifest.json');
+const manifests = { main: await readManifest(MANIFEST), now: await readManifest(NOW_MANIFEST) };
 
 let failures = 0;
 for (const name of run) {
   const t0 = Date.now();
+  const manifest = NOW_STAGES.includes(name) ? manifests.now : manifests.main;
   console.log(`\n▶ ${name}`);
   try {
     await SOURCES[name]();
@@ -3570,5 +3767,9 @@ for (const name of run) {
   }
 }
 await fs.mkdir(OUT, { recursive: true });
-await fs.writeFile(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
+if (run.some((n) => !NOW_STAGES.includes(n))) await fs.writeFile(MANIFEST, JSON.stringify(manifests.main, null, 2));
+if (run.some((n) => NOW_STAGES.includes(n))) {
+  await fs.mkdir(path.dirname(NOW_MANIFEST), { recursive: true });
+  await fs.writeFile(NOW_MANIFEST, JSON.stringify(manifests.now, null, 2));
+}
 console.log(failures ? `\nFinished with ${failures} failed source(s).` : '\nAll sources fetched.');

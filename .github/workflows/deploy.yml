@@ -27,6 +27,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # the live readings are not in git (public/data/now/): fetch them as live.yml does, so a push never deploys without them
+      - name: Restore the last live files
+        env:
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: |
+          mkdir -p public/data/now
+          for f in rivers fires air alerts manifest; do
+            curl -fsS --max-time 30 -o "public/data/now/$f.json" "$SITE/data/now/$f.json" || rm -f "public/data/now/$f.json"
+          done
+      - run: npm run data now
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -4,7 +4,7 @@ import * as d3 from 'd3';
 import { ColumnLayer, LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { DataFilterExtension, PathStyleExtension } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { Data, Facility, FirePoint, MONTHS, Muni, NormalsStation, Trip, fmt, interpYearly, km, lowerBound } from './data';
+import { Data, Facility, FirePerimeter, FirePoint, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
 import { barChart, lineChart, rampCSS, scatterChart, stripes, ChartHandle } from './charts';
 import { NormalVar, provinceAnomalies, slope, townMetrics } from './metrics';
 import { tornadoLayer } from './tornado';
@@ -30,6 +30,7 @@ import { radonLayer } from './radon';
 import { lightLayer } from './light';
 import { transitLayer } from './transit';
 import { esc } from './html';
+import { NOW_T, ago, ageTag, plainAge, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, drawable, freshness, isNow, ms, nowBlock, skTime, tickAges } from './now';
 
 
 /** `hovered` is the municipality key under the pointer (town pin or column), if any. */
@@ -95,6 +96,12 @@ export interface AtlasLayer {
   tooltip: (info: PickingInfo) => string | null;
   /** Handles a click on one of its own map objects; true if it did. */
   click?: (info: PickingInfo) => boolean;
+  /**
+   * A live reading (src/now.ts, public/data/now/). A layer with one ends its `range` at today: the timeline's Now stop.
+   * `archiveEnd` is where its archive stops (the gap to Now is hatched, "no record yet"); `asOf` is the reading's time
+   * (ms); at Now, main.ts draws `build` on top of the layer's own `build`.
+   */
+  now?: { asOf: () => number | null; archiveEnd: number; build: (ctx: Ctx) => Layer[] };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -196,14 +203,79 @@ function firesLayer(data: Data): AtlasLayer {
   const bySize = [...points].sort((a, b) => b[3] - a[3]);
   const rankOf = new Map(bySize.map((p, i) => [p, i + 1]));
   const fireName = (p: FirePoint) => (p[5] ? `the ${p[5].replace(/\b\w+/g, (w) => w[0] + w.slice(1).toLowerCase())} fire` : null);
+  // right now: CWFIS satellite hotspots of the last 24 hours and the perimeters it estimates from them
+  const nowF = data.now.fires;
+  const hotspots = nowF?.hotspots ?? [];
+  const perimeters = nowF?.perimeters ?? [];
+  const isLive = (id?: string) => !!id?.startsWith('fires-now');
+  /** a hotspot fades with age across the 24-hour window */
+  const hotAlpha = (h: Hotspot) => Math.round(255 * Math.max(0.35, 1 - Math.max(0, Date.now() - ms(h[2])) / (24 * 36e5)));
+  function firesNow() {
+    if (data.now.skipped) return '';
+    const fresh = nowF ? freshness(nowF.asOf) : 'old';
+    const newest = hotspots.at(-1);
+    const north = hotspots.filter((h) => h[1] >= 54).length;
+    const body = `<p><b>${hotspots.length}</b> satellite hotspot${hotspots.length === 1 ? '' : 's'} in Saskatchewan in the ${nowF?.hours ?? 24} hours before this reading${newest ? `, the newest seen ${plainAge(newest[2])}` : ''}${hotspots.length && north ? `; ${north} north of 54° N` : ''}. ${perimeters.length ? `${perimeters.length} fire perimeter${perimeters.length === 1 ? '' : 's'} estimated from them (dashed), with heat seen in the last ${nowF?.keepDays ?? 7} days.` : 'No estimated perimeters with heat in the last week.'}</p>
+      ${fresh !== 'old' ? alertList(alertsInEffect(data, 'fires'), data) : ''}`;
+    return nowBlock({ color, asOf: nowF?.asOf ?? null, body, source: nowF?.source ?? '', sourceUrl: nowF?.sourceUrl, missing: 'This copy of the data has no satellite hotspots.' });
+  }
 
   const l: AtlasLayer = {
     id: 'fires',
     name: 'Wildfires',
     icon: '🔥',
     color,
-    range: [y0, y1 + 0.99],
+    range: [y0, nowF ? NOW_T : y1 + 0.99],
     available: points.length > 0,
+    now: nowF ? {
+      asOf: () => ms(nowF.asOf),
+      archiveEnd: y1 + 0.99,
+      build({ clock }) {
+        // the list as a whole goes stale (the hourly refresh stopped), not each hotspot: a hotspot is up to 24 h old by design
+        if (!drawable(nowF.asOf)) return [];
+        const stale = freshness(nowF.asOf) === 'stale';
+        const pulse = 0.5 + 0.5 * Math.sin(clock * 3);
+        return [
+          new PathLayer<any>({
+            id: 'fires-now-perims',
+            data: perimeters.flatMap((p) => p.polys.map((poly) => ({ p, ring: poly[0] }))),
+            getPath: (d) => d.ring,
+            getColor: stale ? [150, 150, 160, 200] : [255, 120, 60, 230],
+            getWidth: 2,
+            widthUnits: 'pixels',
+            getDashArray: [6, 4],
+            dashJustified: true,
+            extensions: dashExt,
+            pickable: true,
+            parameters: NO_DEPTH,
+          } as any),
+          new ScatterplotLayer<Hotspot>({
+            id: 'fires-now-glow',
+            data: hotspots,
+            getPosition: (d) => [d[0], d[1]],
+            getRadius: (d) => 5000 + Math.sqrt(d[3] ?? 1) * 1800,
+            radiusMinPixels: 8,
+            getFillColor: (d) => (stale ? [150, 150, 160, 60] : [255, 170, 60, Math.round(hotAlpha(d) * (0.25 + 0.2 * pulse))]),
+            updateTriggers: { getFillColor: Math.round(pulse * 20) },
+            parameters: ADDITIVE,
+          }),
+          new ScatterplotLayer<Hotspot>({
+            id: 'fires-now-hotspots',
+            data: hotspots,
+            getPosition: (d) => [d[0], d[1]],
+            getRadius: 1500,
+            radiusMinPixels: 3,
+            getFillColor: (d) => (stale ? [170, 170, 180, 200] : [255, 240, 150, hotAlpha(d)]),
+            stroked: true,
+            getLineColor: [40, 10, 0, 200],
+            lineWidthMinPixels: 0.8,
+            pickable: true,
+            parameters: NO_DEPTH,
+          }),
+          ...alertOutlines('fires-now-alerts', alertsInEffect(data, 'fires')),
+        ];
+      },
+    } : undefined,
     unavailable: 'The Canadian National Fire Database could not be downloaded when this copy of the data was built. Run <code>npm run data fires</code>, then reload.',
     build({ time, speed }) {
       const W = glowWindow(speed);
@@ -258,8 +330,9 @@ function firesLayer(data: Data): AtlasLayer {
     },
     panel(el) {
       el.innerHTML = `${kicker(l, `Wildfire history · ${y0} → ${y1}`)}
+        ${firesNow()}
         <h2>Where Saskatchewan burns</h2>
-        <p class="lede">Every fire the province and Parks Canada reported since ${y0}, at the point it started. New fires flare; each then leaves a scar drawn as a circle the size of the area it burned. Almost all of the burning is in the boreal north, and most of it is started by lightning.</p>`;
+        <p class="lede">Every fire the province and Parks Canada reported since ${y0}, at the point it started. New fires flare; each then leaves a scar drawn as a circle the size of the area it burned. Almost all of the burning is in the boreal north, and most of it is started by lightning.${nowF ? ' At the <b>Now</b> stop, the pale yellow points are satellite hotspots from the last 24 hours: heat seen from space, not confirmed fires. Gas flares, farm and slash burning show up too.' : ''}</p>`;
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Area burned per year</h3>`);
       const set = deferChart(el.appendChild(mk('div')), (c) =>
@@ -275,9 +348,11 @@ function firesLayer(data: Data): AtlasLayer {
         ${sourceLine(fires?.source ?? '')}`);
       return {
         update({ time }) {
+          tickAges(el);
           const y = Math.floor(time);
           const cz = causeByYear[y] ?? [0, 0, 0];
-          hero(0, fmt.int(countByYear[y] ?? 0), `fires in ${y}`);
+          if (nowF && isNow(time, l.range[1])) hero(0, drawable(nowF.asOf) ? fmt.int(hotspots.length) : '–', 'satellite hotspots, last 24 hours');
+          else hero(0, fmt.int(countByYear[y] ?? 0), `fires in ${y}`);
           hero(1, fmt.ha(haByYear[y] ?? 0), `burned in ${y}`);
           const tot = cz[0] + cz[1] + cz[2];
           hero(2, tot ? `${Math.round((cz[0] / tot) * 100)}%` : '–', `started by lightning in ${y}`);
@@ -289,6 +364,35 @@ function firesLayer(data: Data): AtlasLayer {
       };
     },
     describe(info) {
+      const lid = info.layer?.id;
+      if (isLive(lid)) {
+        const x: any = info.object;
+        if (x?.a) return alertEvent(x.a, 'fires', data, info.coordinate?.[0], info.coordinate?.[1]);
+        if (x?.p) {
+          const p = x.p as FirePerimeter;
+          const c = p.polys[0][0][0];
+          const { town, km: d } = nearestTown(data.munis, c[0], c[1]);
+          return {
+            layer: 'fires', kind: 'Estimated fire perimeter', lon: c[0], lat: c[1], zoom: 8,
+            title: `A fire perimeter ${d < 15 ? 'at' : 'near'} ${town.name}`,
+            body: `An outline the Canadian Wildland Fire Information System draws around clusters of satellite hotspots. It is an estimate from heat seen from space, not a mapped perimeter, so it is drawn dashed.`,
+            stats: [{ v: fmt.ha(p.ha), l: 'estimated area' }, { v: ago(p.last), l: 'last heat seen' }, { v: skTime(p.first), l: 'first heat seen' }, { v: fmt.int(p.n), l: 'hotspots in it' }],
+            sources: [{ label: 'CWFIS fire M3 hotspots and perimeters', url: nowF?.sourceUrl ?? 'https://cwfis.cfs.nrcan.gc.ca/' }],
+          };
+        }
+        if (Array.isArray(x)) {
+          const h = x as Hotspot;
+          const { town, km: d } = nearestTown(data.munis, h[0], h[1]);
+          return {
+            layer: 'fires', kind: 'Satellite hotspot', lon: h[0], lat: h[1], zoom: 9,
+            title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${town.name}`,
+            body: `A hotspot: a satellite pixel hotter than the ground around it${d >= 5 ? `, about ${Math.round(d)} km from ${town.name}` : ''}. It is not a confirmed fire: gas flares, farm and slash burning and hot industrial sites show up too.`,
+            stats: [{ v: ago(h[2]), l: `seen (${skTime(h[2])}, Sask. time)` }, ...(h[3] != null ? [{ v: `${h[3]} MW`, l: 'fire radiative power' }] : []), ...(h[4] ? [{ v: h[4], l: 'sensor' }] : [])],
+            sources: [{ label: 'CWFIS satellite hotspots', url: nowF?.sourceUrl ?? 'https://cwfis.cfs.nrcan.gc.ca/' }],
+          };
+        }
+        return null;
+      }
       const o = info.object as FirePoint;
       if (!Array.isArray(o)) return null;
       const [lon, lat, t, ha, cause] = o;
@@ -304,6 +408,12 @@ function firesLayer(data: Data): AtlasLayer {
     },
     tooltip(info) {
       const o: any = info.object;
+      if (isLive(info.layer?.id)) {
+        if (o?.a) return alertTooltip(o.a);
+        if (o?.p) return `<b>Estimated fire perimeter</b><br><span class="tk">Area</span> <span class="tv">${fmt.ha(o.p.ha)}</span><br><span class="tk">Last heat seen</span> <span class="tv">${ago(o.p.last)}</span>`;
+        if (Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${ago(o[2])}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
+        return null;
+      }
       if (!Array.isArray(o)) return null;
       return `<b>${o[5] ? `${esc(o[5])} fire` : 'Wildfire'}</b><br><span class="tk">Reported</span> <span class="tv">${isoDate(o[2])}</span><br><span class="tk">Burned</span> <span class="tv">${o[3] < 1 ? '<1 ha' : fmt.ha(o[3])}</span><br><span class="tk">Cause</span> ${CAUSE[o[4]].name}`;
     },
@@ -337,14 +447,84 @@ function riversLayer(data: Data): AtlasLayer {
     const dt = new Date(d);
     return y + (dt.getUTCMonth() + dt.getUTCDate() / 31) / 12;
   };
+  // right now: each gauge's latest real-time reading (public/data/now/rivers.json)
+  const nowR = data.now.rivers;
+  const gauge = new Map(stations.map((s) => [s.id, s]));
+  const nowRows = (nowR?.rows ?? []).flatMap((row) => { const s = gauge.get(row[0]); return s ? [{ s, row }] : []; });
+  const liveOf = new Map(nowRows.map((d) => [d.s.id, d]));
+  const FLAG: Record<string, string> = { ice: 'ice-affected', est: 'estimated', dry: 'dry', other: 'flagged' };
+  const STALE: [number, number, number, number] = [130, 140, 155, 190];
+  const ratioText = (r: number) => (r >= 0.095 ? `${r.toFixed(r >= 1 ? 1 : 2)}×` : r > 0 ? '<0.1×' : '0×');
+  const liveValue = (row: NowRiverRow) => (row[4] != null ? `${ratioText(row[4])} normal peak · ${row[3]} m³/s` : row[2] != null ? `level ${row[2]} m` : 'no value');
+  /** The panel's Right now block: gauges reporting, the highest against normal, flags, and alerts. */
+  function riversNow() {
+    if (data.now.skipped) return '';
+    const rows = nowRows.filter((d) => drawable(d.row[1]));
+    const flow = rows.filter((d) => d.row[4] != null).sort((a, b) => b.row[4]! - a.row[4]!);
+    const flagged = rows.filter((d) => d.row[5]).length;
+    const body = `<p>${rows.length} of ${stations.length} gauges have reported in the past day, ${flow.length} of them with a flow. At the <b>Now</b> stop each column is the latest flow against the river’s normal annual peak. A silent gauge shows no reading, not zero: many are seasonal and shut for the winter.${flagged ? ` ${flagged} reading${flagged === 1 ? ' is' : 's are'} flagged ice-affected or estimated (amber ring).` : ''} Real-time data are provisional.</p>
+      ${flow.length ? `<div class="now-list">${flow.slice(0, 5).map((d) => `<div><b>${ratioText(d.row[4]!)}</b> ${esc(d.s.name)} <span class="tk">${d.row[3]} m³/s${d.row[5] ? ` · ${FLAG[d.row[5]]}` : ''}</span> ${ageTag(d.row[1])}</div>`).join('')}</div>` : ''}
+      ${alertList(alertsInEffect(data, 'rivers'), data)}`;
+    return nowBlock({ color, asOf: nowR?.asOf ?? null, body, source: nowR?.source ?? '', sourceUrl: nowR?.sourceUrl, missing: 'This copy of the data has no real-time river readings.' });
+  }
 
   const l: AtlasLayer = {
     id: 'rivers',
     name: 'River floods',
     icon: '≋',
     color,
-    range: [y0, y1 + 0.99],
+    range: [y0, nowR ? NOW_T : y1 + 0.99],
     available: !!data.rivers,
+    now: nowR ? {
+      asOf: () => ms(nowR.asOf),
+      archiveEnd: y1 + 0.99,
+      build() {
+        // the file's own time rules first: a reading older than DROP_H is not drawn, an old one is grey
+        if (!drawable(nowR.asOf)) return [];
+        const rows = nowRows.filter((d) => drawable(d.row[1]));
+        const stale = (d: (typeof rows)[number]) => freshness(d.row[1]) === 'stale' || freshness(nowR.asOf) === 'stale';
+        return [
+          new ColumnLayer<any>({
+            id: 'rivers-now-cols',
+            data: rows.filter((d) => d.row[4] != null),
+            getPosition: (d) => [d.s.lon, d.s.lat],
+            radius: 3800,
+            diskResolution: 24,
+            extruded: true,
+            getElevation: (d) => d.row[4] * 27000,
+            getFillColor: (d) => (stale(d) ? STALE : rgb(ratioColor(d.row[4]), 235)),
+            material: { ambient: 0.6, diffuse: 0.6, shininess: 40 },
+            pickable: true,
+          }),
+          // a gauge that reads only a level (a lake, a reservoir) gets a dot: there is no flow to compare
+          new ScatterplotLayer<any>({
+            id: 'rivers-now-level',
+            data: rows.filter((d) => d.row[4] == null),
+            getPosition: (d) => [d.s.lon, d.s.lat],
+            getRadius: 2600,
+            radiusMinPixels: 3,
+            getFillColor: (d) => (stale(d) ? STALE : [210, 240, 255, 220]),
+            pickable: true,
+            parameters: NO_DEPTH,
+          }),
+          // ice-affected or estimated readings: an amber ring
+          new ScatterplotLayer<any>({
+            id: 'rivers-now-flags',
+            data: rows.filter((d) => d.row[5]),
+            getPosition: (d) => [d.s.lon, d.s.lat],
+            getRadius: 6500,
+            radiusMinPixels: 6,
+            stroked: true,
+            filled: false,
+            lineWidthMinPixels: 1.5,
+            getLineColor: [255, 196, 90, 230],
+            pickable: true,
+            parameters: NO_DEPTH,
+          }),
+          ...alertOutlines('rivers-now-alerts', alertsInEffect(data, 'rivers')),
+        ];
+      },
+    } : undefined,
     build({ time, speed }) {
       const y = Math.floor(time);
       const W = glowWindow(speed, 1.2);
@@ -399,6 +579,7 @@ function riversLayer(data: Data): AtlasLayer {
     },
     panel(el) {
       el.innerHTML = `${kicker(l, 'River gauges · HYDAT')}
+        ${riversNow()}
         <h2>When the rivers rise</h2>
         <p class="lede">Each column is a river gauge. Its height is that year’s highest flow compared with the river’s typical annual peak — a column at 2× means the river ran at double its usual flood-season high. Ripples mark years a river hit 1.5× or more.</p>`;
       const hero = heroStats(el, 4);
@@ -424,9 +605,13 @@ function riversLayer(data: Data): AtlasLayer {
         ${sourceLine(data.rivers?.source ?? '')}`);
       return {
         update({ time }) {
+          tickAges(el);
           const y = Math.floor(time);
           const sh = share[y];
-          hero(0, sh ? `${sh.high}` : '–', sh ? `of ${sh.n} gauges ≥1.5× in ${y}` : `no gauge data in ${y}`);
+          if (nowR && isNow(time, l.range[1])) {
+            const flow = nowRows.filter((d) => drawable(d.row[1]) && d.row[4] != null);
+            hero(0, String(flow.filter((d) => d.row[4]! >= 1.5).length), `of ${flow.length} gauges at 1.5× their normal peak right now`);
+          } else hero(0, sh ? `${sh.high}` : '–', sh ? `of ${sh.n} gauges ≥1.5× in ${y}` : `no gauge data in ${y}`);
           let best: { s: any; r: number } | null = null;
           for (const s of stations) { const r = ratio(s, y); if (r != null && (!best || r > best.r)) best = { s, r }; }
           hero(1, best ? `${best.r.toFixed(1)}×` : '–', best ? `${best.s.name.split(/ (at|near|above|below) /i)[0]} in ${y}` : 'biggest relative peak');
@@ -439,7 +624,9 @@ function riversLayer(data: Data): AtlasLayer {
     describe(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('rivers')) return null;
+      if (o.a) return alertEvent(o.a, 'rivers', data, info.coordinate?.[0], info.coordinate?.[1]);
       const st = o.s ?? o;
+      const lv = liveOf.get(st.id);
       const years = Object.keys(st.peaks).map(Number).sort((a, b) => a - b);
       if (!years.length) return null;
       const rec = years.reduce((a, y) => (st.peaks[y] > st.peaks[a] ? y : a), years[0]);
@@ -447,7 +634,9 @@ function riversLayer(data: Data): AtlasLayer {
       return {
         layer: 'rivers', kind: 'River gauge', lon: st.lon, lat: st.lat, zoom: 9.5,
         title: st.name, body: `Water Survey of Canada gauge ${st.id}, ${years.length} years of record (${years[0]}–${years.at(-1)}). Each bar is a year's highest flow against the river's normal annual peak.`,
-        stats: [{ v: `${st.median} m³/s`, l: 'normal annual peak' }, { v: `${(st.peaks[rec] / st.median).toFixed(1)}×`, l: `record, ${rec}` }, { v: `${high} of ${years.length}`, l: 'years at 1.5× normal or more' }, ...(st.area ? [{ v: `${fmt.int(st.area)} km²`, l: 'drains' }] : [])],
+        stats: [
+          ...(lv && drawable(lv.row[1]) ? [{ v: liveValue(lv.row), l: `right now, read ${ago(lv.row[1])}${lv.row[5] ? ` (${FLAG[lv.row[5]]})` : ''}${freshness(lv.row[1]) === 'stale' ? ' · stale' : ''}` }] : nowR ? [{ v: 'no reading', l: 'in the past day (many gauges are seasonal)' }] : []),
+          { v: `${st.median} m³/s`, l: 'normal annual peak' }, { v: `${(st.peaks[rec] / st.median).toFixed(1)}×`, l: `record, ${rec}` }, { v: `${high} of ${years.length}`, l: 'years at 1.5× normal or more' }, ...(st.area ? [{ v: `${fmt.int(st.area)} km²`, l: 'drains' }] : [])],
         detail: detailBars('Peak flow each year, against normal', years.map((y) => ({ x: y, y: st.peaks[y] / st.median, color: ratioColor(st.peaks[y] / st.median) })), color, (v) => `${v.toFixed(1)}×`, (d) => `<b>${d.x}</b> · ${d.y.toFixed(2)}× normal`),
         sources: [{ label: 'HYDAT, Environment and Climate Change Canada', url: 'https://wateroffice.ec.gc.ca/' }],
       };
@@ -455,9 +644,11 @@ function riversLayer(data: Data): AtlasLayer {
     tooltip(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('rivers')) return null;
+      if (o.a) return alertTooltip(o.a);
       const s = o.s ?? o;
       const rec = Object.entries(s.peaks as Record<string, number>).reduce((a, b) => (b[1] > a[1] ? b : a));
-      return `<b>${esc(s.name)}</b><br><span class="tk">Gauge</span> <span class="tv">${esc(s.id)}</span>${o.r != null ? `<br><span class="tk">This year</span> <span class="tv">${o.r.toFixed(2)}× normal</span>` : ''}<br><span class="tk">Normal annual peak</span> <span class="tv">${s.median} m³/s</span><br><span class="tk">Record</span> <span class="tv">${rec[1]} m³/s (${rec[0]})</span>`;
+      const lv = o.row as NowRiverRow | undefined;
+      return `<b>${esc(s.name)}</b><br><span class="tk">Gauge</span> <span class="tv">${esc(s.id)}</span>${lv ? `<br><span class="tk">Right now</span> <span class="tv">${liveValue(lv)}</span><br><span class="tk">Read</span> <span class="tv">${ago(lv[1])}${freshness(lv[1]) === 'stale' ? ' · stale' : ''}</span>${lv[5] ? `<br><span class="tk">Flagged</span> <span class="tv">${FLAG[lv[5]]}</span>` : ''}` : ''}${o.r != null ? `<br><span class="tk">This year</span> <span class="tv">${o.r.toFixed(2)}× normal</span>` : ''}<br><span class="tk">Normal annual peak</span> <span class="tv">${s.median} m³/s</span><br><span class="tk">Record</span> <span class="tv">${rec[1]} m³/s (${rec[0]})</span>`;
     },
   };
   return l;

@@ -1,0 +1,67 @@
+name: Refresh live readings
+
+# Rebuilds the live stages (rivers, fires, air, alerts, plus drinking-water advisories) about once an hour and
+# redeploys the site. Nothing is committed: public/data/now/ is not in git. GitHub runs scheduled jobs late when it is
+# busy, and turns schedules off in a repository with no activity for 60 days, so the app never assumes a reading is
+# fresh: every live value shows its age.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+# Least privilege, as in deploy.yml: only the deploy job (which runs no repository code) can write to Pages or mint an
+# OIDC token, so npm packages run during the build never hold either.
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # the province outline and the place-name gazetteer the water stage reads change rarely: keep them between runs
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/statcan
+            .cache/cgndb
+          key: live-reference-v1
+      - run: npm ci
+      # A feed that is down keeps its last file: start from the files the site is serving now.
+      - name: Restore the last live files
+        env:
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: |
+          mkdir -p public/data/now
+          for f in rivers fires air alerts manifest; do
+            curl -fsS --max-time 30 -o "public/data/now/$f.json" "$SITE/data/now/$f.json" || rm -f "public/data/now/$f.json"
+          done
+      # a failed stage keeps its old file and records the error in the manifest; the run still deploys
+      - run: npm run data now water
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

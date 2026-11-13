@@ -8,6 +8,7 @@ import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import * as d3 from 'd3';
 import { Data, MONTHS, clamp, loadAll } from './data';
+import { isNow } from './now';
 import { AtlasEvent, AtlasLayer, CURATED_EVENTS, Ctx, PanelHandle, TimedEvent, buildLayers } from './layers';
 import { eventColor, eventDate, eventLayers, fromTooltip, momentsList, renderEventPanel } from './events';
 import { loadWeights, renderFinder, renderTownReport } from './panels';
@@ -157,7 +158,9 @@ function render() {
   const out: Layer[] = [];
   for (const l of layers) {
     if (!l.available || !state.visible.has(l.id)) continue;
-    for (const dl of l.build(c)) {
+    // at the timeline's Now stop, a layer with a live reading draws it over its archive
+    const live = l.now && isNow(state.time, l.range[1]) ? l.now.build(c) : [];
+    for (const dl of [...l.build(c), ...live]) {
       // flat layers go under the basemap labels; 3D columns stay on top
       const flat = /scars|embers|base|stems/.test(dl.id);
       out.push(flat && firstLabelLayer ? dl.clone({ beforeId: firstLabelLayer } as any) : dl);
@@ -490,7 +493,9 @@ function focus(id: string, keepPanel = false) {
     if (!l.static && state.timeLayer !== id) {
       state.timeLayer = id;
       const [a, b] = l.range;
-      if (state.time < a || state.time > b) state.time = a;
+      // a layer with a live reading opens at Now; the others keep the time if it is inside their range
+      if (l.now) state.time = b;
+      else if (state.time < a || state.time > b) state.time = a;
     }
     if (state.mode !== 'finder' && !keepPanel) { state.mode = 'layer'; state.selected = null; }
   }
@@ -548,7 +553,7 @@ function setupTimeline() {
   s.max = String(b);
   s.step = l.monthly ? String(1 / 12) : '0.01';
   $('t-min').textContent = String(Math.floor(a));
-  $('t-max').textContent = String(Math.floor(b));
+  $('t-max').textContent = l.now ? 'Now' : String(Math.floor(b));
   $('t-label').textContent = l.name;
   drawSpark();
   drawEvents();
@@ -569,6 +574,22 @@ function drawSpark() {
   if (!pts.length) return;
   const [a, b] = l.range;
   const x = (v: number) => ((v - a) / (b - a)) * w;
+  // between the archive's last year and today: hatched, "no record yet"
+  if (l.now && l.now.archiveEnd < b) {
+    const x0 = x(l.now.archiveEnd), x1 = w;
+    g.save();
+    g.beginPath();
+    g.rect(x0, 0, x1 - x0, h);
+    g.clip();
+    g.strokeStyle = 'rgba(255,255,255,0.18)';
+    g.lineWidth = 1;
+    for (let i = x0 - h; i < x1; i += 5) { g.beginPath(); g.moveTo(i, h); g.lineTo(i + h, 0); g.stroke(); }
+    g.restore();
+    g.fillStyle = l.color;
+    g.globalAlpha = 0.9;
+    g.fillRect(w - 2, 0, 2, h);
+    g.globalAlpha = 1;
+  }
   const max = Math.max(...pts.map((p) => Math.abs(p.y))) || 1;
   const diverging = pts.some((p) => p.y < 0);
   const step = l.monthly ? 1 / 12 : 1;
@@ -628,8 +649,10 @@ function syncTimelineUI() {
   const s = scrub();
   if (document.activeElement !== s || state.playing) s.value = String(state.time);
   s.style.setProperty('--p', `${((state.time - a) / (b - a)) * 100}%`);
-  $('year').textContent = String(Math.floor(state.time));
-  $('month').textContent = l.monthly || state.speed <= 1 ? MONTHS[Math.floor((state.time % 1) * 12)] : '';
+  const atNow = !!l.now && isNow(state.time, b);
+  const gap = !!l.now && !atNow && state.time > l.now.archiveEnd;
+  $('year').textContent = atNow ? 'Now' : String(Math.floor(state.time));
+  $('month').textContent = atNow ? '' : gap ? 'no record yet' : l.monthly || state.speed <= 1 ? MONTHS[Math.floor((state.time % 1) * 12)] : '';
   const y = Math.floor(state.time * (l.monthly ? 12 : 1));
   if (y !== lastSparkYear) {
     lastSparkYear = y;

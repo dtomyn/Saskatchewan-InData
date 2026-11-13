@@ -44,12 +44,12 @@ Parts 2–8 are the house style and architecture. Change them only on purpose, s
 | crime | Crime severity | ◆ | #ff4d8d | time | 1998 → 2025 | place columns (chips: CSI, violent, solved) | StatCan 35-10-0061-01 | StatCan Open Licence |
 | justice | Courts & police | ⚖ | #ffd166 | static | today | sites + drive-time columns + route pulses | OpenStreetMap / OSRM | ODbL |
 | treaties | Treaties & reserves | ◈ | #e9c46a | static | 1871–1906 | tinted areas + bright parcels | ISC Historic Treaties; NRCan CLSS | OGL – Canada |
-| fires | Wildfires | 🔥 | #ff8a3d | time | 1959 → 2025 | flare then scar (area-true circles) | NRCan CNFDB points | OGL – Canada |
-| smoke | Smoke & air | 🌫 | #e8a87c | time | 2001 → 2023 (Sask. in NAPS so far) | station columns, height = smoke days (24 h PM2.5 > 25 µg/m³) that year, haze grey → ember red; data-driven event for the smokiest year | ECCC NAPS hourly PM2.5 | OGL – Canada |
+| fires | Wildfires | 🔥 | #ff8a3d | time | 1959 → 2025, then Now | flare then scar (area-true circles); at Now, satellite hotspots of the last 24 h (pale yellow, fading with age) and CWFIS estimated perimeters (dashed) | NRCan CNFDB points; CWFIS hotspots and M3 perimeters (live) | OGL – Canada |
+| smoke | Smoke & air | 🌫 | #e8a87c | time | 2001 → 2023 (Sask. in NAPS so far), then Now (AQHI columns in Environment Canada's colours, never with smoke days) | station columns, height = smoke days (24 h PM2.5 > 25 µg/m³) that year, haze grey → ember red; data-driven event for the smokiest year | ECCC NAPS hourly PM2.5 | OGL – Canada |
 | tornadoes | Tornadoes | 🌪 | #9ad8ff | time (monthly) | 1980 → today (gap 2010–2016) | funnel flare then dot; track lines (estimated ends faint) | ECCC National Tornado Database; Northern Tornadoes Project | OGL – Canada; CC BY-NC 4.0 |
 | hail | Hail | 🧊 | #c3b5ff | time (monthly) | 2022 → today (radar swaths 2022–2024) | ice-burst flare then dot sized and coloured by largest hail (pea → softball, grey when not given), swath centre lines; research-database storms white-rimmed; events for investigated storms and 100 mm+ swaths | Northern Hail Project: MESH hail swaths, NHP Research Database | CC BY-NC 4.0 |
 | drought | Drought | 🌾 | #e0a43a | time (monthly) | Nov 2002 → today | each month's Canadian Drought Monitor map tinted D0–D4 in the drought monitor's ramp (D4 lifted from dark maroon for the dark map), not analyzed in faint grey; when focused, town dots coloured by their cell's category; event for the worst drought year (highest average share of the province at D2+) | AAFC Canadian Drought Monitor (image service, read as raw categories on a 10 km Web Mercator grid) | OGL – Canada |
-| rivers | River floods | ≋ | #4cc9f0 | time | 1912 → 2025 | columns vs. normal | ECCC HYDAT | OGL – Canada |
+| rivers | River floods | ≋ | #4cc9f0 | time | 1912 → 2025, then Now | columns vs. normal; at Now, the latest real-time flow vs. the normal annual peak (amber ring: ice-affected or estimated) | ECCC HYDAT; real-time hydrometric data (live) | OGL – Canada |
 | climate | Climate | 🌡 | #f25f5c | time | 1886 → 2020 | station colour + stripes | ECCC AHCCD | OGL – Canada |
 | normals | Climate normals | ☀ | #c5e86c | static | 1981–2010 | columns with chips | ECCC normals | OGL – Canada |
 | light | Light & dark | ☾ | #a3b8ff | static (computed) | computed from latitude | 0.25° latitude rows tinted by hours from sunrise to sunset (chips: Dec 21, Mar 20, Jun 21) or, by the Aurora chip, 0.25°×0.5° cells tinted by geomagnetic latitude; RASC dark-sky preserves outlined in violet; place dots in the same colour; when focused, one labelled place per degree of latitude (the largest) and the preserve names; panel chart of day length through the year at 49°, 54° and 60° N | Computed in the `light` stage: NOAA solar position equations (sunrise/sunset at 90.833°, civil twilight at 96°); geomagnetic latitude from the IGRF-14 dipole (g₁⁰, g₁¹, h₁¹ of the newest epoch, read from IAGA's coefficient file) with NOAA SWPC's Kp rule (oval edge ≈ 66° − 2°·Kp) for the bands often (≥ 62°) / sometimes (58–62°) / rarely (< 58°); RASC Dark-Sky Sites table (designation) matched by name to the `camping` stage's park outlines; OSRM drive to the nearest campground inside a preserve | Computed; IGRF freely available; park outlines OGL – Saskatchewan / Canada; routes ODbL |
@@ -318,10 +318,12 @@ export interface AtlasLayer {
   panel: (el: HTMLElement, ctx: Ctx) => PanelHandle;         // story panel; update() ~every 90ms
   tooltip: (info: PickingInfo) => string | null;
   click?: (info: PickingInfo) => boolean;
+  // a live reading (5.9): the layer's range ends at today, the Now stop; `build` draws the reading there
+  now?: { asOf: () => number | null; archiveEnd: number; build: (ctx: Ctx) => Layer[] };
 }
 ```
 
-Panel recipe for every layer: kicker (layer colour) → h2 → lede (what you're seeing, one or two sentences) → hero stats that update with time → one or two charts with a playhead → legend/ramp → callout for the key insight → note on caveats → source line. If unavailable: a dashed box saying which `npm run data <stage>` to run.
+Panel recipe for every layer: kicker (layer colour) → a **Right now** block for a layer with a live reading (5.9) → h2 → lede (what you're seeing, one or two sentences) → hero stats that update with time → one or two charts with a playhead → legend/ramp → callout for the key insight → note on caveats → source line. If unavailable: a dashed box saying which `npm run data <stage>` to run.
 
 ### 5.2 State and render loop
 
@@ -358,6 +360,7 @@ Rules, all in two functions (`setLayerOn(id, on)` for the switch, `focus(id)` fo
 6. **Picker badge** `+N` = layers on the map besides the active one.
 7. **Anything that opens a layer from elsewhere** (a map click on an overlay's feature, a link in a Place Report) calls `focus(id)`: it becomes active and every other layer stays on. A feature is clickable whenever its layer is on the map, not only while it's active; the exceptions are full-coverage rasters, which would swallow clicks meant for thin lines underneath, so they're pickable only while active.
 
+- **The Now stop** (layers with `now`, 5.9): the range ends at today and the track's max label reads **Now**. Focusing such a layer jumps to Now, so it opens on the reading. The span between the archive's last year and today is hatched on the sparkline, and the readout says "no record yet" there. At Now, `render()` adds `now.build(ctx)` on top of the layer's own `build`.
 - **Static layers**: when the active layer is static, the timeline dims with a note; the timeline keeps the last active time layer's range, so time layers that are still on keep animating underneath.
 - **Per-item values from a later stage** (a deep-finder measure added after the items were built) go in their own file in the items' order with a hash of their ids, loaded optionally; a mismatch leaves the values missing (the filter passes everything) rather than misaligned. This keeps parallel work off the big items file.
 - **Place layers** draw their own columns, so plain place pins hide while one is on the map. Some static layers draw place columns only while active.
@@ -403,7 +406,17 @@ Full-screen overlay (`S`, `#sources`): left = intro (kicker, big title, lede, st
 
 ### 5.8 Film handle
 
-When loaded with `?film`, expose `window.<atlasId> = { map, state, data, layers, focus, clearMap, openPlace, openFinder, openDeep, closeDeep, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME }` for the video renderer only.
+When loaded with `?film`, expose `window.<atlasId> = { map, state, data, layers, focus, clearMap, openPlace, openFinder, openDeep, closeDeep, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME }` for the video renderer only. `?film` also skips the live readings (5.9), so the film stays repeatable; add `&now` to load them while checking by hand.
+
+### 5.9 Right now: live readings
+
+A few hazard layers carry a reading of today next to their archive (Living Skies Atlas: river gauges, satellite hotspots, AQHI, and weather alerts drawn on those three). The site stays static: the live stages (Part 6) write `public/data/now/*.json`, not committed, and a scheduled workflow (Part 7) rebuilds and redeploys about hourly. `src/now.ts` holds the rules every live value follows:
+
+- **Every value shows its age** ("40 minutes ago", Saskatchewan time on hover), and the tags keep themselves current. Older than 3 hours: greyed and labelled stale. Older than 24 hours: not drawn, and the block says the refresh may have stopped. Scheduled runs are late when GitHub is busy and stop after 60 days without activity, so nothing assumes freshness.
+- A list whose window is longer than 3 hours (hotspots of the last 24 hours) takes its staleness from when the list was read; each item shows a plain age.
+- The **Right now** block sits at the top of the layer's panel: the reading, its age, the alerts in effect that concern the layer (by name: floods and rain for rivers; fire, smoke, air quality, heat and wind for fires; smoke, air quality and heat for smoke), and the source link. With no live file: the dashed box, "run `npm run data now`".
+- The Place Report gets a **Right now** group: the nearest gauge reporting (within 100 km), hotspots within 50 km, the AQHI (its own or borrowed, with the distance) and alerts covering the place.
+- Live values never feed the Finder (point-in-time, like drinking-water advisories). An index (AQHI) never shares a chart with a count (smoke days). Alert text is escaped.
 
 ---
 
@@ -432,6 +445,7 @@ const order = ['base', /* …stages that others read come first… */, 'deep'];
 - Area questions (share of land logged, what's next door) are answered on a raster: rasterize polygons onto a grid (scanline fill with per-row edge buckets) and count cells, so overlaps count once. Remove slivers (road allowances, trail corridors) from ownership masks with a morphological opening.
 - Big stages live in their own module and receive the helpers as arguments.
 - Feeds that change seasonally (timetables) take the most common value over the next few weeks and fail with a clear message when the feed runs out.
+- **Live stages** (5.9) are named `now-<name>`, write `now/<name>.json` with `asOf` (the newest reading; for a list of what is in effect, when it was read), `fetched`, `source`, `sourceUrl` and the licence, cache nothing, and record themselves in `now/manifest.json` (which the app merges with `manifest.json`), so running them never changes a committed file. `npm run data now` runs them all.
 - Acceptance: `rm -rf .cache && npm run data` completes and `npm run build` passes.
 
 ---
@@ -441,6 +455,7 @@ const order = ['base', /* …stages that others read come first… */, 'deep'];
 - `esc()` / `safeUrl()` in `src/html.ts` for anything not a literal.
 - Build-only CSP meta tag via a Vite plugin: `default-src 'self'; script-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https:; object-src 'none'; base-uri 'self'; form-action 'none'`.
 - GitHub Pages workflow: `permissions: {}` at the top; build job `contents: read`, `persist-credentials: false`, Node 22, `npm ci`, `npm run build`, upload `dist`; deploy job alone gets `pages: write` + `id-token: write`.
+- Live readings (5.9): a second workflow, `live.yml`, the same shape, on an hourly `schedule` plus `workflow_dispatch`, in the same `pages` concurrency group. Before the stages run, both workflows download the `now/` files the site is serving, so a feed that is down keeps its last file; then `npm run data now` (plus any daily stage worth refreshing), build, deploy. Nothing is committed.
 - Optional: rulesets for owner-only pushes and a protected `main`, `CODEOWNERS`.
 - Dev container: Node 22, curl, `npm ci` into a `node_modules` volume, port 5173, `ATLAS_WATCH_POLL` for file watching from Windows.
 - `tsc --noEmit` must pass; the page must log no errors (the video renderer fails on page errors).

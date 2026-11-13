@@ -6,6 +6,7 @@ import * as d3 from 'd3';
 import { Data, fmt } from './data';
 import { provinceAnomalies } from './metrics';
 import { esc } from './html';
+import { ago } from './now';
 
 type Ring = { v: number; label: string; proj?: boolean };
 type Source = {
@@ -32,7 +33,7 @@ const span = (rings: Record<number, Ring>) => {
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const climateDiv = d3.scaleLinear<string>().domain([-1.5, -0.4, 0, 0.4, 1.5]).range(['#2b6cb0', '#7fb3e6', '#9aa3b2', '#f4a08a', '#e0312b']).clamp(true);
 
-const SOURCES: Source[] = [
+const ALL_SOURCES: Source[] = [
   {
     id: 'crime', key: 'crime', name: 'Crime severity', color: '#ff4d8d', group: 'Justice & safety',
     owner: 'Statistics Canada', title: 'Table 35-10-0061-01: Crime severity index and weighted clearance rates, police services in Saskatchewan', url: 'https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3510006101',
@@ -358,6 +359,39 @@ const SOURCES: Source[] = [
     read: (d) => d.commute && { n: d.commute.keys.length ** 2, what: `${fmt.int(d.commute.keys.length ** 2)} place-to-place drive times${d.commute.routed ? '' : ' (straight-line estimates)'}` },
     rings: (d) => (d.commute ? { [NOW]: { v: 1, label: `${d.commute.keys.length}×${d.commute.keys.length} drive times as routed on ${d.commute.asOf}` } } : {}),
   },
+  // ---- right now: live readings, refreshed about hourly; one ring, this year's
+  {
+    id: 'rivers', key: 'now-rivers', name: 'Rivers now', color: '#4cc9f0', group: 'Right now',
+    owner: 'Environment and Climate Change Canada', title: 'Real-time hydrometric data (provisional)', url: 'https://wateroffice.ec.gc.ca/',
+    endpoint: 'api.weather.gc.ca/collections/hydrometric-realtime', licence: OGL_CA,
+    gives: 'The latest level and flow at each river gauge, compared with the river’s normal annual peak. Provisional, and flagged when ice-affected or estimated.',
+    read: (d) => d.now.rivers && { n: d.now.rivers.rows.length, what: `${d.now.rivers.rows.length} gauges reporting in the past day, read ${ago(d.now.rivers.asOf)}` },
+    rings: (d) => (d.now.rivers ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.rivers.asOf)}` } } : {}),
+  },
+  {
+    id: 'fires', key: 'now-fires', name: 'Hotspots now', color: '#ff8a3d', group: 'Right now',
+    owner: 'Natural Resources Canada', title: 'CWFIS satellite hotspots (last 24 hours) and fire perimeters estimated from them', url: 'https://cwfis.cfs.nrcan.gc.ca/maps/fm3',
+    endpoint: 'cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs · public:hotspots_last24hrs, public:m3_polygons_current', licence: OGL_CA,
+    gives: 'Heat seen from satellites in the last day: not confirmed fires (flares and farm burning show up too), with the perimeters CWFIS estimates from them.',
+    read: (d) => d.now.fires && { n: d.now.fires.hotspots.length, what: `${d.now.fires.hotspots.length} hotspot${d.now.fires.hotspots.length === 1 ? '' : 's'} and ${d.now.fires.perimeters.length} estimated perimeter${d.now.fires.perimeters.length === 1 ? '' : 's'}, read ${ago(d.now.fires.asOf)}` },
+    rings: (d) => (d.now.fires ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.fires.asOf)}` } } : {}),
+  },
+  {
+    id: 'smoke', key: 'now-air', name: 'Air now', color: '#e8a87c', group: 'Right now',
+    owner: 'Environment and Climate Change Canada', title: 'Air Quality Health Index: real-time observations and forecasts', url: 'https://weather.gc.ca/airquality/pages/provincial_summary/sk_e.html',
+    endpoint: 'api.weather.gc.ca/collections/aqhi-observations-realtime · aqhi-forecasts-realtime', licence: OGL_CA,
+    gives: 'The latest hourly AQHI and the forecast’s highest value at each community, borrowed by places within 150 km. An index of three pollutants, not the smoke-day count.',
+    read: (d) => d.now.air && { n: d.now.air.communities.length, what: `${d.now.air.communities.length} communities, read ${ago(d.now.air.asOf)}` },
+    rings: (d) => (d.now.air ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.air.asOf)}` } } : {}),
+  },
+  {
+    id: 'rivers', key: 'now-alerts', name: 'Weather alerts', color: '#ffd166', group: 'Right now',
+    owner: 'Environment and Climate Change Canada', title: 'Public weather alerts', url: 'https://weather.gc.ca/?province=sk',
+    endpoint: 'api.weather.gc.ca/collections/weather-alerts', licence: OGL_CA,
+    gives: 'Warnings, watches, advisories and statements in effect over Saskatchewan, with the forecast regions they cover; shown on the hazard layers at Now and in the Town Report.',
+    read: (d) => d.now.alerts && { n: d.now.alerts.alerts.length, what: `${d.now.alerts.alerts.length} alerts in effect, read ${ago(d.now.alerts.asOf)}` },
+    rings: (d) => (d.now.alerts ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.alerts.asOf)}` } } : {}),
+  },
 ];
 
 const BARK: BarkSource[] = [
@@ -410,6 +444,8 @@ export function closeSources() {
 }
 
 export function openSources(data: Data, opts: { onShow: (layerId: string) => void }) {
+  // the film never loads live readings, so their wedges stay off the round too
+  const SOURCES = data.now.skipped ? ALL_SOURCES.filter((s) => s.group !== 'Right now') : ALL_SOURCES;
   if (root) return;
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // a few source rows carry impossible dates; they stay off the round
@@ -424,6 +460,8 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
     const m = key ? data.manifest[key] : null;
     if (!key) return '<span class="src-st">loaded live by the map</span>';
     if (!m?.ok) return `<span class="src-st bad">not available${m?.lastError ? ` · ${esc(m.lastError)}` : ''}</span>`;
+    // live stages refresh hourly: their time matters, and a failed latest attempt is worth saying even with an older file
+    if (key.startsWith('now-')) return `<span class="src-st ok">refreshed ${m.updated ? ago(m.updated) : ''}${m.lastError ? ` · last try failed: ${esc(m.lastError)}` : ''}</span>`;
     return `<span class="src-st ok">refreshed ${m.updated ? new Date(m.updated).toLocaleDateString('en-CA') : ''}</span>`;
   };
 
@@ -453,7 +491,7 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
       </div>
     </div>
     <div class="src-list">
-      ${['Justice & safety', 'Hazards', 'Climate', 'People & places'].map((g) => `<h3>${g}</h3>${SOURCES.map((s, i) => s.group !== g ? '' : `
+      ${['Right now', 'Justice & safety', 'Hazards', 'Climate', 'People & places'].filter((g) => g !== 'Right now' || !data.now.skipped).map((g) => `<h3>${g}</h3>${SOURCES.map((s, i) => s.group !== g ? '' : `
         <article class="src-card${live[i] ? '' : ' off'}" data-i="${i}" tabindex="0" style="--c:${s.color}">
           <header><span class="src-dot"></span><b>${s.name}</b>${status(s.key)}</header>
           <div class="src-owner">${esc(s.owner)}</div>
