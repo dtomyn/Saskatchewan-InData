@@ -152,4 +152,6 @@ Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu 
 
 ## Next layers worth adding
 
+What people come to the atlas to do (how safe is a place, choose where to live, settle in as a newcomer…) is written up one file per intent in [intents/](intents/README.md), each with the layers and panels that answer it, what the atlas cannot tell you, and a `?film` check.
+
 See [ROADMAP.md](ROADMAP.md): a build order aimed at people new to the province choosing where to live (home costs, daily needs, Workday Reach, jobs, schools, internet, community, newcomer services), plus the Town Report rows, Finder criteria and "New to Saskatchewan" preset they feed, and the items still open.
