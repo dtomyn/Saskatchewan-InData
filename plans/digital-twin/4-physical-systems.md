@@ -1,5 +1,7 @@
 # 4. Physical systems: the land and what is built on it
 
+> **Status (2026-11-13):** 4a, 4b and 4c are built. 4d is skipped (traffic counts are not open data), 4e and 4f are held back. What was found and decided is under **Outcome** at the end.
+
 **Effort:** M each for fire perimeters and crops, M for the power grid, L for buildings. **Depends on:** nothing, but a decision on tiles (below) comes first for anything large.
 
 ## Goal
@@ -66,6 +68,16 @@ Recommended: **PMTiles**, a single static file read with HTTP range requests. It
 ## Docs and film
 
 Each new layer follows the usual list: `MAP-ATLAS-BLUEPRINT.md` Part 1.3, `README.md` (what's on the map, data sources, caveats), `CLAUDE.md` (stage order, data notes), an intent to serve ("Understand natural hazards" for perimeters, "Check around the property" for the grid, a new "See how the land is used" for crops), and the storyboard if a filmed layer changes (the wildfire scene will).
+
+## Outcome
+
+- **4a, built.** NBAC on CWFIS's GeoServer is real: `public:nbac`, OGL – Canada, 3,478 Saskatchewan polygons 1972–2024 (2,155 of 200 ha or more are kept). WFS 1.0.0 with `srsName=EPSG:4326` answers lon/lat; one request a year, up to ~21 MB, cached in `.cache/nbac/`. Kept whole, the outlines were 9.4 MB, so only burns of 200 ha or more get one, simplified by Visvalingam–Whyatt (Douglas–Peucker left spikes on the pixel-stepped edges): ~1.3 MB. 3,095 start points sit inside an outline and draw no circle. The row is `[year, ha, polys, t, start points]`, not `[year, ha, polys]`: the time and the linked points are what let the layer play and drop the circles.
+- **4b, built.** The inventory is one image service per year (`annual_crop_inventory/2009` … `/2025`), U8 raw codes, and answers `exportImage` like the drought service. It covers the farm belt only, to about 55–56° N. A nearest-neighbour export at 2 km would give one sample per cell, not its most common class, so the stage samples at 500 m (three strips a year, ~6 MB cached) and folds 6 × 6 into each 3 km Web Mercator cell (~1.8 km on the ground). 17 years are ~1.3 MB. Eleven classes (bare or burned added to the ten). Its own intent: [See how the land is used](../../intents/see-how-the-land-is-used.md).
+- **4c, built** as a chip in Hidden neighbours: 12,700 km of line (by voltage class), 313 substations, 38 generating stations, ~100 KB. The SaskPower outage feed exists (`saskpower.com/api/sitecore/Content/GetOutageJsonFile`, by service region, planned and unplanned) but is undocumented and states no licence, so it is not a live stage.
+- **4d, skipped.** GeoHub lists the Highway Traffic Volume Map only as a PDF; with no counts as data, a second drawing of the roads adds nothing.
+- **4e and 4f, held back.** Buildings need the tiles decision and are mostly visual; nothing else built here needed tiles. 3D terrain is optional and unverified with deck.gl's layers on terrain.
+- `public/data/` (committed) is ~8.2 MB with these, under 10 MB.
+- The explainer film's wildfire scene now shows outlines; its storyboard needed no change (same names and selectors), but the film has not been re-rendered.
 
 ## Done when
 

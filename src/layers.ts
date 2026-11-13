@@ -4,7 +4,7 @@ import * as d3 from 'd3';
 import { ColumnLayer, LineLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { DataFilterExtension, PathStyleExtension } from '@deck.gl/extensions';
 import type { Layer, PickingInfo } from '@deck.gl/core';
-import { Data, Facility, FirePerimeter, FloodZone, FirePoint, HistoryFeed, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
+import { BurnPerimeter, Data, Facility, FirePerimeter, FloodZone, FirePoint, HistoryFeed, Hotspot, MONTHS, Muni, NormalsStation, NowRiverRow, Trip, fmt, interpYearly, km, lowerBound } from './data';
 import { DAY_T, HistHotspot, dayT, dayText, firesHistory, riversHistory, tDay } from './history';
 import { bandChart, barChart, lineChart, rampCSS, scatterChart, stripes, ChartHandle } from './charts';
 import { PROJ_BADGE, SCEN_COLOR, SCEN_SHORT, provinceBand, provinceMedian, projAt, rangeText, windowText } from './projections';
@@ -27,6 +27,7 @@ import { doctorsLayer } from './doctors';
 import { childcareLayer } from './childcare';
 import { smokeLayer } from './smoke';
 import { droughtLayer } from './drought';
+import { cropsLayer } from './crops';
 import { industryLayer } from './industry';
 import { waterLayer } from './water';
 import { radonLayer } from './radon';
@@ -198,8 +199,9 @@ export function deferChart(el: HTMLElement, make: (el: HTMLElement) => ChartHand
 
 // ---------------------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------------------------
-// WILDFIRES — the Canadian National Fire Database's start points. Saskatchewan maps no open perimeters for every
-// fire, so each fire's scar is drawn as a circle with the same area as the fire: the burned country is to scale.
+// WILDFIRES — the Canadian National Fire Database's start points, and the National Burned Area Composite's mapped
+// outlines. A fire of 200 ha or more that NBAC outlines (1972 on) is drawn as its outline; every other fire's scar is
+// a circle with the same area as the fire, so the burned country is to scale either way. The tooltip says which.
 
 function firesLayer(data: Data): AtlasLayer {
   const color = '#ff8a3d';
@@ -227,6 +229,15 @@ function firesLayer(data: Data): AtlasLayer {
   const bySize = [...points].sort((a, b) => b[3] - a[3]);
   const rankOf = new Map(bySize.map((p, i) => [p, i + 1]));
   const fireName = (p: FirePoint) => (p[5] ? `the ${p[5].replace(/\b\w+/g, (w) => w[0] + w.slice(1).toLowerCase())} fire` : null);
+  // mapped outlines: each polygon its own row; a start point inside one is drawn by the outline, not a circle
+  const perims: BurnPerimeter[] = fires?.perimeters ?? [];
+  const outlined = new Set(perims.flatMap((b) => b[4]));
+  const circles = points.filter((_, i) => !outlined.has(i));
+  type PerimPoly = { b: BurnPerimeter; poly: [number, number][][] };
+  const perimPolys: PerimPoly[] = perims.flatMap((b) => b[2].map((poly) => ({ b, poly })));
+  const [py0, py1] = fires?.perimeterYears ?? [0, 0];
+  /** the biggest start point inside an outline, for its name and cause */
+  const mainPoint = (b: BurnPerimeter) => b[4].map((i) => points[i]).sort((a, c) => c[3] - a[3])[0] ?? null;
   // right now: CWFIS satellite hotspots of the last 24 hours and the perimeters it estimates from them
   const nowF = data.now.fires;
   const hotspots = nowF?.hotspots ?? [];
@@ -352,9 +363,24 @@ function firesLayer(data: Data): AtlasLayer {
       const phi = lowerBound(points, time, (p) => p[2]);
       const flashing = points.slice(plo, phi);
       return [
+        new PolygonLayer<PerimPoly>({
+          id: 'fires-perims',
+          data: perimPolys,
+          getPolygon: (d) => d.poly,
+          getFillColor: (d) => (d.b[1] >= 1000 ? [150, 40, 18, 80] : [255, 140, 70, 70]),
+          getLineColor: (d) => (d.b[1] >= 1000 ? [210, 80, 40, 150] : [255, 160, 90, 130]),
+          getLineWidth: 1,
+          lineWidthUnits: 'pixels',
+          stroked: true,
+          extensions: filterExt,
+          getFilterValue: (d) => d.b[3],
+          filterRange: [1800, time],
+          pickable: true,
+          parameters: NO_DEPTH,
+        } as any),
         new ScatterplotLayer<FirePoint>({
           id: 'fires-scars',
-          data: points,
+          data: circles,
           getPosition: (d) => [d[0], d[1]],
           getRadius: (d) => radiusM(d[3]),
           radiusMinPixels: 0.6,
@@ -401,7 +427,7 @@ function firesLayer(data: Data): AtlasLayer {
       el.innerHTML = `${kicker(l, `Wildfire history · ${y0} → ${y1}`)}
         ${firesNow()}
         <h2>Where Saskatchewan burns</h2>
-        <p class="lede">Every fire the province and Parks Canada reported since ${y0}, at the point it started. New fires flare; each then leaves a scar drawn as a circle the size of the area it burned. Almost all of the burning is in the boreal north, and most of it is started by lightning.${nowF ? ' At the <b>Now</b> stop, the pale yellow points are satellite hotspots from the last 24 hours: heat seen from space, not confirmed fires. Gas flares, farm and slash burning show up too.' : ''}</p>`;
+        <p class="lede">Every fire the province and Parks Canada reported since ${y0}, at the point it started. New fires flare; each then leaves a scar: ${perims.length ? `its mapped outline where the National Burned Area Composite has one (${fmt.int(perims.length)} burns of 200 ha or more, ${py0}–${py1}), otherwise ` : ''}a circle the size of the area it burned. Almost all of the burning is in the boreal north, and most of it is started by lightning.${nowF ? ' At the <b>Now</b> stop, the pale yellow points are satellite hotspots from the last 24 hours: heat seen from space, not confirmed fires. Gas flares, farm and slash burning show up too.' : ''}</p>`;
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Area burned per year</h3>`);
       const set = deferChart(el.appendChild(mk('div')), (c) =>
@@ -413,8 +439,8 @@ function firesLayer(data: Data): AtlasLayer {
         <div class="callout" style="--c:${color}">Worst years on record: ${top.map(([y, v]) => `<b>${y}</b> (${fmt.ha(v)})`).join(', ')}. ${Math.round(north * 100)}% of all the area burned since ${y0} lies north of 54° N.</div>
         <h3>Cause</h3>
         <div class="legend">${CAUSE.map((c) => `<span><i class="sw" style="background:${c.c}"></i>${c.name}</span>`).join('')}</div>
-        <p class="note">A circle shows how much ground a fire burned, not its real shape. Older records are less complete, especially for small fires, and much of the far north is an observation zone where fires are watched rather than fought. Prescribed burns are left out.</p>
-        ${sourceLine(fires?.source ?? '')}`);
+        <p class="note">${perims.length ? `Outlines are the National Burned Area Composite’s mapped burns (from satellite imagery and agency mapping), simplified to about a twelfth of each burn’s width; a fire under 200 ha, before ${py0} or after ${py1} (the composite’s latest year) is a circle. ` : ''}A circle shows how much ground a fire burned, not its real shape. Older records are less complete, especially for small fires, and much of the far north is an observation zone where fires are watched rather than fought. Prescribed burns are left out.</p>
+        ${sourceLine(`${fires?.source ?? ''}${fires?.perimeterSource ? `; ${fires.perimeterSource}` : ''}${fires?.licence ? `. ${fires.licence}` : ''}`)}`);
       return {
         update({ time }) {
           tickAges(el);
@@ -476,6 +502,20 @@ function firesLayer(data: Data): AtlasLayer {
         }
         return null;
       }
+      if (lid === 'fires-perims') {
+        const { b } = info.object as PerimPoly;
+        const mp = mainPoint(b);
+        const [lon, lat] = mp ? [mp[0], mp[1]] : (info.coordinate as [number, number] | undefined) ?? b[2][0][0][0];
+        const { town, km: d } = nearestTown(data.munis, lon, lat);
+        const nmd = mp ? fireName(mp) : null;
+        return {
+          t: b[3], layer: 'fires', kind: 'Mapped burn outline', lon, lat, zoom: b[1] > 20000 ? 7.5 : 9,
+          title: `${nmd ? `${nmd[0].toUpperCase()}${nmd.slice(1)}: ` : ''}${fmt.ha(b[1])} burned ${d < 5 ? 'at' : 'near'} ${town.name}, ${b[0]}`,
+          body: `The outline the National Burned Area Composite maps for this burn, from satellite imagery and agency mapping, simplified for the map. ${b[4].length ? `${b[4].length === 1 ? 'One reported fire starts' : `${b[4].length} reported fires start`} inside it${mp ? `; the largest was ${['started by lightning', 'started by people', 'of unknown cause'][mp[4]]}` : ''}.` : 'No reported fire of that year starts inside it, so it appears at the start date the composite gives.'} The area is the composite’s, less unburned islands where it maps them, so it can differ from the size the fire was reported at.`,
+          stats: [{ v: fmt.ha(b[1]), l: 'mapped burned area' }, { v: String(b[0]), l: 'year' }, ...(mp ? [{ v: CAUSE[mp[4]].name, l: 'cause' }, { v: fmt.ha(mp[3]), l: 'reported size' }] : [])],
+          sources: [{ label: 'National Burned Area Composite (CWFIS)', url: safeUrl(fires?.perimeterUrl) ?? 'https://cwfis.cfs.nrcan.gc.ca/ha/nbac' }],
+        };
+      }
       const o = info.object as FirePoint;
       if (!Array.isArray(o)) return null;
       const [lon, lat, t, ha, cause] = o;
@@ -498,8 +538,12 @@ function firesLayer(data: Data): AtlasLayer {
         if (Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${ago(o[2])}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
         return null;
       }
+      if (info.layer?.id === 'fires-perims' && o?.b) {
+        const b = o.b as BurnPerimeter, mp = mainPoint(b);
+        return `<b>${mp?.[5] ? `${esc(mp[5])} fire` : `Burn of ${b[0]}`}</b> <span class="tk">mapped outline</span><br><span class="tk">Mapped area</span> <span class="tv">${fmt.ha(b[1])}</span>${mp ? `<br><span class="tk">Reported</span> <span class="tv">${isoDate(mp[2])}</span><br><span class="tk">Cause</span> ${CAUSE[mp[4]].name}` : `<br><span class="tk">Year</span> <span class="tv">${b[0]}</span>`}`;
+      }
       if (!Array.isArray(o)) return null;
-      return `<b>${o[5] ? `${esc(o[5])} fire` : 'Wildfire'}</b><br><span class="tk">Reported</span> <span class="tv">${isoDate(o[2])}</span><br><span class="tk">Burned</span> <span class="tv">${o[3] < 1 ? '<1 ha' : fmt.ha(o[3])}</span><br><span class="tk">Cause</span> ${CAUSE[o[4]].name}`;
+      return `<b>${o[5] ? `${esc(o[5])} fire` : 'Wildfire'}</b>${info.layer?.id === 'fires-scars' ? ' <span class="tk">circle of the same area, no mapped outline</span>' : ''}<br><span class="tk">Reported</span> <span class="tv">${isoDate(o[2])}</span><br><span class="tk">Burned</span> <span class="tv">${o[3] < 1 ? '<1 ha' : fmt.ha(o[3])}</span><br><span class="tk">Cause</span> ${CAUSE[o[4]].name}`;
     },
   };
   return l;
@@ -1737,5 +1781,5 @@ function provinceLayer(data: Data): AtlasLayer {
 }
 
 export function buildLayers(data: Data): AtlasLayer[] {
-  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), hailLayer(data), riversLayer(data), climateLayer(data), smokeLayer(data), droughtLayer(data), normalsLayer(data), lightLayer(data), populationLayer(data), housingLayer(data), jobsLayer(data), needsLayer(data), schoolsLayer(data), internetLayer(data), communityLayer(data), newcomerLayer(data), transitLayer(data), childcareLayer(data), industryLayer(data), waterLayer(data), radonLayer(data), hospitalsLayer(data), doctorsLayer(data), campingLayer(data), commuteLayer(data)];
+  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), hailLayer(data), riversLayer(data), climateLayer(data), smokeLayer(data), droughtLayer(data), cropsLayer(data), normalsLayer(data), lightLayer(data), populationLayer(data), housingLayer(data), jobsLayer(data), needsLayer(data), schoolsLayer(data), internetLayer(data), communityLayer(data), newcomerLayer(data), transitLayer(data), childcareLayer(data), industryLayer(data), waterLayer(data), radonLayer(data), hospitalsLayer(data), doctorsLayer(data), campingLayer(data), commuteLayer(data)];
 }

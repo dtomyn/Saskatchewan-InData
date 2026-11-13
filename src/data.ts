@@ -8,6 +8,9 @@ export type Muni = {
 
 /** lon, lat, t (fractional year), hectares, cause (0 lightning, 1 human, 2 unknown), name (big fires only) */
 export type FirePoint = [number, number, number, number, number, string?];
+/** a mapped burn outline (NBAC): year, hectares, polygons (rings of [lon, lat]), t when it appears (its first start
+ * point, else the start date), and the indices into `points` of the start points inside it (they lose their circle) */
+export type BurnPerimeter = [number, number, [number, number][][][], number, number[]];
 /** lon, lat, t, Fujita (null unrated), end lon, end lat, track m, width m, deaths, injuries, damage $K, nearest community */
 /** …, source (0 ECCC 1980–2009 on the Fujita scale, 1 Northern Tornadoes Project 2017 → on the Enhanced Fujita scale), flags (bit 0 default EF0, bit 1 estimated end point) */
 export type TornadoRow = [number, number, number, number | null, number | null, number | null, number | null, number | null, number, number, number | null, string | null, 0 | 1, number];
@@ -261,6 +264,30 @@ export type WellHex = [number, number, number, number, number, number];
 export type IndustryLine = { n: string | null; o: number | string; s: 'sour' | 'gas' | 'oil' | 'water' | 'co2' | 'other'; p: [number, number][][] };
 export type NpriSite = { n: string; c: string; city: string; lon: number; lat: number; k: string; t: number; ns: number; top: [string, number] | null };
 export type Mine = { n: string; cm: string; g: 'potash' | 'uranium' | 'coal' | 'metal' | 'other'; lon: number; lat: number; src: 'smdi' | 'npri'; url: string | null };
+/** The Annual Crop Inventory on a Web Mercator grid: per year a run-length map (an optional count, then a letter:
+ * a not mapped, b… the classes in order), each class's share (%) of the footprint mapped every year, and per place the
+ * land within 25 km by class (%, null when under half of it is mapped). */
+export type Crops = {
+  source: string; sourceUrl: string; serviceUrl: string; licence: string; licenceUrl: string;
+  classes: string[];
+  grid: { x0: number; y1: number; px: number; w: number; h: number; sub: number; bounds: number[] };
+  years: number[]; maps: string[]; share: number[][];
+  towns: Record<string, (number[] | null)[]>;
+};
+
+/** A generating station mapped in OpenStreetMap: name, operator, fuel, MW where tagged. */
+export type PowerPlant = { n: string | null; o: string | null; s: 'coal' | 'gas' | 'hydro' | 'wind' | 'solar' | 'heat' | 'other'; mw: number | null; lon: number; lat: number };
+/** The power grid as mapped in OpenStreetMap: lines by voltage class (230, 138, 72 kV, null not tagged), substations
+ * [lon, lat, kV, name], plants; per place from its town limits the nearest line, substation and a plant within plantKm. */
+export type Power = {
+  source: string; licence: string; licenceUrl: string; asOf: string; lineKm: number; plantKm: number; fallbackKm: number;
+  totals: { km: Record<string, number> };
+  lines: { kv: number | null; p: [number, number][][] }[];
+  subs: [number, number, number | null, string | null][];
+  plants: PowerPlant[];
+  towns: Record<string, { line: { km: number; kv: number | null } | null; sub: number | null; plant: { i: number; km: number } | null }>;
+};
+
 export type Industry = {
   source: string; licence: string; licenceUrl: string; npriUrl: string; asOf: string; npriYear: number;
   wellKm: number; pipeKm: number; mineKm: number; npriKm: number; hexKm: number; fallbackKm: number;
@@ -389,13 +416,15 @@ export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAi
 export type Data = {
   outline: GeoJSON.Feature | null;
   munis: Muni[];
-  fires: { points: FirePoint[]; source: string } | null;
+  fires: { points: FirePoint[]; source: string; perimeters?: BurnPerimeter[]; perimeterSource?: string; perimeterUrl?: string; perimeterYears?: [number, number] | null; licence?: string; licenceUrl?: string } | null;
   tornadoes: { rows: TornadoRow[]; source: string; sources?: { name: string; from: number; to: number; scale: string }[] } | null;
   hail: { rows: HailRow[]; source: string; sources?: { name: string; from: number; to: number }[] } | null;
   rivers: { stations: RiverStation[]; source: string } | null;
   climate: { stations: ClimateStation[]; source: string; baselinePeriod: string } | null;
   smoke: Smoke | null;
   drought: Drought | null;
+  crops: Crops | null;
+  power: Power | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;
   projections: Projections | null;
   floods: Floods | null;
@@ -461,7 +490,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -496,6 +525,8 @@ export async function loadAll(): Promise<Data> {
     load<Radon>('radon'),
     load<Light>('light'),
     load<Transit>('transit'),
+    load<Crops>('crops'),
+    load<Power>('power'),
     load<Data['manifest']>('manifest'),
   ]);
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
@@ -540,6 +571,8 @@ export async function loadAll(): Promise<Data> {
     radon: radon?.regions?.length ? radon : null,
     light: light && Object.keys(light.towns ?? {}).length ? light : null,
     transit: transit?.airports?.length ? transit : null,
+    crops: crops?.years?.length && crops.maps?.length === crops.years.length ? crops : null,
+    power: power?.lines?.length ? power : null,
     now: {
       rivers: nRivers?.asOf && Array.isArray(nRivers.rows) ? nRivers : null,
       fires: nFires?.asOf && Array.isArray(nFires.hotspots) ? nFires : null,
