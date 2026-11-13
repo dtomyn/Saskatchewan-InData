@@ -8,9 +8,27 @@ import { Data, Facility, FirePoint, MONTHS, Muni, NormalsStation, Trip, fmt, int
 import { barChart, lineChart, rampCSS, scatterChart, stripes, ChartHandle } from './charts';
 import { NormalVar, provinceAnomalies, slope, townMetrics } from './metrics';
 import { tornadoLayer } from './tornado';
+import { hailLayer } from './hail';
 import { justiceLayer } from './justice';
 import { treatiesLayer } from './treaties';
 import { campingLayer } from './camping';
+import { housingLayer } from './housing';
+import { jobsLayer } from './jobs';
+import { needsLayer } from './needs';
+import { commuteLayer } from './commute';
+import { schoolsLayer } from './schools';
+import { internetLayer } from './internet';
+import { communityLayer } from './community';
+import { newcomerLayer } from './newcomer';
+import { doctorsLayer } from './doctors';
+import { childcareLayer } from './childcare';
+import { smokeLayer } from './smoke';
+import { droughtLayer } from './drought';
+import { industryLayer } from './industry';
+import { waterLayer } from './water';
+import { radonLayer } from './radon';
+import { lightLayer } from './light';
+import { transitLayer } from './transit';
 import { esc } from './html';
 
 
@@ -1188,5 +1206,5 @@ function provinceLayer(data: Data): AtlasLayer {
 }
 
 export function buildLayers(data: Data): AtlasLayer[] {
-  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), riversLayer(data), climateLayer(data), normalsLayer(data), populationLayer(data), hospitalsLayer(data), campingLayer(data)];
+  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), hailLayer(data), riversLayer(data), climateLayer(data), smokeLayer(data), droughtLayer(data), normalsLayer(data), lightLayer(data), populationLayer(data), housingLayer(data), jobsLayer(data), needsLayer(data), schoolsLayer(data), internetLayer(data), communityLayer(data), newcomerLayer(data), transitLayer(data), childcareLayer(data), industryLayer(data), waterLayer(data), radonLayer(data), hospitalsLayer(data), doctorsLayer(data), campingLayer(data), commuteLayer(data)];
 }

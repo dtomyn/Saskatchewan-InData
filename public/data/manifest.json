@@ -45,10 +45,86 @@
   },
   "hospitals": {
     "ok": true,
-    "updated": "2026-11-11T00:04:26.034Z"
+    "updated": "2026-11-12T23:55:31.398Z"
   },
   "camping": {
     "ok": true,
     "updated": "2026-11-11T01:13:33.086Z"
+  },
+  "housing": {
+    "ok": true,
+    "updated": "2026-11-12T20:41:45.467Z"
+  },
+  "needs": {
+    "ok": true,
+    "updated": "2026-11-12T20:26:48.546Z"
+  },
+  "commute": {
+    "ok": true,
+    "updated": "2026-11-12T20:29:12.066Z"
+  },
+  "jobs": {
+    "ok": true,
+    "updated": "2026-11-12T20:42:50.405Z"
+  },
+  "schools": {
+    "ok": true,
+    "updated": "2026-11-12T22:10:28.194Z"
+  },
+  "internet": {
+    "ok": true,
+    "updated": "2026-11-12T22:19:43.664Z"
+  },
+  "community": {
+    "ok": true,
+    "updated": "2026-11-12T23:25:01.488Z"
+  },
+  "newcomer": {
+    "ok": true,
+    "updated": "2026-11-12T23:50:26.325Z"
+  },
+  "doctors": {
+    "ok": true,
+    "updated": "2026-11-13T00:06:42.822Z"
+  },
+  "childcare": {
+    "ok": true,
+    "updated": "2026-11-13T00:28:42.583Z"
+  },
+  "smoke": {
+    "ok": true,
+    "updated": "2026-11-13T00:36:03.182Z"
+  },
+  "industry": {
+    "ok": true,
+    "updated": "2026-11-13T01:00:07.228Z"
+  },
+  "water": {
+    "ok": true,
+    "updated": "2026-11-13T01:28:55.480Z"
+  },
+  "radon": {
+    "ok": true,
+    "updated": "2026-11-13T01:39:15.085Z"
+  },
+  "light": {
+    "ok": true,
+    "updated": "2026-11-13T02:09:24.870Z"
+  },
+  "hail": {
+    "ok": true,
+    "updated": "2026-11-13T02:15:51.770Z"
+  },
+  "transit": {
+    "ok": true,
+    "updated": "2026-11-13T13:00:02.926Z"
+  },
+  "tax": {
+    "ok": true,
+    "updated": "2026-11-13T13:06:56.113Z"
+  },
+  "drought": {
+    "ok": true,
+    "updated": "2026-11-13T13:15:46.877Z"
   }
 }
