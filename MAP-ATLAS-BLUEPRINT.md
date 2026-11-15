@@ -498,6 +498,7 @@ A narrated, step-by-step **how-to** film, recorded from the real built app by sc
 - Numbers said aloud come from the app's data (`facts()` reads them through the film handle; lines use `{name}` placeholders).
 - **Master at 2560×1440, plus a 1920×1080 copy. Never 4K.** 30 fps.
 - Re-render after `npm run data`.
+- Live readings are skipped (`?film`) unless the storyboard sets `LIVE = True` (`?film&now`); then it also sets `CLOCK`, a moment just after the newest reading was fetched, so every age on screen is the same on each run of the same files.
 
 ### 8.2 The stage
 
@@ -542,6 +543,10 @@ dict(id="timeline", title="Play the timeline", run=timeline,
 | 3 | Show a data layer | Zoom onto the menu; open Layer (or `L`); explain groups; pick the headline layer; panel updates. |
 | 4 | Play the timeline | Play, change speed, pause, drag the slider, click an event diamond → map jumps, the event's panel opens. |
 | 5 | Switch, combine and clear | Flip a second layer's switch on (it joins the map); click its name (it becomes active, the first stays on); point at the `+1`; click "Clear the map". |
+| 5a | Right now (live atlases) | Pick a layer with a Now stop (it opens at Now); spotlight the year readout; the live map; zoom on the Right now box (ages, stale after hours); step back into the daily record (provisional). |
+| 5b | Look ahead (projections) | Drag the slider past the record into the hatched span; the range on the map (low vs high emissions); zoom on the projection table. |
+| 5c | Ask what if (scenarios) | Choose a site to close from the panel; fly there; zoom on who drives farther; spotlight the banner; Clear. |
+| 5d | Finer places | A census tint on every subdivision; click one for its census-only report; a small community's dot and report. |
 | 6 | Open a place's report | Hover a dot (name), click; map flies; scroll the report; close. |
 | 7 | Rank places with the Finder | Open; drag one slider (ranking updates); click a preset; point at the columns; open a place; close twice. |
 | 8 | Deep finder (if any) | Filters, the count, a slider, presets, open an item, shortlist, satellite, back, Shortlist tab, close. |
