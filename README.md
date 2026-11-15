@@ -87,7 +87,9 @@ The hourly workflow also keeps a compact daily record of the live feeds, so the 
 
 ## The explainer film
 
-`video/` films a narrated how-to from the real app, one exact frame at a time (the framework from Island Atlas; `MAP-ATLAS-BLUEPRINT.md` Part 8). `video/storyboard.py` holds the scenes, narration, camera and sound: finding your way around, moving the map, layers and the timeline, the Settling in, Health and Around the property layers, a town report, Town Finder (workplace, sliders, the New to Saskatchewan preset), Data & sources and the shortcuts. The narration's counts come from the app's data, so re-film after `npm run data`.
+`video/` films a narrated how-to from the real app, one exact frame at a time (the framework from Island Atlas; `MAP-ATLAS-BLUEPRINT.md` Part 8). `video/storyboard.py` holds the scenes, narration, camera and sound. After the controls (finding your way around, moving the map, layers, the timeline with burn outlines, combining layers) it tells the atlas in every tense: the Now stop and the age on every live reading, the daily record, climate projections past the record, a what-if hospital closure; then the land (What grows here, the power grid, flood-prone land), every census subdivision and a small community's report, the Settling in, Health and Around the property layers, Saskatoon's report with its census tracts and Right now outlooks, Town Finder (workplace, sliders, the New to Saskatchewan preset, Include small communities), Data & sources and the shortcuts. The narration's counts come from the app's data, so re-film after `npm run data`.
+
+The film loads the live readings (`LIVE` in the storyboard, `?film&now`), so run `npm run data now` first: its clock stands 15 minutes after the newest reading was fetched (`CLOCK`), so the ages it shows are the same on every run of the same files, and it stops when there are none.
 
 Setup (once; needs Microsoft Edge for the GPU map):
 

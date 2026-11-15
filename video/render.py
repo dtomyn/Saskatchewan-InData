@@ -336,12 +336,16 @@ def load_stage(context, port):
     context.add_init_script("try { ['weights', 'work'].forEach((k) => localStorage.removeItem('living-skies-atlas:' + k)); } catch {}")
     page = context.pages[0] if context.pages else context.new_page()
     page.on("pageerror", lambda error: errors.append(str(error)))
-    # Noon today: the app shows the current year, and a re-run on the same day is identical.
-    start = datetime.datetime.combine(datetime.date.today(), datetime.time(12))
+    # Noon today: the app shows the current year, and a re-run on the same day is identical. A storyboard that films
+    # the live readings sets its own moment (CLOCK), so their ages read the same on every run of the same files.
+    clock = getattr(storyboard, "CLOCK", None)
+    start = clock() if clock else datetime.datetime.combine(datetime.date.today(), datetime.time(12))
     # The installed clock starts running, so it begins a few seconds before noon: pausing at noon must never be in its past.
     page.clock.install(time=start - datetime.timedelta(seconds=5))
     page.clock.pause_at(start)
-    page.goto(f"http://127.0.0.1:{port}/stage/stage.html?app=%2F%3Ffilm")
+    # ?film skips the live readings so the film is repeatable; a storyboard with LIVE = True loads them (?film&now)
+    query = "%2F%3Ffilm%26now" if getattr(storyboard, "LIVE", False) else "%2F%3Ffilm"
+    page.goto(f"http://127.0.0.1:{port}/stage/stage.html?app={query}")
     page.evaluate("document.fonts.ready")
     # Let the app load: real time for the downloads, a little film time for its frame loop.
     deadline = time.time() + 90
