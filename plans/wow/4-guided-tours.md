@@ -1,6 +1,6 @@
 # 4. Guided fly-throughs
 
-**Effort:** M. **Depends on:** nothing. **Status:** not started. `ROADMAP.md` lists this as "Per-layer films and an overview"; this plan does it inside the live app instead of as rendered video.
+**Effort:** M. **Depends on:** nothing. **Status:** built (`src/tours.ts`; four tours, captions only, beside the explainer film). `ROADMAP.md` lists this as "Per-layer films and an overview"; this plan does it inside the live app instead of as rendered video.
 
 ## Goal
 

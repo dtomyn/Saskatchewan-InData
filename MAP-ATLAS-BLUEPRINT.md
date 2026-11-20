@@ -424,6 +424,20 @@ Full-screen overlay (`S`, `#sources`): left = intro (kicker, big title, lede, st
 
 When loaded with `?film`, expose `window.<atlasId> = { map, state, data, layers, focus, clearMap, openPlace, openFinder, openDeep, closeDeep, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario }` for the video renderer only. `?film` also skips the live readings (5.9), so the film stays repeatable; add `&now` to load them while checking by hand.
 
+The handle also carries `tour(id)` and `tours` (5.8a), so an intent's check can be one call.
+
+### 5.8a Guided tours
+
+A **Take the tour** button beside the Layer button opens a menu of short tours; `?tour=<id>` starts one in place of the opening flight (an unknown id opens the normal app). A tour is a step list in `src/tours.ts`: each step is `{ caption, camera?, do?, play?, wait? }`, where `do` calls the film handle's own functions, `play` is a stretch of timeline (`from`, `to`, `speed`) and `wait` the hold in ms (default: reading time for the caption). The stories are the explainer film's; port its scenes rather than inventing new ones.
+
+- **Runner**: a step runs `do`, flies the camera, waits for the flight to end, plays its stretch of timeline, holds, then moves on. A step reached out of order (Back, a dot, Resume) first runs the setup of the nearest earlier step that has one.
+- **Bar**: caption, one dot per step (clickable), Back / Pause / Next / Exit. It sits above the timeline (under the app bar on a phone) and hides the event ticker while it is up. Space, the arrows and Esc belong to the tour while it runs.
+- **Handing back control**: any pointer press outside the bar, or a wheel on the map, pauses and offers *Explore from here* (stop, keep the map as it is). *Exit* restores what the tour found: layers, active layer, timeline, speed, panel, the open report or Finder, and the camera.
+- **Leaves nothing behind**: a tour sets no Finder weight and no scenario. A saved setting a step must borrow (the workplace for Workday Reach) is put back when the tour ends either way, and the caption says it is the tour's.
+- **Honest**: captions are typed in the code and set as text, never HTML; a caption states only what the layer on screen shows and carries its caveats. Nothing is pre-rendered. A layer with live readings is set to a year of its record at once, so a tour loads no daily record.
+- **Reduced motion**: camera moves become jumps and a `play` stretch steps through six stops.
+- When a layer a tour visits changes what it draws or claims, update that tour's captions with it.
+
 ### 5.9 Right now: live readings
 
 A few hazard layers carry a reading of today next to their archive (Living Skies Atlas: river gauges, satellite hotspots, AQHI, and weather alerts drawn on those three). The site stays static: the live stages (Part 6) write `public/data/now/*.json`, not committed, and a scheduled workflow (Part 7) rebuilds and redeploys about hourly. `src/now.ts` holds the rules every live value follows:

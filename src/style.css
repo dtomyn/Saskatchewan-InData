@@ -525,3 +525,50 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius
 .ol-row .ol-s { grid-column: 1 / -1; font-size: 11px; color: var(--ink-3); }
 .ol-line { margin: 8px 0; font-size: 12px; line-height: 1.6; }
 .ol-line .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 2px; }
+
+/* ---------- guided tours (src/tours.ts): the button and menu beside Layer, and the caption bar while one runs ---------- */
+.tour-picker { position: relative; }
+.tour-btn { border-color: rgba(76, 201, 240, .55); box-shadow: 0 0 20px rgba(76, 201, 240, .18); }
+.tour-btn .i { color: #4cc9f0; font-size: 10px; }
+.tour-btn[aria-expanded="true"] { background: var(--glass-strong); border-color: #4cc9f0; }
+.tour-menu { width: 320px; }
+.tour-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; width: 100%; text-align: left; padding: 9px 10px; border: 0; border-radius: 9px; background: none; color: var(--ink); font: inherit; cursor: pointer; }
+.tour-row:hover, .tour-row:focus-visible { background: rgba(255, 255, 255, .06); outline: none; }
+.tour-row .nm { font-weight: 600; font-size: 13.5px; }
+.tour-row .tm { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); align-self: center; }
+.tour-row .bl { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); line-height: 1.4; }
+.tour-bar { position: absolute; left: 16px; right: 412px; bottom: 122px; max-width: 760px; z-index: 7; padding: 12px 14px 10px 16px; border-radius: 16px; background: var(--glass-strong); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); border: 1px solid rgba(76, 201, 240, .45); box-shadow: var(--shadow), 0 0 22px rgba(76, 201, 240, .14); animation: menuIn .3s ease-out; }
+.tour-bar[hidden] { display: none; }
+.tour-bar.paused { border-style: dashed; }
+body.no-panel .tour-bar { right: 16px; }
+.tour-head { display: flex; align-items: center; gap: 10px; }
+.tour-kicker { font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase; font-weight: 700; color: #06101a; background: #4cc9f0; border-radius: 999px; padding: 2px 8px; }
+.tour-title { font-weight: 600; font-size: 12.5px; color: var(--ink-2); }
+.tour-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-left: auto; }
+.tour-x { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .05); color: var(--ink-2); font-size: 16px; line-height: 1; padding: 0; }
+.tour-x:hover { border-color: var(--ink-3); color: var(--ink); }
+.tour-caption { margin: 8px 0 10px; font-size: 15px; line-height: 1.5; color: var(--ink); min-height: 3em; }
+.tour-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tour-dots { display: flex; gap: 2px; }
+.tour-dot { width: 18px; height: 18px; padding: 0; border: 0; background: none; display: grid; place-items: center; cursor: pointer; }
+.tour-dot::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, .2); transition: background .2s, transform .2s; }
+.tour-dot.seen::after { background: rgba(76, 201, 240, .55); }
+.tour-dot.on::after { background: #4cc9f0; transform: scale(1.35); box-shadow: 0 0 10px rgba(76, 201, 240, .7); }
+.tour-dot:hover::after { background: #fff; }
+.tour-ctl { display: flex; gap: 6px; }
+.tour-ctl button { border-radius: 999px; padding: 5px 12px; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .05); color: var(--ink); font-size: 12px; font-weight: 600; }
+.tour-ctl button:hover:not(:disabled) { border-color: var(--ink-3); }
+.tour-ctl button:disabled { opacity: .4; }
+.tour-ctl button[hidden] { display: none; }
+.tour-ctl button.primary { background: #4cc9f0; border-color: #4cc9f0; color: #06101a; }
+/* the caption bar sits where the event ticker would pop up */
+body.touring .event-ticker { display: none; }
+@media (max-width: 1100px) { .tour-bar { right: 362px; } }
+@media (max-width: 820px) {
+  .tour-btn { padding: 8px 11px; }
+  .tour-btn-txt { display: none; }
+  .tour-menu { position: fixed; top: 58px; left: 8px; right: 8px; width: auto; }
+  .tour-bar, body.no-panel .tour-bar { top: 58px; bottom: auto; left: 8px; right: 8px; }
+  .tour-caption { font-size: 13.5px; min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .tour-bar { animation: none; } .tour-dot::after { transition: none; } }

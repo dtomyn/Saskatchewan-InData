@@ -1,6 +1,6 @@
 # Intents
 
-What people come to Living Skies Atlas to do, one file each. Each intent names who has it, the question in their words, the parts of the app that answer it, how to get there, what the atlas cannot tell them, and a quick check through the `?film` handle (`window.atlas`).
+What people come to Living Skies Atlas to do, one file each. Each intent names who has it, the question in their words, the parts of the app that answer it, how to get there, what the atlas cannot tell them, and a quick check through the `?film` handle (`window.atlas`). Where a guided tour (`src/tours.ts`) walks an intent's path, the check is that tour: `atlas.tour('<id>')` should run to its last step with no console error.
 
 Use these when deciding whether a feature earns its place (it should serve at least one intent), when writing the explainer film's scenes, and when checking that a change did not break a path someone relies on. When a feature an intent points at changes, update the intent with it, as for the README and `MAP-ATLAS-BLUEPRINT.md`.
 

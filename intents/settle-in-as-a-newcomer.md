@@ -28,6 +28,6 @@ Town Finder → New to Saskatchewan; or turn on Settling in layers and open a To
 ## Check it
 
 ```js
-atlas.clearMap(); atlas.focus('newcomer')
+atlas.tour('people')   // the guided tour: ends on Newcomer services
 atlas.openFinder(); document.querySelector('[data-preset="newcomer"]').click()
 ```

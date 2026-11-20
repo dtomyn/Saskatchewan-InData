@@ -34,8 +34,8 @@ Turn on a history layer and press play, or set a year; click an event for its pa
 ## Check it
 
 ```js
-atlas.clearMap(); atlas.focus('fires'); atlas.setTime(2015.6)
-atlas.clearMap(); atlas.focus('drought'); atlas.setTime(2021.6)
+atlas.tour('hazards')    // the guided tour: rivers in 2011, tornadoes, hail, flood-prone land in Moose Jaw
+atlas.tour('province')   // wildfires played from 1959, the north in 2015, drought in July 2021
 // live readings: load /?film&now (plain ?film skips them)
 atlas.clearMap(); atlas.focus('rivers')   // lands on Now; flood-prone land shaded around mapped towns
 atlas.openTown('regina')                   // Right now, then Outlooks
