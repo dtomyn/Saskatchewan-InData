@@ -9,6 +9,7 @@ import { AqhiCommunity, Data, MONTHS, SmokeStation, interpYearly, km } from './d
 import { barChart } from './charts';
 import { esc } from './html';
 import { AtlasLayer, NO_DEPTH, RecentSpan, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
+import { airLayers, airPanel, airTooltip } from './wind';
 import { airHistory, dayT, dayText, tDay } from './history';
 import { NOW_T, ageTag, ago, alertEvent, alertList, alertOutlines, alertTooltip, alertsInEffect, aqhiColor, aqhiText, aqhiWord, drawable, freshness, isNow, ms, nowBlock, provinceOutlook, skTime, tickAges } from './now';
 
@@ -115,11 +116,15 @@ export function smokeLayer(data: Data): AtlasLayer {
       asOf: () => ms(nowA.asOf),
       archiveEnd: y1 + 0.99,
       recent: airRecent,
-      build({ focusedId }) {
-        if (!drawable(nowA.asOf)) return [];
+      build(c) {
+        const { focusedId } = c;
+        // the wind and the smoke forecast (src/wind.ts), when their chips are on
+        const air = airLayers('smoke', c);
+        if (!drawable(nowA.asOf)) return air;
         const live = comms.map((c, i) => ({ c, i })).filter((x) => drawable(x.c.t));
         const grey = (x: { c: AqhiCommunity }) => freshness(x.c.t) === 'stale' || freshness(nowA.asOf) === 'stale';
         const out: Layer[] = [
+          ...air,
           new ColumnLayer<any>({
             id: 'smoke-now-cols',
             data: live,
@@ -226,9 +231,11 @@ export function smokeLayer(data: Data): AtlasLayer {
     },
     panel(el) {
       el.innerHTML = `${kicker(l, 'Fine particles · NAPS')}
+        <div class="air-host"></div>
         ${airNow()}
         <h2>Smoke on the wind</h2>
         <p class="lede">Each column is an air-monitoring station. Its height is how many days that year the air averaged more than ${limit} µg/m³ of fine particles (PM2.5) over 24 hours: on the prairies, nearly always wildfire smoke. Haze-grey is a clear year; ember red is a summer under smoke.</p>`;
+      const air = l.now ? airPanel(el.querySelector<HTMLElement>('.air-host')!, data, { id: 'smoke', atNow: (t) => isNow(t, l.range[1]) }) : null;
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Smoke days a year, average of the stations</h3>`);
       const set = deferChart(el.appendChild(mk('div')), (c) =>
@@ -247,7 +254,9 @@ export function smokeLayer(data: Data): AtlasLayer {
         <p class="note">A smoke day is a calendar day whose 24-hour average PM2.5 is above ${limit} µg/m³, the World Health Organization’s 2005 24-hour guideline (Canada’s 2020 ambient standard is 27). Fine particles also come from traffic, industry and winter inversions, so not every such day is smoke. A day counts only with ${sm?.minHours ?? 18} or more of its 24 hourly readings; a station-year counts only when ${Math.round((sm?.minShare ?? 0.75) * 100)}% of its days, and of its May–September days, are valid, so some years are missing. Stations in the same city are joined into one record. Only ${stations.length} stations monitor PM2.5 in Saskatchewan, all in or near cities; Environment Canada’s archive has Saskatchewan data to ${y1}${sm?.filesTo && sm.filesTo > y1 ? ` (its ${sm.filesTo} file does not include Saskatchewan yet)` : ''}.</p>
         ${sourceLine(sm?.source ?? '')}`);
       return {
-        update({ time }) {
+        update(c) {
+          const { time } = c;
+          air?.update(c);
           tickAges(el);
           const y = Math.floor(time);
           const top = nowA && isNow(time, l.range[1]) ? comms.filter((c) => drawable(c.t)).sort((a, b) => b.v - a.v)[0] : null;
@@ -267,7 +276,7 @@ export function smokeLayer(data: Data): AtlasLayer {
     },
     describe(info) {
       const o: any = info.object;
-      if (!o || !info.layer?.id.startsWith('smoke')) return null;
+      if (!o || !info.layer?.id.startsWith('smoke') || info.layer.id.includes('-air-')) return null;
       // a recorded day: its panel is built from the tooltip
       if (info.layer.id === 'smoke-hist-cols') return null;
       if (isLive(info.layer.id)) {
@@ -308,6 +317,8 @@ export function smokeLayer(data: Data): AtlasLayer {
       };
     },
     tooltip(info) {
+      const air = airTooltip(info, data);
+      if (air !== undefined) return air;
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('smoke')) return null;
       if (info.layer.id === 'smoke-hist-cols' && o.h) return `<b>${esc(o.h.name)}</b> <span class="tk">AQHI, provisional</span><br><span class="tk">${dayText(o.day)}</span> <span class="tv">highest ${aqhiText(o.h.max)}, ${aqhiWord(o.h.max)}</span><br><span class="tk">Hours reported</span> <span class="tv">${o.h.hours} of 24</span>`;

@@ -463,6 +463,15 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius
 .now-old { color: var(--ink-3); }
 .now-src { font-size: 11px; color: var(--ink-3); margin-top: 6px; }
 .now-src a { color: var(--ink-3); }
+/* the Wind and Smoke forecast chips (src/wind.ts) and the forecast's scrubber */
+.air-live { margin: 0 0 12px; }
+.air-live .chips { margin: 2px 0 4px; }
+.air-scrub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0 4px; }
+.air-scrub input[type=range] { flex: 1; min-width: 0; accent-color: var(--c, var(--accent)); }
+.air-play { width: 28px; height: 24px; border-radius: 6px; border: 1px solid var(--line-strong); background: transparent; color: var(--ink); font-size: 10px; line-height: 1; cursor: pointer; }
+.air-play:disabled { opacity: .35; cursor: default; }
+.air-when { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+.air-stat { font-size: 12px; }
 .now-alerts { display: grid; gap: 6px; margin: 8px 0 2px; }
 .now-alert { border-left: 3px solid var(--ac); padding: 4px 8px; background: rgba(255, 255, 255, 0.03); border-radius: 0 6px 6px 0; font-size: 12px; }
 .now-alert summary { cursor: pointer; list-style: none; }

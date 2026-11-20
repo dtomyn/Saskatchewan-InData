@@ -76,7 +76,8 @@ let tours: Tours | null = null;
 // a tour opened from a link (?tour=<id>) starts in place of the opening flight
 const linkedTour = TOURS.find((t) => t.id === new URLSearchParams(location.search).get('tour'))?.id ?? null;
 
-const ctx = (): Ctx => ({ time: state.time, speed: state.speed, data, selected: state.selected, hovered: state.hovered, focusedId: state.focused, clock: performance.now() });
+const mapView = (): Ctx['view'] => { const b = map.getBounds(); return { zoom: map.getZoom(), box: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()] }; };
+const ctx = (): Ctx => ({ time: state.time, speed: state.speed, data, selected: state.selected, hovered: state.hovered, focusedId: state.focused, clock: performance.now(), view: mapView() });
 const focusedLayer = () => byId[state.focused];
 const timeLayer = () => byId[state.timeLayer];
 
@@ -305,7 +306,9 @@ function onHover(info: PickingInfo) {
   const t = tooltipEl();
   const o: any = info.object;
   state.hovered = o ? o.m?.key ?? o.t?.muni?.key ?? (info.layer?.id.startsWith('towns') ? o.key : null) : null;
-  if (!info.object || !info.layer) { t.hidden = true; return; }
+  // a picture (the sky now, the smoke forecast) has no object, only the spot under the pointer
+  const picture = !info.object && !!(info as any).bitmap;
+  if ((!info.object && !picture) || !info.layer) { t.hidden = true; return; }
   let html: string | null = null;
   const id = info.layer.id;
   if (id.startsWith('finder')) {
@@ -321,7 +324,7 @@ function onHover(info: PickingInfo) {
   }
   if (!html) { t.hidden = true; return; }
   // every feature opens a details panel on click; say so unless the tooltip already says what a click does
-  if (!/click/i.test(html)) html += '<br><span class="tk tk-click">Click for details</span>';
+  if (!picture && !/click/i.test(html)) html += '<br><span class="tk tk-click">Click for details</span>';
   t.innerHTML = html;
   t.hidden = false;
   const r = t.getBoundingClientRect();

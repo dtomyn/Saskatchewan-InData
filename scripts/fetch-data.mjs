@@ -5,7 +5,7 @@
 //
 //   node scripts/fetch-data.mjs                 # all stages
 //   node scripts/fetch-data.mjs fires crime     # selected stages
-//   node scripts/fetch-data.mjs now             # the six live stages (now-rivers, now-fires, now-air, now-alerts, now-outlooks, now-aurora)
+//   node scripts/fetch-data.mjs now             # the eight live stages (now-rivers, now-fires, now-air, now-alerts, now-outlooks, now-aurora, now-wind, now-plume)
 //   node scripts/fetch-data.mjs now history     # …and roll them into the daily record (public/data/history/)
 //
 // Raw downloads are cached in .cache/ so re-runs are quick. Delete it to force a refresh.
@@ -19,7 +19,7 @@ import { OUT } from './lib/config.mjs';
 import { log } from './lib/io.mjs';
 
 /** The live stages, which `npm run data now` runs. */
-const NOW_STAGES = ['now-rivers', 'now-fires', 'now-air', 'now-alerts', 'now-outlooks', 'now-aurora'];
+const NOW_STAGES = ['now-rivers', 'now-fires', 'now-air', 'now-alerts', 'now-outlooks', 'now-aurora', 'now-wind', 'now-plume'];
 /** The daily record (stages/history.mjs): run only when named, after `now`. */
 const ON_REQUEST = ['history', 'history-backfill'];
 /** Stages whose run is recorded in public/data/now/manifest.json (not committed), not in manifest.json. */
