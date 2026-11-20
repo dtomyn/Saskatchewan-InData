@@ -477,6 +477,8 @@ Come for the Sky: a Week in Saskatchewan (and Maybe Longer) | Living Skies Atlas
 DESCRIPTION
 Never been to Saskatchewan? Follow a week's visit that turns into the thought of staying: the longest days and the northern lights, {found['reach4']} campgrounds lighting up within four hours' drive of Saskatoon, the farm belt from space, Treaty land, Saskatoon in 3D, and Town Finder's take on where a newcomer might live. Then the honest part: winter, wildfire, storms, floods, crime and a warming climate, each shown from the data that maps it.
 
+There are more layers to explore that aren't in this film, including Courts & police, Hospital access, Doctors & clinics, Childcare, Schools & learning, Newcomer services, Getting around, Workday Reach, Home costs (with property tax), Jobs & income, Daily needs, Internet & mobile, Who lives here, Population, Smoke & air, Hail, Drought, Drinking water, Radon and Hidden neighbours.
+
 Everything in this film is Living Skies Atlas, a free, unofficial 3D map of Saskatchewan's open data, filmed frame by frame from the real app. It is not affiliated with or endorsed by the Government of Saskatchewan or any agency whose data it uses. I built it with Claude Code (Anthropic's AI coding tool). The narration uses a synthetic voice (Kokoro).
 
 Try it yourself: {url}

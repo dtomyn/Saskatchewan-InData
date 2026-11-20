@@ -931,6 +931,8 @@ An unofficial, independent guide to Living Skies Atlas: a free 3D map that bring
 
 This video shows where to click, step by step: moving the map, showing and combining its {found['layers']} data layers and playing the timeline; then the atlas in every tense: live river, fire and air readings that refresh hourly, the daily record it keeps of them, climate projections to 2100, and a what-if that closes a hospital to see who would drive farther. It reads the land (crops by year, the power grid, flood-prone land), reaches all {found['csds']} census subdivisions and {found['small']} small communities, opens Saskatoon's report with its census tracts, ranks {found['all']} places with Town Finder, and shows where every number comes from.
 
+There are more layers to explore that aren't in this video, including Courts & police, Treaties & reserves, Hail, Drought, Climate normals, Population, Home costs (with property tax), Jobs & income, Daily needs, Schools & learning, Internet & mobile, Camping & rec and Workday Reach.
+
 Try it yourself: {url}
 
 Everything in this video is the real application, filmed frame by frame; the live readings are the ones the site showed on the day it was filmed. The narration uses a synthetic voice (Kokoro).
