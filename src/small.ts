@@ -6,6 +6,7 @@
 // Honesty rules (principle 4): what a small community lacks is skipped, never penalized, and its report says why for
 // every missing row. Its trips are straight lines (no road routing for small communities in this build), so they read
 // "km in a straight line", never minutes, and the Finder leaves them out of every drive-time criterion.
+import { auroraCell, skyLink } from './now';
 import { Data, Muni, Subdivision, fmt } from './data';
 import { esc } from './html';
 import { TownMetrics, townMetrics } from './metrics';
@@ -116,15 +117,18 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
       ${t.radon ? row('Radon', `${t.radon.region.pct.toFixed(0)}%`, `of tested homes at or above 200 Bq/m³ in its health region (${esc(t.radon.region.name)}); test your own home`) : absent('Radon', 'radon data not built')}
       ${t.climate ? row('Mean temperature', `${t.climate.meanTemp.toFixed(1)} °C`, `1991 on, borrowed from ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)`) : absent('Mean temperature', 'no long-record station')}
       ${t.light ? row('Shortest day', `${t.light.d[0].toFixed(1)} h`, `daylight on December 21 (computed) · aurora ${t.light.a}`) : absent('Shortest day', 'light data not built')}
+      ${(() => { const au = auroraCell(data, m.lon, m.lat); return au ? row('Aurora overhead now', au.v ?? why('—'), au.sub) : ''; })()}
       ${t.river ? row('River gauge', esc(t.river.name), `${Math.round(t.river.dist)} km away`) : absent('River gauge', 'no gauge within 25 km')}
       ${t.treaty ? row('Treaty', esc(t.treaty), 'the numbered treaty area it is in') : absent('Treaty', 'outside the numbered treaty areas drawn')}
     </div>
     <h3>Worked out for the ${big} places only</h3>
     <p class="note">Drive times by road, closure scenarios, camping, airports and transit, Workday Reach, CMHC market rents and vacancy, property tax, crops, industrial neighbours, drinking water advisories, newcomer services and climate projections. The public routing server the atlas uses cannot take several hundred more places, so distances here are straight lines and the Town Finder leaves small communities out of its drive-time criteria.</p>
     ${nearest.length ? `<div class="tr-falls" style="margin-top:8px">${nearest.map((x) => `<button class="tr-fall" data-town="${esc(x.x.key)}" type="button">${esc(x.x.name)}, ~${Math.round(x.d)} km: full report ›</button>`).join('')}</div>` : ''}
+    ${data.now.aurora && !data.now.skipped ? `<div class="tr-falls" style="margin-top:8px">${skyLink()}</div>` : ''}
     <div class="sm-census"></div>`;
   el.querySelector('.close-x')!.addEventListener('click', opts.onClose);
   el.querySelectorAll<HTMLButtonElement>('[data-town]').forEach((b) => b.addEventListener('click', () => opts.onTown(b.dataset.town!)));
+  el.querySelectorAll<HTMLElement>('[data-layer]').forEach((b) => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('atlas:layer', { detail: b.dataset.layer }))));
   // the census picture, as in the census-only report
   if (s) csdReport(data, s, 'housing').detail?.(el.querySelector<HTMLElement>('.sm-census')!);
   else el.querySelector('.sm-census')!.innerHTML = `<p class="note">${why('No census subdivision matched, so no census figures.')}</p>`;

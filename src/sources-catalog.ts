@@ -434,6 +434,14 @@ export const ALL_SOURCES: Source[] = [
     read: (d) => d.now.alerts && { n: d.now.alerts.alerts.length, what: `${d.now.alerts.alerts.length} alerts in effect, read ${ago(d.now.alerts.asOf)}` },
     rings: (d) => (d.now.alerts ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.alerts.asOf)}` } } : {}),
   },
+  {
+    id: 'light', key: 'now-aurora', name: 'Aurora now', color: '#3dffa8', group: 'Right now',
+    owner: 'NOAA Space Weather Prediction Center', title: 'OVATION aurora forecast (30 to 90 minutes ahead) and the planetary K index', url: 'https://www.swpc.noaa.gov/products/aurora-30-minute-forecast',
+    endpoint: 'services.swpc.noaa.gov/json/ovation_aurora_latest.json · services.swpc.noaa.gov/products/noaa-planetary-k-index.json', licence: 'Public domain (U.S. Government work)',
+    gives: 'A model’s chance of aurora overhead on a 1° grid, from the solar wind measured upstream of Earth, and the latest observed Kp. A short forecast, not a sighting; the edge of night drawn with it is computed from the clock.',
+    read: (d) => d.now.aurora && { n: d.now.aurora.grid.v.length, what: `${d.now.aurora.grid.v.length} grid cells over western Canada, solar wind measured ${ago(d.now.aurora.observed)}` },
+    rings: (d) => (d.now.aurora ? { [NOW]: { v: 1, label: `live: solar wind measured ${ago(d.now.aurora.observed)}` } } : {}),
+  },
 ];
 
 export const BARK: BarkSource[] = [

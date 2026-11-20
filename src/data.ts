@@ -436,7 +436,13 @@ export type NowOutlooks = {
   fire?: { valid: string; model: string; towns: Record<string, number> };
   smoke?: { issued: string; valid: string; towns: Record<string, number> };
 };
-export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; outlooks: NowOutlooks | null; skipped: boolean };
+/**
+ * NOAA SWPC's OVATION aurora forecast: the chance of aurora overhead (0–100) on a 1° grid over western Canada, rows
+ * south to north and each west to east from (`w`, `s`). `observed` (also `asOf`) is when the solar wind it is built on
+ * was measured, `valid` the time it is for. `kp`: the newest observed planetary K index, for the 3 hours from `t`.
+ */
+export type NowAurora = NowBase & { observed: string; valid: string; grid: { w: number; s: number; nx: number; ny: number; step: number; v: number[] }; kp?: { t: string; v: number; hours: number }; /** NOAA's predicted Kp for the windows still to come: [start, Kp] */ kpNext?: { hours: number; rows: [string, number][] } };
+export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; outlooks: NowOutlooks | null; aurora: NowAurora | null; skipped: boolean };
 
 export type Data = {
   outline: GeoJSON.Feature | null;
@@ -565,9 +571,9 @@ export async function loadAll(): Promise<Data> {
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
   const q = new URLSearchParams(location.search);
   const live = !q.has('film') || q.has('now');
-  const [nRivers, nFires, nAir, nAlerts, nOutlooks, nManifest] = live
-    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<NowOutlooks>('now/outlooks'), load<Data['manifest']>('now/manifest')])
-    : [null, null, null, null, null, null];
+  const [nRivers, nFires, nAir, nAlerts, nOutlooks, nAurora, nManifest] = live
+    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<NowOutlooks>('now/outlooks'), load<NowAurora>('now/aurora'), load<Data['manifest']>('now/manifest')])
+    : [null, null, null, null, null, null, null];
   return {
     outline,
     munis: (munis ?? []).filter((m) => (m.tier ?? 1) === 1),
@@ -615,6 +621,7 @@ export async function loadAll(): Promise<Data> {
       air: nAir?.asOf && Array.isArray(nAir.communities) ? nAir : null,
       alerts: nAlerts?.asOf && Array.isArray(nAlerts.alerts) ? nAlerts : null,
       outlooks: nOutlooks?.asOf && Array.isArray(nOutlooks.sources) ? nOutlooks : null,
+      aurora: nAurora?.valid && Array.isArray(nAurora.grid?.v) && nAurora.grid.v.length === nAurora.grid.nx * nAurora.grid.ny ? nAurora : null,
       skipped: !live,
     },
     manifest: { ...(manifest ?? {}), ...(nManifest ?? {}) },
