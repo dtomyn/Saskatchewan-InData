@@ -10,6 +10,7 @@ The Layer menu's **History on the timeline** group, scrubbed or played on the ti
 
 - **🔥 Wildfires** (1959 → 2025, then Now): fires flare as they start and leave scars: the mapped burn outline from the National Burned Area Composite for burns of 200 ha or more (1972–2024), an area-true circle otherwise; at **Now**, satellite hotspots of the last 24 hours and estimated perimeters.
 - **🌫 Smoke & air** (2001 → 2023, then Now): smoke days per year at six air stations; at **Now**, the AQHI at each community and its forecast high.
+- **Wind** and **Smoke forecast** chips (live, at the top of the Smoke & air and Wildfires panels): a weather model's wind for the current hour as drifting trails over the hotspots, and its forecast of wildfire smoke as a brown tint, every third hour for up to three days, with a scrubber that plays by itself.
 - **🌪 Tornadoes** (1980 → today, monthly; gap 2010–2016) with tracks.
 - **🧊 Hail** (2022 → today): Northern Hail Project storms and radar swaths.
 - **🌾 Drought** (Nov 2002 → today, monthly): Canadian Drought Monitor D0–D4.
@@ -30,6 +31,7 @@ Turn on a history layer and press play, or set a year; click an event for its pa
 - Drought is a consensus map on a 10 km grid; a town near an edge can read one step off.
 - The history is a record, not a forecast, and none of it is an insurance rating. The **Outlooks** are published forecasts, shown with their issue and valid times and dropped once those pass; they never feed the Finder. Flood-prone land is the agency's modelled 1:500-year flood, not this year's risk, and most of the province has no published map: no shading does not mean no risk.
 - Live readings refresh about hourly and may be late or stop: each shows its age, greys after 3 hours and is not drawn after 24. A hotspot is heat seen from a satellite, not a confirmed fire. The AQHI is an index, not the smoke-day count, and is borrowed from the nearest community within 150 km. Live readings never feed the Finder.
+- Wind and Smoke forecast are **model forecasts, not readings**: each shows its model run and the hour it is for and is dropped when that has passed. The trails show the wind's direction and speed and count nothing; the smoke is fine particles from fires only, not the AQHI and not a smoke-day count.
 
 ## Check it
 
@@ -39,4 +41,5 @@ atlas.tour('province')   // wildfires played from 1959, the north in 2015, droug
 // live readings: load /?film&now (plain ?film skips them)
 atlas.clearMap(); atlas.focus('rivers')   // lands on Now; flood-prone land shaded around mapped towns
 atlas.openTown('regina')                   // Right now, then Outlooks
+atlas.clearMap(); atlas.focus('smoke')    // then the Wind chip: trails drift; Smoke forecast: the scrubber plays
 ```

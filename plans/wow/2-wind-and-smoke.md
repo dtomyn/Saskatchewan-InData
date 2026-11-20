@@ -1,6 +1,6 @@
 # 2. Wind and smoke in motion
 
-**Effort:** M. **Depends on:** nothing built; reuses the hourly run. **Status:** not started.
+**Effort:** M. **Depends on:** nothing built; reuses the hourly run. **Status:** ✅ built (`now-wind`, `now-plume`, `src/particles.ts`, `src/wind.ts`). See *As built* at the end.
 
 ## Goal
 
@@ -16,8 +16,8 @@ On Smoke & air (and Wildfires at Now), show the air moving: particles streaming 
 
 | What | Feed | Status |
 |---|---|---|
-| Surface wind (10 m, u and v) | ECCC HRDPS or RDPS on MSC GeoMet, as a coverage (`geo.weather.gc.ca/geomet`, WCS) or from the Datamart GRIB2 files | *(verify)*: the `projections` stage already reads a GeoMet coverage, so the route is known; the layer names and a script-readable format for wind are not confirmed |
-| Smoke plume, hourly, 72 h | RAQDPS-FW (FireWork) surface PM2.5 from wildfires on GeoMet | *(verify)*: `now-outlooks` reads the daily-maximum layer one point at a time; an hourly grid for the province in one request is not confirmed |
+| Surface wind (10 m) | ECCC RDPS on MSC GeoMet's WCS (`geo.weather.gc.ca/geomet`), `RDPS_10km_WindSpeed_10m` and `RDPS_10km_WindDir_10m` | ✅ confirmed: GeoMet has no surface u and v layers, so speed and direction are read and u and v worked out; `FORMAT=image/tiff` answers an uncompressed 32-bit float GeoTIFF, read by `scripts/lib/tiff.mjs` |
+| Smoke plume, hourly, 72 h | `RAQDPS.Sfc_PM2.5-WildfireSmokePlume` on the same WCS | ✅ confirmed: one request returns the province's grid for one hour (kg/m³), so a run is 25 small requests at most |
 
 Licence for both: ECCC Data Servers End-use Licence, already used by the outlooks.
 
@@ -51,3 +51,13 @@ Licence for both: ECCC Data Servers End-use Licence, already used by the outlook
 
 - Which model for wind: HRDPS (2.5 km, 48 h) or RDPS (10 km, 84 h). RDPS is enough for a province-wide picture and matches the plume's 72 hours.
 - Whether a forecast wind (a scrubber shared with the plume) is wanted, or only the current hour.
+
+## As built
+
+- **Wind model:** RDPS, the current forecast hour only (one frame, 17 KB). A forecast wind sharing the plume's scrubber is not built.
+- **Grid:** 0.25° nodes from 112° W, 47.5° N (51 × 57), a margin around the province so wind and smoke are seen arriving.
+- **Frames:** from the hour now is in, every third hour to the end of the newest run, so 25 right after a run and fewer as it ages (a new run every 12 hours).
+- **Where:** both chips sit at the top of the Smoke & air and Wildfires panels and draw at the timeline's Now stop; turning one on from elsewhere on the timeline goes to Now.
+- **Dropping:** the wind is not drawn once its hour is 3 hours past; a smoke frame is dropped once the next one's time has passed; neither is drawn when the file is more than 24 hours old.
+- **The check against `outlooks.json`** cannot be made as written: the outlooks hold the day's highest value (the `-DMax` layer), not an hour's. The grid was checked instead against GeoMet's own point query (GetFeatureInfo) on the hourly layer for the same hour and run (3.24 µg/m³ in the file, 3.33 from the query).
+- **Frame rate:** moving 3,000 particles costs about 1.4 ms a frame on the build machine. The browser pane used for checking caps at 30 frames a second with or without the layer, so 50 frames a second was not measured there.

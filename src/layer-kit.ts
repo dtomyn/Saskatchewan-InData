@@ -9,8 +9,9 @@ import { Data, HistoryFeed, Muni, km } from './data';
 import { esc } from './html';
 import { barChart, ChartHandle } from './charts';
 
-/** `hovered` is the municipality key under the pointer (town pin or column), if any. */
-export type Ctx = { time: number; speed: number; data: Data; selected: string | null; hovered: string | null; focusedId: string; clock: number };
+/** `hovered` is the municipality key under the pointer (town pin or column), if any. `view` is what the map shows: its
+ *  zoom and the box around its corners (west, south, east, north), for a layer that draws only what is in sight. */
+export type Ctx = { time: number; speed: number; data: Data; selected: string | null; hovered: string | null; focusedId: string; clock: number; view: { zoom: number; box: [number, number, number, number] } };
 
 /**
  * A moment on the timeline. Only `t`, `layer` ('*' for island-wide), `title` and `body` are required; everything else

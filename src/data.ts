@@ -442,7 +442,20 @@ export type NowOutlooks = {
  * was measured, `valid` the time it is for. `kp`: the newest observed planetary K index, for the 3 hours from `t`.
  */
 export type NowAurora = NowBase & { observed: string; valid: string; grid: { w: number; s: number; nx: number; ny: number; step: number; v: number[] }; kp?: { t: string; v: number; hours: number }; /** NOAA's predicted Kp for the windows still to come: [start, Kp] */ kpNext?: { hours: number; rows: [string, number][] } };
-export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; outlooks: NowOutlooks | null; aurora: NowAurora | null; skipped: boolean };
+/** The grid the wind and the smoke forecast share: nodes every `step`° from (`w`, `s`), rows south to north, each west to east. */
+export type AirGrid = { w: number; s: number; nx: number; ny: number; step: number };
+/**
+ * ECCC's RDPS 10 m wind for one forecast hour (`valid`) of the model run `run`: its eastward (`u`) and northward (`v`)
+ * parts at each grid node, in steps of `scale` m/s. A forecast, not a measurement.
+ */
+export type NowWind = NowBase & { run: string; valid: string; model: string; height: number; grid: AirGrid; scale: number; u: number[]; v: number[] };
+/**
+ * ECCC's RAQDPS-FW (FireWork) forecast of surface PM2.5 from wildfire smoke, one frame every `everyH` hours of the run
+ * `run`. A frame's `d` is base64 of one byte a cell, q = round(10·√(µg/m³)), with runs of zeros packed as [0, length];
+ * `max` is its highest value on the grid, µg/m³.
+ */
+export type NowPlume = NowBase & { run: string; model: string; everyH: number; grid: AirGrid; frames: { t: string; max: number; d: string }[] };
+export type Now = { rivers: NowRivers | null; fires: NowFires | null; air: NowAir | null; alerts: NowAlerts | null; outlooks: NowOutlooks | null; aurora: NowAurora | null; wind: NowWind | null; plume: NowPlume | null; skipped: boolean };
 
 export type Data = {
   outline: GeoJSON.Feature | null;
@@ -571,9 +584,9 @@ export async function loadAll(): Promise<Data> {
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
   const q = new URLSearchParams(location.search);
   const live = !q.has('film') || q.has('now');
-  const [nRivers, nFires, nAir, nAlerts, nOutlooks, nAurora, nManifest] = live
-    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<NowOutlooks>('now/outlooks'), load<NowAurora>('now/aurora'), load<Data['manifest']>('now/manifest')])
-    : [null, null, null, null, null, null, null];
+  const [nRivers, nFires, nAir, nAlerts, nOutlooks, nAurora, nWind, nPlume, nManifest] = live
+    ? await Promise.all([load<NowRivers>('now/rivers'), load<NowFires>('now/fires'), load<NowAir>('now/air'), load<NowAlerts>('now/alerts'), load<NowOutlooks>('now/outlooks'), load<NowAurora>('now/aurora'), load<NowWind>('now/wind'), load<NowPlume>('now/plume'), load<Data['manifest']>('now/manifest')])
+    : [null, null, null, null, null, null, null, null, null];
   return {
     outline,
     munis: (munis ?? []).filter((m) => (m.tier ?? 1) === 1),
@@ -622,6 +635,8 @@ export async function loadAll(): Promise<Data> {
       alerts: nAlerts?.asOf && Array.isArray(nAlerts.alerts) ? nAlerts : null,
       outlooks: nOutlooks?.asOf && Array.isArray(nOutlooks.sources) ? nOutlooks : null,
       aurora: nAurora?.valid && Array.isArray(nAurora.grid?.v) && nAurora.grid.v.length === nAurora.grid.nx * nAurora.grid.ny ? nAurora : null,
+      wind: nWind?.valid && nWind.grid && Array.isArray(nWind.u) && Array.isArray(nWind.v) && nWind.u.length === nWind.grid.nx * nWind.grid.ny && nWind.v.length === nWind.u.length ? nWind : null,
+      plume: nPlume?.run && nPlume.grid && Array.isArray(nPlume.frames) && nPlume.frames.length > 1 ? nPlume : null,
       skipped: !live,
     },
     manifest: { ...(manifest ?? {}), ...(nManifest ?? {}) },

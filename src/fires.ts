@@ -6,6 +6,7 @@ import * as d3 from 'd3';
 import { Data, FirePoint, BurnPerimeter, lowerBound, Hotspot, fmt, FirePerimeter } from './data';
 import { AtlasLayer, rgb, RecentSpan, filterExt, NO_DEPTH, ADDITIVE, dashExt, glowWindow, RGBA, nearestTown, kicker, heroStats, deferChart, mk, sourceLine, isoDate } from './layer-kit';
 import { HistHotspot, firesHistory, dayT, tDay, DAY_T, dayText } from './history';
+import { airLayers, airPanel, airTooltip } from './wind';
 import { ms, freshness, plainAge, provinceOutlook, alertList, alertsInEffect, nowBlock, NOW_T, drawable, alertOutlines, tickAges, isNow, alertEvent, ago, skTime, alertTooltip } from './now';
 import { barChart } from './charts';
 import { safeUrl, esc } from './html';
@@ -117,9 +118,12 @@ export function firesLayer(data: Data): AtlasLayer {
       asOf: () => ms(nowF.asOf),
       archiveEnd: y1 + 0.99,
       recent: firesRecent,
-      build({ clock }) {
+      build(c) {
+        const { clock } = c;
+        // the wind and the smoke forecast (src/wind.ts), when their chips are on, drift over the hotspots
+        const air = airLayers('fires', c);
         // the list as a whole goes stale (the hourly refresh stopped), not each hotspot: a hotspot is up to 24 h old by design
-        if (!drawable(nowF.asOf)) return [];
+        if (!drawable(nowF.asOf)) return air;
         const stale = freshness(nowF.asOf) === 'stale';
         const pulse = 0.5 + 0.5 * Math.sin(clock * 3);
         return [
@@ -160,6 +164,7 @@ export function firesLayer(data: Data): AtlasLayer {
             parameters: NO_DEPTH,
           }),
           ...alertOutlines('fires-now-alerts', alertsInEffect(data, 'fires')),
+          ...air,
         ];
       },
     } : undefined,
@@ -232,9 +237,11 @@ export function firesLayer(data: Data): AtlasLayer {
     },
     panel(el) {
       el.innerHTML = `${kicker(l, `Wildfire history · ${y0} → ${y1}`)}
+        <div class="air-host"></div>
         ${firesNow()}
         <h2>Where Saskatchewan burns</h2>
         <p class="lede">Every fire the province and Parks Canada reported since ${y0}, at the point it started. New fires flare; each then leaves a scar: ${perims.length ? `its mapped outline where the National Burned Area Composite has one (${fmt.int(perims.length)} burns of 200 ha or more, ${py0}–${py1}), otherwise ` : ''}a circle the size of the area it burned. Almost all of the burning is in the boreal north, and most of it is started by lightning.${nowF ? ' At the <b>Now</b> stop, the pale yellow points are satellite hotspots from the last 24 hours: heat seen from space, not confirmed fires. Gas flares, farm and slash burning show up too.' : ''}</p>`;
+      const air = l.now ? airPanel(el.querySelector<HTMLElement>('.air-host')!, data, { id: 'fires', atNow: (t) => isNow(t, l.range[1]) }) : null;
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Area burned per year</h3>`);
       const set = deferChart(el.appendChild(mk('div')), (c) =>
@@ -249,7 +256,9 @@ export function firesLayer(data: Data): AtlasLayer {
         <p class="note">${perims.length ? `Outlines are the National Burned Area Composite’s mapped burns (from satellite imagery and agency mapping), simplified to about a twelfth of each burn’s width; a fire under 200 ha, before ${py0} or after ${py1} (the composite’s latest year) is a circle. ` : ''}A circle shows how much ground a fire burned, not its real shape. Older records are less complete, especially for small fires, and much of the far north is an observation zone where fires are watched rather than fought. Prescribed burns are left out.</p>
         ${sourceLine(`${fires?.source ?? ''}${fires?.perimeterSource ? `; ${fires.perimeterSource}` : ''}${fires?.licence ? `. ${fires.licence}` : ''}`)}`);
       return {
-        update({ time }) {
+        update(c) {
+          const { time } = c;
+          air?.update(c);
           tickAges(el);
           const y = Math.floor(time);
           const cz = causeByYear[y] ?? [0, 0, 0];
@@ -270,6 +279,7 @@ export function firesLayer(data: Data): AtlasLayer {
     },
     describe(info) {
       const lid = info.layer?.id;
+      if (lid?.includes('-air-')) return null;
       if (lid?.startsWith('fires-hist') && Array.isArray(info.object)) {
         const [lon, lat, t, frp] = info.object as HistHotspot;
         const { town, km: d } = nearestTown(data.munis, lon, lat);
@@ -337,6 +347,8 @@ export function firesLayer(data: Data): AtlasLayer {
       };
     },
     tooltip(info) {
+      const air = airTooltip(info, data);
+      if (air !== undefined) return air;
       const o: any = info.object;
       if (info.layer?.id.startsWith('fires-hist') && Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">recorded, not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${dayText(tDay(o[2]))}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
       if (isLive(info.layer?.id)) {

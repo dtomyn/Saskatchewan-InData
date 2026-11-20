@@ -5,7 +5,7 @@ The atlas answers careful questions well. These six plans add moments that make 
 | # | Plan | What a visitor sees | Effort | Needs |
 |---|---|---|---|---|
 | 1 | ✅ [Live aurora and the night line](1-live-aurora.md) | Tonight's auroral oval over the north, and the edge of night crossing the province | S | — |
-| 2 | [Wind and smoke in motion](2-wind-and-smoke.md) | Particles streaming with the wind; the smoke forecast drifting over 72 hours | M | A particle layer |
+| 2 | ✅ [Wind and smoke in motion](2-wind-and-smoke.md) | Particles streaming with the wind; the smoke forecast drifting over 72 hours | M | A particle layer |
 | 3 | [Replay a fire season](3-fire-season-replay.md) | A season's hotspots igniting day by day, burn outlines filling in behind | S–M | The daily record |
 | 4 | ✅ [Guided fly-throughs](4-guided-tours.md) | "Take the tour": the camera flies, layers switch, captions explain | M | — |
 | 5 | [A town's future climate twin](5-climate-twin.md) | An arc from a town to the place whose climate today is the town's in 2060 | M | — |

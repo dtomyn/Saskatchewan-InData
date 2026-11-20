@@ -3,7 +3,7 @@
 import * as d3 from 'd3';
 import { Data, fmt } from './data';
 import { provinceAnomalies } from './metrics';
-import { ago } from './now';
+import { ago, skTime } from './now';
 
 export type Ring = { v: number; label: string; proj?: boolean };
 export type Source = {
@@ -441,6 +441,22 @@ export const ALL_SOURCES: Source[] = [
     gives: 'A model’s chance of aurora overhead on a 1° grid, from the solar wind measured upstream of Earth, and the latest observed Kp. A short forecast, not a sighting; the edge of night drawn with it is computed from the clock.',
     read: (d) => d.now.aurora && { n: d.now.aurora.grid.v.length, what: `${d.now.aurora.grid.v.length} grid cells over western Canada, solar wind measured ${ago(d.now.aurora.observed)}` },
     rings: (d) => (d.now.aurora ? { [NOW]: { v: 1, label: `live: solar wind measured ${ago(d.now.aurora.observed)}` } } : {}),
+  },
+  {
+    id: 'smoke', key: 'now-wind', name: 'Wind now', color: '#9ad8ff', group: 'Right now',
+    owner: 'Environment and Climate Change Canada', title: 'Regional Deterministic Prediction System (RDPS, 10 km): wind speed and direction 10 m above the ground', url: 'https://eccc-msc.github.io/open-data/msc-data/nwp_rdps/readme_rdps_en/',
+    endpoint: 'geo.weather.gc.ca/geomet (WCS) · RDPS_10km_WindSpeed_10m, RDPS_10km_WindDir_10m', licence: 'ECCC Data Servers End-use Licence',
+    gives: 'A weather model’s wind for the current forecast hour on a 0.25° grid over the province, drawn as drifting trails on Smoke & air and Wildfires. A forecast, not a measurement; the trails show direction and speed and count nothing.',
+    read: (d) => d.now.wind && { n: d.now.wind.u.length, what: `${d.now.wind.u.length} grid points for the model’s hour of ${skTime(d.now.wind.valid)}, read ${ago(d.now.wind.asOf)}` },
+    rings: (d) => (d.now.wind ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.wind.asOf)}` } } : {}),
+  },
+  {
+    id: 'smoke', key: 'now-plume', name: 'Smoke forecast', color: '#c79a63', group: 'Right now',
+    owner: 'Environment and Climate Change Canada', title: 'Regional Air Quality Deterministic Prediction System with FireWork (RAQDPS-FW): surface PM2.5 from wildfire smoke, hourly to 72 hours', url: 'https://eccc-msc.github.io/open-data/msc-data/nwp_raqdps-fw/readme_raqdps-fw_en/',
+    endpoint: 'geo.weather.gc.ca/geomet (WCS) · RAQDPS.Sfc_PM2.5-WildfireSmokePlume', licence: 'ECCC Data Servers End-use Licence',
+    gives: 'Where a model expects wildfire smoke to drift over the next three days, every third hour on a 0.25° grid. Fine particles from fires only: not the AQHI and not the smoke-day count.',
+    read: (d) => d.now.plume && { n: d.now.plume.frames.length, what: `${d.now.plume.frames.length} forecast hours of the model run of ${skTime(d.now.plume.run)}, read ${ago(d.now.plume.asOf)}` },
+    rings: (d) => (d.now.plume ? { [NOW]: { v: 1, label: `live: read ${ago(d.now.plume.asOf)}` } } : {}),
   },
 ];
 
