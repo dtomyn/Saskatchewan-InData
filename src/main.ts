@@ -16,10 +16,11 @@ import { buildLayers } from './layers';
 import { eventColor, eventDate, eventLayers, fromTooltip, momentsList, renderEventPanel } from './events';
 import { renderFinder, renderTownReport } from './panels';
 import { openSources, sourcesOpen } from './sources';
-import { Ranked, loadWeights } from './metrics';
+import { Ranked, getWork, loadWeights, setWork } from './metrics';
 import { SCENARIO_LABEL, ScenarioKind, clearScenario, closedSites, scenarioOn, setClosed } from './scenario';
 import { esc } from './html';
 import { renderSmallReport } from './small';
+import { TOURS, Tours, initTours } from './tours';
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl);
 
@@ -71,6 +72,9 @@ let map: maplibregl.Map;
 let overlay: MapboxOverlay;
 let panelHandle: PanelHandle | null = null;
 let firstLabelLayer: string | undefined;
+let tours: Tours | null = null;
+// a tour opened from a link (?tour=<id>) starts in place of the opening flight
+const linkedTour = TOURS.find((t) => t.id === new URLSearchParams(location.search).get('tour'))?.id ?? null;
 
 const ctx = (): Ctx => ({ time: state.time, speed: state.speed, data, selected: state.selected, hovered: state.hovered, focusedId: state.focused, clock: performance.now() });
 const focusedLayer = () => byId[state.focused];
@@ -150,6 +154,7 @@ function initMap() {
 
     $('loader').classList.add('done');
     setTimeout(() => {
+      if (linkedTour && tours?.start(linkedTour, { fromLink: true })) return;
       map.flyTo({ ...HOME, duration: 4200, curve: 1.6, essential: true });
     }, 300);
   });
@@ -411,6 +416,50 @@ function closeFinder() {
   state.selected = null;
   $('finder-btn').classList.remove('active');
   showLayerPanel();
+}
+
+/** Leaves the Finder, a report or an event for the layer view, without drawing anything yet. */
+function leaveModes() {
+  state.mode = 'layer';
+  state.ranked = null;
+  state.selected = null;
+  state.event = null;
+  eventReturn = null;
+  $('finder-btn').classList.remove('active');
+}
+
+function setSpeed(v: number) {
+  state.speed = v;
+  const sel = $<HTMLSelectElement>('speed-sel');
+  if ([...sel.options].some((o) => +o.value === v)) sel.value = String(v);
+}
+
+// What a guided tour (src/tours.ts) can change, so that leaving one puts the app back as it was.
+type Snapshot = { visible: string[]; focused: string; timeLayer: string; time: number; speed: number; mode: Mode; selected: string | null; event: AtlasEvent | null; panelOpen: boolean; camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } };
+function snapshot(): Snapshot {
+  const c = map.getCenter();
+  return {
+    visible: [...state.visible], focused: state.focused, timeLayer: state.timeLayer, time: state.time, speed: state.speed,
+    mode: state.mode, selected: state.selected, event: state.event, panelOpen: !$('panel').classList.contains('collapsed'),
+    camera: { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() },
+  };
+}
+function restore(s: Snapshot) {
+  setPlaying(false);
+  leaveModes();
+  state.visible = new Set(s.visible);
+  state.focused = s.focused;
+  state.timeLayer = s.timeLayer;
+  setSpeed(s.speed);
+  focus(s.focused);
+  if (s.mode === 'finder') openFinder();
+  else if (s.mode === 'town' && s.selected) openPlace(s.selected);
+  else if (s.mode === 'event' && s.event) openEvent(s.event);
+  state.time = s.time;
+  setPanelOpen(s.panelOpen);
+  map.stop();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(s.camera);
+  else map.flyTo({ ...s.camera, duration: 1400, essential: true });
 }
 
 function swapPanel(fill: () => void) {
@@ -872,6 +921,8 @@ function bindControls() {
   window.addEventListener('resize', () => { drawSpark(); });
   window.addEventListener('keydown', (e) => {
     if (sourcesOpen() || (e.target as HTMLElement).matches('input, select, textarea')) return;
+    // while a tour is up, Space, the arrows and Escape are its own
+    if (tours?.key(e)) return;
     if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
     const step = timeLayer().monthly ? 1 / 12 : 1;
     if (e.key === 'ArrowRight') { setPlaying(false); setTime(Math.floor(state.time / step + 1e-6) * step + step); }
@@ -922,6 +973,12 @@ async function boot() {
   state.time = byId.crime.range[0];
   initMap();
   bindControls();
+  tours = initTours({
+    map, state, data, layers, HOME, focus, clearMap, openTown, openFinder, setTime, setPlaying, setSpeed, getWork, setWork, snapshot,
+    reset: () => { leaveModes(); clearMap(); },
+    refreshPanel: () => { if (state.mode === 'layer') showLayerPanel(); },
+    restore: (s) => restore(s as Snapshot),
+  });
   // a daily record arriving redraws the sparkline (its dashed line, the hatch's new end)
   onHistory(() => drawSpark());
   focus('province');
@@ -950,7 +1007,7 @@ async function boot() {
   for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping', 'commute']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));
   // The explainer video (video/render.py) drives the atlas through this handle; only set with ?film.
   if (new URLSearchParams(location.search).has('film'))
-    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openSmall, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario };
+    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openSmall, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario, tour: tours.start, tours: TOURS };
 }
 
 boot();

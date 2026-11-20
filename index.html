@@ -31,6 +31,12 @@
         </button>
         <nav id="layer-menu" class="layer-menu" aria-label="Data layers" hidden></nav>
       </div>
+      <div class="tour-picker">
+        <button id="tour-btn" class="pill-btn tour-btn" aria-haspopup="true" aria-expanded="false" aria-controls="tour-menu" title="Let the atlas show you around">
+          <span class="i" aria-hidden="true">▶</span><span class="tour-btn-txt">Take the tour</span>
+        </button>
+        <nav id="tour-menu" class="layer-menu tour-menu" aria-label="Guided tours" hidden></nav>
+      </div>
     </header>
 
     <aside id="panel" class="panel" aria-live="polite"></aside>
@@ -74,6 +80,7 @@
       </div>
     </section>
 
+    <section id="tour-bar" class="tour-bar" aria-label="Guided tour" hidden></section>
     <div id="scenario-banner" class="scenario-banner" role="status" aria-live="polite" hidden></div>
     <div id="tooltip" class="tooltip" hidden></div>
     <div id="modal" class="modal" hidden></div>

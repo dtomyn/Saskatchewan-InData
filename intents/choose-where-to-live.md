@@ -24,6 +24,7 @@ Open the Town Finder, pick a preset or drag sliders, then open a ranked place fo
 ## Check it
 
 ```js
+atlas.tour('town')   // the guided tour: the Finder, Saskatoon's report, Workday Reach
 atlas.openFinder()
 document.querySelector('[data-preset="family"]').click()
 ```

@@ -23,5 +23,5 @@ Turn on Treaties & reserves; drag the timeline back to 1871 and play; click an e
 ## Check it
 
 ```js
-atlas.clearMap(); atlas.focus('treaties'); atlas.setTime(1876.7)
+atlas.tour('people')   // the guided tour: treaties and reserves, then who lives here and newcomer services
 ```

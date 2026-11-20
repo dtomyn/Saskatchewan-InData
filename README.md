@@ -43,6 +43,24 @@ It is an exploration tool, not legal, safety or real-estate advice.
 
 Plus, as in Island Atlas: a **Town Report** for each of the 62 places (crime, the drive to court / police / hospital / campground / school, the commute to your workplace, parks nearby, daily needs ✓/✗, schools (elementary, high school, French, post-secondary), internet (50/10 share, best speed offered, mobile), community (immigrants, recent arrivals, top birthplaces and home languages, French, Indigenous identity, places of worship), smoke days (borrowed from the nearest air station), hail (storms within 50 km and the largest hail), drought (months in severe drought or worse over ten years, the latest month's category, and every month since 2002 as a strip), doctors & clinics (the drive to the nearest clinic and pharmacy, and how many are in town), newcomer help (the drive to settlement help, English classes, Service Canada and an SGI issuer), getting around (the drive to the nearest airport with scheduled flights; a VIA stop, an intercity bus stop and city buses in town), childcare (the drive to the nearest licensed centre, centres and family homes in town), drinking water (an advisory on the town water system, advisories within 25 km), radon (the share of tested homes over the guideline in the health region and the town's postal areas), light & dark (daylight on Dec 21 and Jun 21 with civil twilight, the aurora band, the drive to the nearest campground in a dark-sky preserve), hidden neighbours (wells within 5 km of town limits by status, pipelines within 2 km and how many carry sour gas, the nearest NPRI-reporting site, a producing mine within 25 km), home costs, regional jobs and household income, property tax (indicative, on the median home), hazards, climate), a **Town Finder** that ranks places by weighted criteria (presets: Balanced, Safety first, Growing family, Quiet & small, New to Saskatchewan; set "I work in…" to switch on a Short commute criterion; Lower property tax, Jobs nearby, Higher income, School nearby, French schooling, Fast internet, Diverse community (immigrant share), Newcomer services nearby, Near an airport, Can live without a car, Clinic nearby, Childcare nearby, Fewer smoke days, Less hail, Fewer drought months, Fewer industrial neighbours and Lower radon start at weight 0; your weights and workplace are remembered in the browser), curated **historic events** (Treaty 4 and 6, the Riel trial, the Regina Cyclone, the 2011 Souris flood, the 2015 northern fires), and a **Data & sources** view drawn as an aspen round.
 
+## Guided tours
+
+**Take the tour**, beside the Layer button, lists four short tours (about a minute each). The app drives itself: the camera flies, layers switch, the timeline plays, and a caption bar says what is on screen.
+
+| Tour | Link | What it shows |
+|---|---|---|
+| A province in two minutes | `?tour=province` | Wildfires through the decades, the 2021 drought, what grows here, day length |
+| Choosing a town | `?tour=town` | The Town Finder, Saskatoon's Town Report, Workday Reach |
+| When the land turns | `?tour=hazards` | Rivers in flood, tornadoes, hail, flood-prone land in Moose Jaw |
+| Who is here | `?tour=people` | Treaties and reserves, who lives here, newcomer services |
+
+- The bar has a dot per step, **Back**, **Pause**, **Next** and **×** (Exit). Space pauses, the arrow keys step, Esc exits.
+- Any click or drag in the app, or a scroll on the map, pauses the tour and offers **Explore from here**, which stops the tour and keeps the map as it is. **Exit** puts the layers, timeline, panel and camera back as they were before the tour.
+- Nothing is pre-rendered: it is the real app with today's data, so any caption can be checked on the spot. A caption says only what the layer on screen shows, with that layer's caveats.
+- A tour changes no Town Finder weight and no scenario. Workday Reach needs a workplace: if none is set the tour uses Saskatoon and says so, and the setting is put back when the tour ends.
+- With reduced motion switched on in the system, the camera jumps instead of flying and the timeline steps instead of playing.
+- An unknown `?tour=` id opens the normal app. Tours are step lists in `src/tours.ts`.
+
 ## Getting started
 
 ```bash
