@@ -150,9 +150,10 @@ export function firesLayer(data: Data): AtlasLayer {
   let seasonBurns: PerimPoly[] = [];
   let endClock: number | null = null;
   const FLARE_DAYS = 5;
-  const sDay = (t: number) => (t - season!.a) / DAY_T;
+  // each takes its season, never the module's: deck.gl and the panel may call back once more after the replay has stopped
+  const sDay = (s: FireSeason, t: number) => (t - s.a) / DAY_T;
   /** the last moment of the season's last day, so the end of the replay still reads as that day */
-  const sClamp = (t: number) => Math.min(Math.max(t, season!.a), season!.b - DAY_T / 1440);
+  const sClamp = (s: FireSeason, t: number) => Math.min(Math.max(t, s.a), s.b - DAY_T / 1440);
   const replayEvent = (year: number | null) => window.dispatchEvent(new CustomEvent('atlas:replay', { detail: { layer: 'fires', year } }));
   const replay: NonNullable<AtlasLayer['replay']> = {
     seasons: (force) => fireSeasonYears(force),
@@ -168,11 +169,11 @@ export function firesLayer(data: Data): AtlasLayer {
     },
     stop() { season = null; spread = []; seasonBurns = []; endClock = null; },
     days: () => (season?.days ?? []).map((d) => ({ x: d.t, y: d.n })),
-    at(t) { const day = tDay(sClamp(t)); return { day, covered: season?.days.find((d) => d.day === day)?.n != null }; },
+    at(t) { const s = season, day = tDay(s ? sClamp(s, t) : t); return { day, covered: s?.days.find((d) => d.day === day)?.n != null }; },
     build({ time, clock }) {
       const s = season;
       if (!s) return [];
-      const d = sDay(time), n = sDay(s.b);
+      const d = sDay(s, time), n = sDay(s, s.b);
       // at the end, the season's mapped burns (the official record) fade in, when the composite has published them
       const done = time >= s.b - DAY_T / 100;
       if (!done) endClock = null; else endClock ??= clock;
@@ -187,7 +188,7 @@ export function firesLayer(data: Data): AtlasLayer {
           radiusMinPixels: 1.2,
           getFillColor: [235, 100, 40, 75],
           extensions: filterExt,
-          getFilterValue: (p) => sDay(p[2]),
+          getFilterValue: (p) => sDay(s, p[2]),
           filterRange: [-1, d],
           pickable: true,
           parameters: NO_DEPTH,
@@ -202,7 +203,7 @@ export function firesLayer(data: Data): AtlasLayer {
           getWidth: 1.4,
           widthUnits: 'pixels',
           extensions: filter2,
-          getFilterValue: (e) => [sDay(e.from), Number.isFinite(e.to) ? sDay(e.to) : 1e6],
+          getFilterValue: (e) => [sDay(s, e.from), Number.isFinite(e.to) ? sDay(s, e.to) : 1e6],
           // drawn from the day its cell first lit until the cell beyond it lights
           filterRange: [[-1, d], [d, 2e6]],
           parameters: NO_DEPTH,
@@ -216,7 +217,7 @@ export function firesLayer(data: Data): AtlasLayer {
           radiusMinPixels: 2.5,
           getFillColor: [255, 190, 90, 120],
           extensions: filterExt,
-          getFilterValue: (p) => sDay(p[2]),
+          getFilterValue: (p) => sDay(s, p[2]),
           filterRange: [d - FLARE_DAYS, Math.min(d, n)],
           filterSoftRange: [d - 0.4, Math.min(d, n)],
           parameters: ADDITIVE,
@@ -289,7 +290,7 @@ export function firesLayer(data: Data): AtlasLayer {
     }
     return {
       update({ time }: Ctx) {
-        const t = sClamp(time), day = tDay(t), i = s.days.findIndex((d) => d.day === day), dy = s.days[i];
+        const t = sClamp(s, time), day = tDay(t), i = s.days.findIndex((d) => d.day === day), dy = s.days[i];
         const done = time >= s.b - DAY_T / 100;
         hero(0, dayText(day), 'the day on the map');
         hero(1, dy?.n == null ? '–' : fmt.int(dy.n), dy?.n == null ? 'no record for this day' : 'hotspots seen that day (not fires)');

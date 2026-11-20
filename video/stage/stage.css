@@ -82,3 +82,13 @@ html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; backgro
 .end p { margin: 22px 0 0; font-size: 28px; color: var(--ink-2); }
 .end .url { display: inline-block; margin-top: 40px; padding: 14px 30px; border-radius: 999px; font-family: var(--mono); font-size: 26px; color: #fff; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .2); transform: none; }
 .end .fine { margin-top: 46px; font-size: 17px; color: var(--ink-3); max-width: 1100px; line-height: 1.6; }
+
+/* ---------- the narrative films: cinema bars and story beats ---------- */
+.lb { position: absolute; left: 0; right: 0; height: 0; background: #000; pointer-events: none; }
+#lb-top { top: 0; }
+#lb-bottom { bottom: 0; }
+.beat { position: absolute; left: 0; top: 0; padding: 70px 120px 90px 72px; pointer-events: none;
+  background: radial-gradient(ellipse at 0% 0%, rgba(2, 5, 12, .78) 0%, rgba(2, 5, 12, .5) 45%, transparent 75%); }
+.beat .k { font-family: var(--mono); font-weight: 700; font-size: 18px; text-transform: uppercase; letter-spacing: 4px; color: var(--c); text-shadow: 0 0 24px color-mix(in srgb, var(--c) 60%, transparent); }
+.beat .t { margin-top: 12px; font-family: var(--display); font-weight: 700; font-size: 62px; line-height: 1.05; letter-spacing: -.5px; max-width: 1000px; text-shadow: 0 4px 30px rgba(0, 0, 0, .8); }
+.beat .w { display: inline-block; white-space: pre; }

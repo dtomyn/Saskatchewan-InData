@@ -127,7 +127,15 @@ Put `kokoro-v1.0.onnx` and `voices-v1.0.bin` (github.com/thewh1teagle/kokoro-onn
 .venv/Scripts/python.exe video/render.py                # 2560×1440 master + 1080p copy
 ```
 
-Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu must be renamed in `video/storyboard.py` too.
+Outputs land in `video/out/` (not committed). A layer renamed in the Layer menu must be renamed in `video/storyboard.py` (and `storyboard_sky.py`) too.
+
+A second, narrative film, **Come for the sky** (`video/storyboard_sky.py`), is for someone who knows almost nothing about Saskatchewan: a week's visit that turns into the thought of staying. Day by day it shows the sky (June's daylight, the aurora bands, Sky now, the dark-sky preserves), the lakes (Weekend Reach lighting the campfires from Saskatoon), the land (What grows here, Treaties & reserves), Saskatoon in 3D and its report, and Town Finder's New to Saskatchewan preset; then, plainly, the catch: winter, this year's fire season replayed, tornadoes, Moose Jaw's flood extent, crime severity and the climate twin. It uses the app rather than teaching it, under story cards and cinema bars (`Stage.beat`, `Stage.letterbox` in `video/stage/stage.js`), and stops before filming if the data no longer says what a line says. Like the how-to it loads the live readings and the daily record, so run `npm run data now` first:
+
+```bash
+.venv/Scripts/python.exe video/render.py --film sky --storyboard   # video/out/living-skies-come-for-the-sky-storyboard.html, -script.md, -youtube.txt
+.venv/Scripts/python.exe video/render.py --film sky --preview
+.venv/Scripts/python.exe video/render.py --film sky
+```
 
 ## Data sources
 
