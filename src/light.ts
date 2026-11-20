@@ -3,7 +3,7 @@
 // dipole, read against NOAA SWPC's Kp rule), and where the province's RASC dark-sky preserves are. Nothing here is
 // measured: the sky's clearness, light pollution and solar activity decide what a given night actually looks like.
 import * as d3 from 'd3';
-import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { BitmapLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import type { Data, Light, LightTown, Muni } from './data';
 import { MONTHS } from './data';
@@ -11,6 +11,8 @@ import { rampCSS } from './charts';
 import { esc, safeUrl } from './html';
 import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 import { metric, na, link } from './report-kit';
+import { ageTag, nowBlock, skTime, tickAges } from './now';
+import { AURORA_DROP_H, AURORA_RGB, auroraAlpha, auroraAt, auroraLive, kpTonight, kpWord, skyBounds, skyImage, skyState, sunAlt, sunAt, sunLines } from './sky';
 
 export const LIGHT_COLOR = '#a3b8ff';
 // night blue to pale sun, over the hours of daylight Saskatchewan sees through the year
@@ -43,8 +45,13 @@ export function placeLight(data: Data, key: string): PlaceLight | null {
   return { ...t, dark: t.dk && tg ? { name: tg.name, preserve: L.preserves[tg.k]?.name ?? '', min: t.dk.min, km: t.dk.km } : null };
 }
 
-type Mode = 'dec' | 'mar' | 'jun' | 'aurora';
-const MODE_IDX: Record<Exclude<Mode, 'aurora'>, number> = { dec: 0, mar: 1, jun: 2 };
+type Mode = 'dec' | 'mar' | 'jun' | 'aurora' | 'now';
+type DayMode = Exclude<Mode, 'aurora' | 'now'>;
+const MODE_IDX: Record<DayMode, number> = { dec: 0, mar: 1, jun: 2 };
+/** The live chip's colour, and its ramp for the places: NOAA's chance of aurora overhead, on its square root (0 to 49 % and up). */
+export const NOW_COLOR = '#3dffa8';
+export const NOW_RAMP = d3.scaleSequential(d3.interpolateRgb('#1a2a44', NOW_COLOR)).domain([0, 7]).clamp(true);
+const pct = (v: number) => (v < 1 ? '<1 %' : `${Math.round(v)} %`);
 
 /** One labelled place per degree of latitude (the largest, as the place list runs biggest first), so labels never pile up. */
 function labelPlaces(munis: Muni[], L: Light) {
@@ -70,9 +77,76 @@ export function lightLayer(data: Data): AtlasLayer {
   const munis = data.munis.filter((m) => L?.towns[m.key]);
   const labelled = L ? labelPlaces(munis, L) : [];
   let mode: Mode = 'dec';
-  const dateLabel = (m: Mode) => L?.dates[MODE_IDX[m as Exclude<Mode, 'aurora'>]]?.label ?? '';
-  const townVal = (t: LightTown) => (mode === 'aurora' ? t.ml : t.d[MODE_IDX[mode]]);
-  const townColor = (t: LightTown) => (mode === 'aurora' ? AURORA_RAMP(t.ml) : DAY_RAMP(t.d[MODE_IDX[mode as Exclude<Mode, 'aurora'>]]));
+  const dateLabel = (m: Mode) => L?.dates[MODE_IDX[m as DayMode]]?.label ?? '';
+  const townVal = (t: LightTown) => (mode === 'aurora' ? t.ml : t.d[MODE_IDX[mode as DayMode]]);
+  const townColor = (t: LightTown) => (mode === 'aurora' ? AURORA_RAMP(t.ml) : DAY_RAMP(t.d[MODE_IDX[mode as DayMode]]));
+
+  // ---- the sky right now: night's shade and the sunrise and sunset lines (computed from the clock), and NOAA's aurora
+  // forecast when this copy has a recent one. Repainted once a minute.
+  const A = () => (auroraLive(data.now.aurora) ? data.now.aurora : null);
+  let sky: { min: number; a: unknown; img: ImageData; lines: { k: string; path: [number, number][] }[]; tags: { k: string; p: [number, number] }[] } | null = null;
+  const skyNow = () => {
+    const min = Math.floor(Date.now() / 6e4), a = A();
+    if (sky && sky.min === min && sky.a === a) return sky;
+    const sun = sunAt(min * 6e4), [w, so, e, no] = skyBounds(a);
+    const sl = sunLines(sun, so, no, (w + e) / 2);
+    const lines = [{ k: 'sunrise', path: sl.rise }, { k: 'sunset', path: sl.set }].filter((x) => x.path.length > 1);
+    const tags = lines.map((x) => ({ k: x.k, p: x.path.reduce((b, p) => (Math.abs(p[1] - 52) < Math.abs(b[1] - 52) ? p : b)) })).filter((x) => x.p[0] > w && x.p[0] < e);
+    return (sky = { min, a, img: skyImage(a, sun), lines, tags });
+  };
+  const nowAt = (m: { lon: number; lat: number }) => {
+    const a = A();
+    return { v: a ? auroraAt(a, m.lon, m.lat) : null, sky: skyState(sunAlt(m.lat, m.lon, sunAt(Date.now()))) };
+  };
+  const buildNow = (focused: boolean): Layer[] => {
+    const s = skyNow(), a = A();
+    const out: Layer[] = [
+      new BitmapLayer({ id: 'light-now-base', image: s.img, bounds: skyBounds(a), opacity: focused ? 1 : 0.7, pickable: true, parameters: NO_DEPTH, textureParameters: { minFilter: 'linear', magFilter: 'linear' } } as any),
+      new PathLayer<{ k: string; path: [number, number][] }>({
+        id: 'light-now-lines', data: s.lines, getPath: (d) => d.path, getColor: [255, 214, 130, 210], getWidth: 1.5, widthUnits: 'pixels',
+        parameters: { depthCompare: 'always' }, updateTriggers: { getPath: s.min },
+      } as any),
+      new PolygonLayer<PPoly>({
+        id: 'light-preserve-base', data: pres, getPolygon: (p) => p.poly,
+        getFillColor: [20, 12, 48, 170], getLineColor: rgb(PRESERVE_COLOR, 240),
+        lineWidthUnits: 'pixels', getLineWidth: 2, pickable: true, parameters: NO_DEPTH,
+      } as any),
+      new ScatterplotLayer<Muni>({
+        id: 'light-towns', data: munis, getPosition: (m) => [m.lon, m.lat],
+        getRadius: 4500, radiusMinPixels: 4, radiusMaxPixels: 9,
+        getFillColor: (m) => rgb(NOW_RAMP(Math.sqrt(nowAt(m).v ?? 0)), 255), stroked: true, getLineColor: [8, 12, 22, 220], lineWidthMinPixels: 1,
+        parameters: NO_DEPTH, updateTriggers: { getFillColor: ['now', s.min, a] },
+      } as any),
+    ];
+    if (focused)
+      out.push(
+        new TextLayer<{ k: string; p: [number, number] }>({
+          id: 'light-now-tags', data: s.tags, getPosition: (d) => d.p, getText: (d) => `${d.k} line`,
+          getSize: 12, getColor: [255, 214, 130, 255], fontFamily: 'Inter, sans-serif', fontWeight: 700, getPixelOffset: [0, -10],
+          outlineWidth: 4, outlineColor: [6, 10, 18, 235], fontSettings: { sdf: true }, characterSet: 'auto',
+          parameters: { depthCompare: 'always' }, updateTriggers: { getPosition: s.min },
+        } as any),
+        new TextLayer<Muni>({
+          id: 'light-labels', data: labelled, getPosition: (m) => [m.lon, m.lat],
+          getText: (m) => { const n = nowAt(m); return `${m.name}\n${n.v != null ? `${pct(n.v)} · ` : ''}${n.sky}`; },
+          getSize: 12, getColor: [240, 244, 252, 240], fontFamily: 'Inter, sans-serif', fontWeight: 700,
+          getPixelOffset: [0, -16], getAlignmentBaseline: 'bottom',
+          outlineWidth: 4, outlineColor: [6, 10, 18, 235], fontSettings: { sdf: true }, characterSet: 'auto',
+          parameters: { depthCompare: 'always' }, updateTriggers: { getText: ['now', s.min, a] },
+        } as any),
+      );
+    return out;
+  };
+
+  /** Pull the camera back to the province with the sky north of it, where the oval lies on a quiet night. */
+  const frameSky = () => window.dispatchEvent(new CustomEvent('atlas:fly', { detail: { bounds: [[-116, 48.5], [-94, 68]] } }));
+  // a report's "Sky now" link (`skyLink` in now.ts) opens this layer on the live chip; this runs before the link's own
+  // handler opens the layer, so the panel is built in that mode
+  document.addEventListener('click', (e) => {
+    if (!(e.target as HTMLElement | null)?.closest?.('[data-sky]') || data.now.skipped) return;
+    mode = 'now';
+    setTimeout(frameSky, 60);
+  }, true);
 
   const l: AtlasLayer = {
     id: 'light',
@@ -87,6 +161,7 @@ export function lightLayer(data: Data): AtlasLayer {
     build({ focusedId }) {
       if (!L) return [];
       const focused = focusedId === 'light';
+      if (mode === 'now') return buildNow(focused);
       const out: Layer[] = [];
       if (mode === 'aurora')
         out.push(new PolygonLayer<Cell>({
@@ -99,7 +174,7 @@ export function lightLayer(data: Data): AtlasLayer {
         out.push(new PolygonLayer<Row>({
           id: 'light-day-base', data: rows,
           getPolygon: (r) => [[r.w, r.s], [r.e, r.s], [r.e, r.n], [r.w, r.n]],
-          getFillColor: (r) => rgb(DAY_RAMP(r.d[MODE_IDX[mode as Exclude<Mode, 'aurora'>]]), focused ? 150 : 100),
+          getFillColor: (r) => rgb(DAY_RAMP(r.d[MODE_IDX[mode as DayMode]]), focused ? 150 : 100),
           stroked: false, pickable: true, parameters: NO_DEPTH,
           updateTriggers: { getFillColor: [mode, focused] },
         } as any));
@@ -150,15 +225,47 @@ export function lightLayer(data: Data): AtlasLayer {
       const dec = by((t) => t.d[0]), jun = by((t) => t.d[2]);
       const often = ts.filter((x) => x.t.a === 'often').length;
       el.insertAdjacentHTML('beforeend', `<p class="lede">Saskatchewan runs eleven degrees of latitude, from the 49th parallel to the 60th. On the shortest day the sun is up <b>${hm(dec.at(-1)!.t.d[0])}</b> at ${esc(dec.at(-1)!.m.name)} but <b>${hm(dec[0].t.d[0])}</b> at ${esc(dec[0].m.name)}; on the longest, the north gets the light back. The same northward run brings the auroral oval closer.</p>
-        <div class="chips" style="margin:2px 0 10px">${L.dates.map((d) => `<button class="chip" data-m="${esc(d.id)}" style="--c:${color}">${esc(d.label)}</button>`).join('')}<button class="chip" data-m="aurora" style="--c:#3dffa8">Aurora</button></div>`);
+        <div class="chips" style="margin:2px 0 10px">${L.dates.map((d) => `<button class="chip" data-m="${esc(d.id)}" style="--c:${color}">${esc(d.label)}</button>`).join('')}<button class="chip" data-m="aurora" style="--c:#3dffa8">Aurora</button>${data.now.skipped ? '' : `<button class="chip" data-m="now" style="--c:${NOW_COLOR}" title="The sky right now: tonight’s aurora forecast and the edge of night">● Sky now</button>`}</div>`);
       const hero = heroStats(el, 4);
       hero(0, hm(dec[0].t.d[0]), `daylight on ${dateLabel('dec')} at ${dec[0].m.name}, the shortest`);
       hero(1, hm(jun.at(-1)!.t.d[2]), `daylight on ${dateLabel('jun')} at ${jun.at(-1)!.m.name}, the longest`);
       hero(2, String(often), `of ${ts.length} places see the aurora overhead often`);
       hero(3, String(L.preserves.length), 'RASC dark-sky preserves in the province');
       const legend = el.appendChild(mk('div'));
+      // NOAA's Kp forecast for the coming night, read against the same Kp rule as the Aurora chip's bands
+      const tonight = (a: NonNullable<ReturnType<typeof A>>) => {
+        const k = kpTonight(a);
+        if (!k) return '';
+        const n = ts.filter((x) => x.t.ml >= L.kp.k0 - L.kp.perKp * k.v).length;
+        return `<p><span class="tk">Outlook · NOAA’s Kp forecast${k.dark ? ' for the coming dark hours' : ' for the next day (it does not get dark)'}</span><br>Up to Kp <b>${k.v.toFixed(1)}</b> (${kpWord(k.v)}) from ${esc(skTime(k.t))} to ${esc(skTime(k.end))}: by NOAA’s rule of thumb the oval would then reach overhead at <b>${n}</b> of ${ts.length} places${n < ts.length ? ', and show low in the north from farther south' : ''}.</p>`;
+      };
       const drawLegend = () => {
-        if (mode === 'aurora') {
+        if (mode === 'now') {
+          const F = data.now.aurora, a = A();
+          const sun = sunAt(Date.now());
+          const states = ts.map((x) => skyState(sunAlt(x.m.lat, x.m.lon, sun)));
+          const dark = states.filter((k) => k === 'dark').length, day = states.filter((k) => k === 'day').length;
+          const sunLine = dark === ts.length ? 'It is dark at every place.' : day === ts.length ? 'The sun is up at every place, so no aurora can be seen.' : `It is dark at <b>${dark}</b> of ${ts.length} places, the sun is up at ${day}, and ${ts.length - dark - day} are in twilight.`;
+          let body = '';
+          if (a) {
+            const top = ts.map((x) => ({ m: x.m, v: auroraAt(a, x.m.lon, x.m.lat) ?? 0 })).sort((p, q) => q.v - p.v)[0];
+            const kpEnd = a.kp ? new Date(Date.parse(a.kp.t) + a.kp.hours * 36e5).toISOString() : '';
+            body = `<p><b>${top.v < 1 ? 'Under 1 %' : `${Math.round(top.v)} %`}</b> is the highest chance of aurora overhead among the atlas’s places${top.v < 1 ? '' : `, at ${esc(top.m.name)}`}. NOAA’s model for <b>${esc(skTime(a.valid))}</b> Saskatchewan time, from solar wind measured ${ageTag(a.observed)}.</p>
+              ${a.kp ? `<p>Planetary Kp <b>${a.kp.v.toFixed(1)}</b>: ${kpWord(a.kp.v)} (observed, the 3 hours to ${esc(skTime(kpEnd))})</p>` : ''}
+              ${tonight(a)}
+              <p>${sunLine}</p>`;
+          } else if (F) {
+            body = `<p class="now-old">NOAA’s last forecast here was for ${esc(skTime(F.valid))}, more than ${AURORA_DROP_H} hours ago, so no aurora is drawn: the oval moves within minutes. The hourly refresh may have stopped.</p><p>${sunLine}</p>`;
+          }
+          const g = (v: number) => `rgba(${AURORA_RGB.join(',')},${auroraAlpha(v).toFixed(2)})`;
+          legend.innerHTML = `${nowBlock({ color: NOW_COLOR, asOf: F?.observed ?? null, body, source: F?.source ?? '', sourceUrl: F?.sourceUrl, missing: 'This copy of the data has no aurora forecast, so only the edge of night is drawn.' })}
+            ${F ? '' : `<p class="note">${sunLine}</p>`}
+            <h3>Chance of aurora overhead (NOAA OVATION)</h3>
+            <div class="ramp" style="background:linear-gradient(90deg,${[0, 5, 10, 25, 50, 75, 100].map((v) => `${g(v)} ${v}%`).join(',')}),#0b1220"></div>
+            <div class="ramp-labels"><span>0 %</span><span>50 %</span><span>100 %</span></div>
+            <div class="legend"><span><i class="sw" style="background:rgba(3,6,24,.75);border:1px solid var(--line-strong)"></i>night</span><span><i class="sw" style="background:#ffd682;height:2px"></i>sunrise and sunset lines</span></div>
+            <p class="note">Zoom out to see the whole oval: on a quiet night it lies over the territories, north of the province. The green is a model’s short forecast (30 to 90 minutes ahead), not a sighting, and it is the chance of aurora <i>overhead</i>: a display can be seen low in the north from hundreds of kilometres south of it. It is drawn faint where the sun is up or the sky is still in twilight. Clouds, the moon and city lights are not in it. The edge of night is computed from the clock and repainted each minute.</p>`;
+        } else if (mode === 'aurora') {
           const [a, b] = AURORA_RAMP.domain();
           legend.innerHTML = `<h3>Geomagnetic latitude (IGRF-14 dipole, ${L.igrf.epoch})</h3>
             <div class="ramp" style="background:${rampCSS((t) => AURORA_RAMP(a + t * (b - a)))}"></div>
@@ -192,9 +299,18 @@ export function lightLayer(data: Data): AtlasLayer {
         mode = k;
         drawLegend();
         setOn();
+        if (k === 'now') frameSky();
       });
       setOn();
-      return { update() {} };
+      let shownMin = 0;
+      return {
+        update() {
+          if (mode !== 'now') return;
+          const min = Math.floor(Date.now() / 6e4);
+          if (min !== shownMin) { if (shownMin) drawLegend(); shownMin = min; }
+          tickAges(legend);
+        },
+      };
     },
     tooltip(info) {
       const id = info.layer?.id ?? '';
@@ -203,6 +319,12 @@ export function lightLayer(data: Data): AtlasLayer {
       if (id === 'light-preserve-base') {
         const p = info.object as PPoly;
         return `<b>${esc(p.name)}</b><br><span class="tk">RASC dark-sky preserve${p.year ? `, ${p.year}` : ''}</span>${row('Park', esc(p.park))}`;
+      }
+      if (id === 'light-now-base') {
+        const [lon, lat] = (info.coordinate ?? []) as number[];
+        if (lon == null || lat == null) return null;
+        const a = A(), n = nowAt({ lon, lat });
+        return `<b>${n.sky === 'day' ? 'The sun is up' : n.sky === 'twilight' ? 'Twilight' : 'Dark'}</b> <span class="tk">${Math.abs(lat).toFixed(1)}°N ${Math.abs(lon).toFixed(1)}°W</span>${row('Sun', `${Math.abs(sunAlt(lat, lon, sunAt(Date.now()))).toFixed(0)}° ${n.sky === 'day' ? 'above' : 'below'} the horizon`)}${a && n.v != null ? row('Aurora overhead', `${pct(n.v)} · NOAA’s model for ${esc(skTime(a.valid))}`) : ''}`;
       }
       if (id === 'light-aurora-base') {
         const c = info.object as Cell;

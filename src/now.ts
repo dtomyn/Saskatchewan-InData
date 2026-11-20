@@ -8,6 +8,7 @@ import { Data, WeatherAlert, km } from './data';
 import { esc, safeUrl } from './html';
 import type { Muni, RiverStation, NowRiverRow } from './data';
 import { metric, na, link } from './report-kit';
+import { SKY_WORD, auroraAt, auroraLive, skyState, sunAlt, sunAt } from './sky';
 
 export const STALE_H = 3;
 export const DROP_H = 24;
@@ -221,6 +222,19 @@ export function provinceOutlook(data: Data, kind: 'fire' | 'smoke') {
   return '';
 }
 
+/** NOAA's chance of aurora overhead at a point, as a report cell's value and context line; null when this copy has no
+ *  aurora file (or live readings were skipped). The value is null once the forecast is too old to show. */
+export function auroraCell(data: Data, lon: number, lat: number): { v: string | null; sub: string } | null {
+  const A = data.now.aurora;
+  if (!A || data.now.skipped) return null;
+  const v = auroraLive(A) ? auroraAt(A, lon, lat) : null;
+  if (v == null) return { v: null, sub: `the last forecast was for ${esc(skTime(A.valid))}, too old to show` };
+  const sky = SKY_WORD[skyState(sunAlt(lat, lon, sunAt(Date.now())))];
+  return { v: v < 1 ? 'Under 1 %' : `${Math.round(v)} %`, sub: `NOAA’s model for ${esc(skTime(A.valid))}, a short forecast, not a sighting · ${sky} here now · solar wind measured ${ageTag(A.observed)}` };
+}
+/** A report's link to Light & dark that opens it on the Sky now chip (src/light.ts listens for `data-sky`). */
+export const skyLink = () => '<button class="tr-fall" data-layer="light" data-sky="1" type="button">☾ Sky now ›</button>';
+
 // ---- the Town Report section (src/panels.ts places it)
 
 /** Live readings around a place: the nearest gauge reporting, hotspots within 50 km, AQHI (its own or borrowed), and
@@ -228,7 +242,7 @@ export function provinceOutlook(data: Data, kind: 'fire' | 'smoke') {
 export function rightNow(data: Data, m: Muni) {
   const nw = data.now;
   if (nw.skipped) return '';
-  if (!nw.rivers && !nw.fires && !nw.air && !nw.alerts && !nw.outlooks)
+  if (!nw.rivers && !nw.fires && !nw.air && !nw.alerts && !nw.outlooks && !nw.aurora)
     return `<h3>Right now</h3><div class="unavail">This copy of the data has no live readings. Run <code>npm run data now</code>, then reload.</div>`;
   const dead = 'no reading in the past day';
   const cells: string[] = [];
@@ -261,9 +275,11 @@ export function rightNow(data: Data, m: Muni) {
   const alerts = nw.alerts ? alertsInEffect(data).filter((a) => a.places.includes(m.key)) : [];
   if (nw.alerts) cells.push(metric('Weather alerts', '#ffd166', drawable(nw.alerts.asOf) ? String(alerts.length) : na,
     !drawable(nw.alerts.asOf) ? dead : alerts.length ? esc(alerts.map((a) => a.short ?? a.name).join(', ')) : `none in effect · read ${ageTag(nw.alerts.asOf)}`));
+  const au = auroraCell(data, m.lon, m.lat);
+  if (au) cells.push(metric('Aurora overhead', '#3dffa8', au.v ?? na, au.sub));
   return `<h3>Right now</h3>
     <div class="metric-grid">${cells.join('')}</div>
     ${outlookList(data, m.key)}
     ${alertList(alerts, data)}
-    <div class="tr-falls" style="margin-top:8px">${nw.rivers ? link('rivers', '≋ Rivers now') : ''}${nw.fires ? link('fires', '🔥 Hotspots now') : ''}${nw.air ? link('smoke', '🌫 Air now') : ''}</div>`;
+    <div class="tr-falls" style="margin-top:8px">${nw.rivers ? link('rivers', '≋ Rivers now') : ''}${nw.fires ? link('fires', '🔥 Hotspots now') : ''}${nw.air ? link('smoke', '🌫 Air now') : ''}${nw.aurora ? skyLink() : ''}</div>`;
 }
