@@ -1,6 +1,6 @@
 # 3. Replay a fire season
 
-**Effort:** S–M. **Depends on:** the daily record (digital-twin plan 2) and the burn outlines (4a), both built. **Status:** not started.
+**Effort:** S–M. **Depends on:** the daily record (digital-twin plan 2) and the burn outlines (4a), both built. **Status:** built (`AtlasLayer.replay` in `src/layer-kit.ts`, the replay in `src/fires.ts`, `fireSeason` in `src/history.ts`, the timeline in `src/main.ts`).
 
 ## Goal
 
@@ -40,6 +40,10 @@ To check first: how many seasons the record holds today, and the size of a full 
 - A missing day shows as a gap; a season with no record yet does not offer a button.
 - The intent "Understand natural hazards" has a `?film` check for it.
 
-## To confirm before building
+## As built
 
-- Whether the replay belongs in the explainer film (it would need a fixed season, so the film stays repeatable).
+- The record held one season when this was built: 2026, 72,971 hotspots in seven month files (about 1.9 MB, the largest 1.2 MB), all 214 days covered by the backfill. They load when the button is pressed, apart from the recent span's `ensureFeed`, so a season can still be replayed after the archive publishes its year.
+- The daily record keeps hotspots only, not CWFIS's estimated perimeters, so the dashed edges are the atlas's own estimate: hotspots on a grid of about 2 km, each cell remembering when it first lit, an edge drawn around patches of six cells or more. The panel and Data & sources say so.
+- Drawing is two layers over the same points (embers and flares), each a `DataFilterExtension` range, so the season is uploaded once and only the range changes per frame; the flare fades with `filterSoftRange` over five days.
+- A season still running is replayed to its last day on record. The NBAC ending has not been seen with real data yet: the composite reaches 2024 and the record starts in 2026.
+- The replay is not in the explainer film (it would need a fixed season, so the film stays repeatable); `atlas.replaySeason(year)` is there for when it is.

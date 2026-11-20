@@ -1,15 +1,64 @@
 // WILDFIRES — the Canadian National Fire Database's start points, and the National Burned Area Composite's mapped
 // outlines. A fire of 200 ha or more that NBAC outlines (1972 on) is drawn as its outline; every other fire's scar is
 // a circle with the same area as the fire, so the burned country is to scale either way. The tooltip says which.
-import { ScatterplotLayer, PathLayer, PolygonLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, PathLayer, PolygonLayer, LineLayer } from '@deck.gl/layers';
+import { DataFilterExtension } from '@deck.gl/extensions';
 import * as d3 from 'd3';
 import { Data, FirePoint, BurnPerimeter, lowerBound, Hotspot, fmt, FirePerimeter } from './data';
-import { AtlasLayer, rgb, RecentSpan, filterExt, NO_DEPTH, ADDITIVE, dashExt, glowWindow, RGBA, nearestTown, kicker, heroStats, deferChart, mk, sourceLine, isoDate } from './layer-kit';
-import { HistHotspot, firesHistory, dayT, tDay, DAY_T, dayText } from './history';
+import { AtlasLayer, Ctx, rgb, RecentSpan, filterExt, NO_DEPTH, ADDITIVE, dashExt, glowWindow, RGBA, nearestTown, kicker, heroStats, deferChart, mk, sourceLine, isoDate } from './layer-kit';
+import { HistHotspot, firesHistory, dayT, tDay, DAY_T, dayText, FireSeason, fireSeason, fireSeasonYears } from './history';
+import { reducedMotion } from './particles';
 import { airLayers, airPanel, airTooltip } from './wind';
 import { ms, freshness, plainAge, provinceOutlook, alertList, alertsInEffect, nowBlock, NOW_T, drawable, alertOutlines, tickAges, isNow, alertEvent, ago, skTime, alertTooltip } from './now';
 import { barChart } from './charts';
 import { safeUrl, esc } from './html';
+
+// ---- the replay's estimated spread
+const filter2 = [new DataFilterExtension({ filterSize: 2 })];
+/** grid cells of about 2.2 km (the longitude step is right near 55° N) */
+const SPREAD_DX = 0.035, SPREAD_DY = 0.02;
+/** a patch needs this many cells (about 30 km²) before it gets an edge, so a lone flare or field burn gets none */
+const SPREAD_MIN = 6;
+/** one side of a lit cell: drawn from when the cell first lit (`from`) until the cell across it lights (`to`) */
+type SpreadEdge = { p: [number, number]; q: [number, number]; from: number; to: number };
+/**
+ * The edge of the ground where hotspots have been seen, as it grows: hotspots are dropped on a grid, each cell keeps
+ * the time it first lit, and a cell's side is an edge while the cell across it has not lit. Each side is drawn short of
+ * its corners, so the edge reads as dashes: an estimate, never a mapped perimeter. `pts` must be in time order.
+ */
+function spreadEdges(pts: HistHotspot[]): SpreadEdge[] {
+  const key = (ix: number, iy: number) => ix * 4096 + iy;
+  const first = new Map<number, number>();
+  for (const p of pts) {
+    const k = key(Math.floor((p[0] + 112) / SPREAD_DX), Math.floor((p[1] - 48) / SPREAD_DY));
+    if (!first.has(k)) first.set(k, p[2]);
+  }
+  const NB = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const seen = new Set<number>();
+  const out: SpreadEdge[] = [];
+  for (const k0 of first.keys()) {
+    if (seen.has(k0)) continue;
+    // the patch this cell belongs to by the end of the season (cells sharing a side)
+    const patch = [k0];
+    seen.add(k0);
+    for (let i = 0; i < patch.length; i++) {
+      const ix = Math.floor(patch[i] / 4096), iy = patch[i] % 4096;
+      for (const [dx, dy] of NB) { const k = key(ix + dx, iy + dy); if (first.has(k) && !seen.has(k)) { seen.add(k); patch.push(k); } }
+    }
+    if (patch.length < SPREAD_MIN) continue;
+    for (const k of patch) {
+      const ix = Math.floor(k / 4096), iy = k % 4096, from = first.get(k)!;
+      const x0 = ix * SPREAD_DX - 112, y0 = iy * SPREAD_DY + 48, x1 = x0 + SPREAD_DX, y1 = y0 + SPREAD_DY;
+      const gx = SPREAD_DX * 0.2, gy = SPREAD_DY * 0.2;
+      for (const [dx, dy] of NB) {
+        const to = first.get(key(ix + dx, iy + dy)) ?? Infinity;
+        if (to <= from) continue;
+        out.push(dx ? { p: [dx > 0 ? x1 : x0, y0 + gy], q: [dx > 0 ? x1 : x0, y1 - gy], from, to } : { p: [x0 + gx, dy > 0 ? y1 : y0], q: [x1 - gx, dy > 0 ? y1 : y0], from, to });
+      }
+    }
+  }
+  return out;
+}
 
 export function firesLayer(data: Data): AtlasLayer {
   const color = '#ff8a3d';
@@ -94,6 +143,169 @@ export function firesLayer(data: Data): AtlasLayer {
       ];
     },
   };
+  // ---- the season replay (plans/wow/3): one season of the daily record, 1 April to 31 October, played in ~40 s.
+  // Times go to the GPU as days since the season began (a float holds a fractional year only to a couple of hours).
+  let season: FireSeason | null = null;
+  let spread: SpreadEdge[] = [];
+  let seasonBurns: PerimPoly[] = [];
+  let endClock: number | null = null;
+  const FLARE_DAYS = 5;
+  const sDay = (t: number) => (t - season!.a) / DAY_T;
+  /** the last moment of the season's last day, so the end of the replay still reads as that day */
+  const sClamp = (t: number) => Math.min(Math.max(t, season!.a), season!.b - DAY_T / 1440);
+  const replayEvent = (year: number | null) => window.dispatchEvent(new CustomEvent('atlas:replay', { detail: { layer: 'fires', year } }));
+  const replay: NonNullable<AtlasLayer['replay']> = {
+    seasons: (force) => fireSeasonYears(force),
+    async start(year, force) {
+      const s = await fireSeason(year, force);
+      if (!s) return null;
+      season = s;
+      spread = spreadEdges(s.points);
+      seasonBurns = perimPolys.filter((p) => p.b[0] === year);
+      endClock = null;
+      const md = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      return { range: [s.a, s.b], ends: [md(s.days[0].day), md(s.days.at(-1)!.day)], camera: { center: [-104.2, 54.7], zoom: 4.7, pitch: 25, bearing: 0 } };
+    },
+    stop() { season = null; spread = []; seasonBurns = []; endClock = null; },
+    days: () => (season?.days ?? []).map((d) => ({ x: d.t, y: d.n })),
+    at(t) { const day = tDay(sClamp(t)); return { day, covered: season?.days.find((d) => d.day === day)?.n != null }; },
+    build({ time, clock }) {
+      const s = season;
+      if (!s) return [];
+      const d = sDay(time), n = sDay(s.b);
+      // at the end, the season's mapped burns (the official record) fade in, when the composite has published them
+      const done = time >= s.b - DAY_T / 100;
+      if (!done) endClock = null; else endClock ??= clock;
+      const fade = done ? (reducedMotion() ? 1 : Math.min(1, (clock - endClock!) / 2500)) : 0;
+      return [
+        // embers: every hotspot seen so far, small and dim; they stay
+        new ScatterplotLayer<HistHotspot>({
+          id: 'fires-replay-embers',
+          data: s.points,
+          getPosition: (p) => [p[0], p[1]],
+          getRadius: 900,
+          radiusMinPixels: 1.2,
+          getFillColor: [235, 100, 40, 75],
+          extensions: filterExt,
+          getFilterValue: (p) => sDay(p[2]),
+          filterRange: [-1, d],
+          pickable: true,
+          parameters: NO_DEPTH,
+        } as any),
+        // the edge of the ground where heat has been seen so far: the atlas's own estimate, on a ~2 km grid, in dashes
+        new LineLayer<SpreadEdge>({
+          id: 'fires-replay-spread',
+          data: spread,
+          getSourcePosition: (e) => e.p,
+          getTargetPosition: (e) => e.q,
+          getColor: [255, 130, 70, 210],
+          getWidth: 1.4,
+          widthUnits: 'pixels',
+          extensions: filter2,
+          getFilterValue: (e) => [sDay(e.from), Number.isFinite(e.to) ? sDay(e.to) : 1e6],
+          // drawn from the day its cell first lit until the cell beyond it lights
+          filterRange: [[-1, d], [d, 2e6]],
+          parameters: NO_DEPTH,
+        } as any),
+        // the last few days' hotspots: bright when seen, fading over FLARE_DAYS (the same points, so nothing is re-uploaded)
+        new ScatterplotLayer<HistHotspot>({
+          id: 'fires-replay-flare',
+          data: s.points,
+          getPosition: (p) => [p[0], p[1]],
+          getRadius: (p) => 1700 + Math.sqrt(p[3] ?? 1) * 320,
+          radiusMinPixels: 2.5,
+          getFillColor: [255, 190, 90, 120],
+          extensions: filterExt,
+          getFilterValue: (p) => sDay(p[2]),
+          filterRange: [d - FLARE_DAYS, Math.min(d, n)],
+          filterSoftRange: [d - 0.4, Math.min(d, n)],
+          parameters: ADDITIVE,
+        } as any),
+        ...(fade > 0 && seasonBurns.length ? [new PolygonLayer<PerimPoly>({
+          id: 'fires-replay-nbac',
+          data: seasonBurns,
+          getPolygon: (p) => p.poly,
+          getFillColor: [150, 40, 18, 110],
+          getLineColor: [230, 100, 50, 230],
+          getLineWidth: 1.5,
+          lineWidthUnits: 'pixels',
+          stroked: true,
+          opacity: fade,
+          pickable: true,
+          parameters: NO_DEPTH,
+        } as any)] : []),
+      ];
+    },
+  };
+  /** The replay's panel: the counter, the per-day bars filling in, and what the picture is and is not. */
+  function replayPanel(el: HTMLElement) {
+    const s = season!;
+    const burns = perims.filter((b) => b[0] === s.year);
+    const burnHa = burns.reduce((a, b) => a + b[1], 0);
+    const whole = s.days.at(-1)!.day.slice(5) === '10-31';
+    el.innerHTML = `${kicker(l, `Wildfires · season replay`)}
+      <h2>The ${s.year} fire season, replayed</h2>
+      <p class="lede">Every satellite hotspot the atlas’s daily record holds for ${s.year}, from ${dayText(s.days[0].day)} to ${dayText(s.days.at(-1)!.day)}${whole ? '' : ' (the last day on record so far)'}, a day at a time. Each day’s hotspots flare, then cool to embers that stay. <b>A hotspot is heat seen from a satellite, not a confirmed fire</b>: gas flares, farm and slash burning are in there too.</p>`;
+    const hero = heroStats(el, 4);
+    el.insertAdjacentHTML('beforeend', `<h3>Hotspots per day</h3>
+      <canvas class="rp-bars" height="110" role="img" aria-label="Satellite hotspots per day through the ${s.year} season"></canvas>
+      <div class="legend"><span><i class="sw" style="background:${color}"></i>hotspots that day</span><span><i class="sw rp-gap"></i>no record that day (a gap, not a zero)</span></div>
+      <div class="rp-btns"><button class="chip rp-again" type="button">↻ Play it again</button><button class="chip rp-leave" type="button">Leave the replay</button></div>
+      <div class="callout rp-end" style="--c:${color}" hidden></div>
+      <p class="note">The dashed edges are the atlas’s own estimate: the outline of the ground where heat has been seen so far, on a grid of about 2 km, drawn only around patches of ${SPREAD_MIN} cells or more. It is not a mapped perimeter and not a burned area; hotspots miss fire under cloud or thick smoke and repeat over ground that keeps burning. The daily record is provisional and never joins the wildfire statistics.</p>
+      ${sourceLine(`Natural Resources Canada, CWFIS satellite hotspots, kept by day in the atlas’s daily record${fires?.licence ? `. ${fires.licence}` : ''}`)}`);
+    el.querySelector('.rp-again')!.addEventListener('click', () => replayEvent(s.year));
+    el.querySelector('.rp-leave')!.addEventListener('click', () => replayEvent(null));
+    const cv = el.querySelector<HTMLCanvasElement>('.rp-bars')!, endEl = el.querySelector<HTMLElement>('.rp-end')!;
+    const max = Math.max(1, ...s.days.map((d) => d.n ?? 0));
+    let drawn = -2;
+    /** bars up to day `upTo`; the rest stay empty until the replay reaches them */
+    function bars(upTo: number) {
+      const w = cv.clientWidth, h = 110, dpr = window.devicePixelRatio || 1;
+      if (!w) return;
+      drawn = upTo;
+      cv.width = w * dpr; cv.height = h * dpr;
+      const g = cv.getContext('2d')!;
+      g.scale(dpr, dpr);
+      const base = h - 14, bw = w / s.days.length;
+      g.fillStyle = 'rgba(255,255,255,.14)';
+      g.fillRect(0, base, w, 1);
+      g.font = '10px Inter, sans-serif';
+      s.days.forEach((dy, i) => {
+        if (dy.day.endsWith('-01')) {
+          g.fillStyle = 'rgba(255,255,255,.45)';
+          g.fillText(new Date(`${dy.day}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' }), i * bw + 2, h - 2);
+          g.fillStyle = 'rgba(255,255,255,.12)';
+          g.fillRect(i * bw, 0, 1, base);
+        }
+        if (dy.n == null) { g.fillStyle = 'rgba(160,165,180,.4)'; g.fillRect(i * bw, base - 5, Math.max(1, bw), 5); return; }
+        if (i > upTo) return;
+        const hh = (dy.n / max) * (base - 4);
+        g.fillStyle = color;
+        g.globalAlpha = i === upTo ? 1 : 0.8;
+        g.fillRect(i * bw, base - hh, Math.max(1, bw - 0.4), Math.max(dy.n ? 1 : 0, hh));
+        g.globalAlpha = 1;
+      });
+    }
+    return {
+      update({ time }: Ctx) {
+        const t = sClamp(time), day = tDay(t), i = s.days.findIndex((d) => d.day === day), dy = s.days[i];
+        const done = time >= s.b - DAY_T / 100;
+        hero(0, dayText(day), 'the day on the map');
+        hero(1, dy?.n == null ? '–' : fmt.int(dy.n), dy?.n == null ? 'no record for this day' : 'hotspots seen that day (not fires)');
+        hero(2, fmt.int(lowerBound(s.points, done ? Infinity : time, (p) => p[2])), `hotspots so far, of ${fmt.int(s.total)}`);
+        hero(3, `${s.covered} of ${s.days.length}`, 'days with a record');
+        if (i !== drawn) bars(i);
+        if (endEl.hidden === done) {
+          endEl.hidden = !done;
+          if (done) endEl.innerHTML = burns.length
+            ? `The official record for ${s.year}: the National Burned Area Composite maps <b>${fmt.int(burns.length)}</b> burn${burns.length === 1 ? '' : 's'} of 200 ha or more, <b>${fmt.ha(burnHa)}</b> in all, now drawn solid over the embers. That figure is the composite’s, from imagery and agency mapping; none of it is worked out from hotspots.`
+            : `<b>${fmt.int(s.total)}</b> hotspots in ${s.covered} days on record. No burned area is given: the National Burned Area Composite, the official record of what burned, ${py1 ? `reaches ${py1} and ` : ''}has not published ${s.year} yet, and hotspots cannot stand in for it.`;
+        }
+      },
+    };
+  }
+
   /** a hotspot fades with age across the 24-hour window */
   const hotAlpha = (h: Hotspot) => Math.round(255 * Math.max(0.35, 1 - Math.max(0, Date.now() - ms(h[2])) / (24 * 36e5)));
   function firesNow() {
@@ -168,6 +380,7 @@ export function firesLayer(data: Data): AtlasLayer {
         ];
       },
     } : undefined,
+    replay,
     unavailable: 'The Canadian National Fire Database could not be downloaded when this copy of the data was built. Run <code>npm run data fires</code>, then reload.',
     build({ time, speed }) {
       const W = glowWindow(speed);
@@ -236,12 +449,22 @@ export function firesLayer(data: Data): AtlasLayer {
       });
     },
     panel(el) {
+      if (season) return replayPanel(el);
       el.innerHTML = `${kicker(l, `Wildfire history · ${y0} → ${y1}`)}
+        <div class="rp-host"></div>
         <div class="air-host"></div>
         ${firesNow()}
         <h2>Where Saskatchewan burns</h2>
         <p class="lede">Every fire the province and Parks Canada reported since ${y0}, at the point it started. New fires flare; each then leaves a scar: ${perims.length ? `its mapped outline where the National Burned Area Composite has one (${fmt.int(perims.length)} burns of 200 ha or more, ${py0}–${py1}), otherwise ` : ''}a circle the size of the area it burned. Almost all of the burning is in the boreal north, and most of it is started by lightning.${nowF ? ' At the <b>Now</b> stop, the pale yellow points are satellite hotspots from the last 24 hours: heat seen from space, not confirmed fires. Gas flares, farm and slash burning show up too.' : ''}</p>`;
       const air = l.now ? airPanel(el.querySelector<HTMLElement>('.air-host')!, data, { id: 'fires', atNow: (t) => isNow(t, l.range[1]) }) : null;
+      // Replay the season: offered only once a season is on record (never with the film, which loads no daily record)
+      const rpHost = el.querySelector<HTMLElement>('.rp-host')!;
+      replay.seasons().then((ys) => {
+        if (!ys.length || !rpHost.isConnected) return;
+        rpHost.innerHTML = `<button class="ev-show rp-go" type="button"><span>▶</span>Replay the season</button>${ys.length > 1 ? `<select class="sc-pick rp-year" aria-label="Season to replay">${[...ys].reverse().map((y) => `<option value="${y}">${y} season</option>`).join('')}</select>` : ''}
+          <p class="note">${ys.length > 1 ? 'A' : `The ${ys[0]}`} season’s satellite hotspots, day by day, in about 40 seconds. Heat seen from space, not confirmed fires.</p>`;
+        rpHost.querySelector('.rp-go')!.addEventListener('click', () => replayEvent(+(rpHost.querySelector<HTMLSelectElement>('.rp-year')?.value ?? ys.at(-1)!)));
+      });
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Area burned per year</h3>`);
       const set = deferChart(el.appendChild(mk('div')), (c) =>
@@ -280,7 +503,7 @@ export function firesLayer(data: Data): AtlasLayer {
     describe(info) {
       const lid = info.layer?.id;
       if (lid?.includes('-air-')) return null;
-      if (lid?.startsWith('fires-hist') && Array.isArray(info.object)) {
+      if ((lid?.startsWith('fires-hist') || lid === 'fires-replay-embers') && Array.isArray(info.object)) {
         const [lon, lat, t, frp] = info.object as HistHotspot;
         const { town, km: d } = nearestTown(data.munis, lon, lat);
         return {
@@ -319,7 +542,7 @@ export function firesLayer(data: Data): AtlasLayer {
         }
         return null;
       }
-      if (lid === 'fires-perims') {
+      if (lid === 'fires-perims' || lid === 'fires-replay-nbac') {
         const { b } = info.object as PerimPoly;
         const mp = mainPoint(b);
         const [lon, lat] = mp ? [mp[0], mp[1]] : (info.coordinate as [number, number] | undefined) ?? b[2][0][0][0];
@@ -350,14 +573,14 @@ export function firesLayer(data: Data): AtlasLayer {
       const air = airTooltip(info, data);
       if (air !== undefined) return air;
       const o: any = info.object;
-      if (info.layer?.id.startsWith('fires-hist') && Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">recorded, not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${dayText(tDay(o[2]))}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
+      if ((info.layer?.id.startsWith('fires-hist') || info.layer?.id === 'fires-replay-embers') && Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">recorded, not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${dayText(tDay(o[2]))}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
       if (isLive(info.layer?.id)) {
         if (o?.a) return alertTooltip(o.a);
         if (o?.p) return `<b>Estimated fire perimeter</b><br><span class="tk">Area</span> <span class="tv">${fmt.ha(o.p.ha)}</span><br><span class="tk">Last heat seen</span> <span class="tv">${ago(o.p.last)}</span>`;
         if (Array.isArray(o)) return `<b>Satellite hotspot</b> <span class="tk">not a confirmed fire</span><br><span class="tk">Seen</span> <span class="tv">${ago(o[2])}</span>${o[3] != null ? `<br><span class="tk">Fire radiative power</span> <span class="tv">${o[3]} MW</span>` : ''}`;
         return null;
       }
-      if (info.layer?.id === 'fires-perims' && o?.b) {
+      if ((info.layer?.id === 'fires-perims' || info.layer?.id === 'fires-replay-nbac') && o?.b) {
         const b = o.b as BurnPerimeter, mp = mainPoint(b);
         return `<b>${mp?.[5] ? `${esc(mp[5])} fire` : `Burn of ${b[0]}`}</b> <span class="tk">mapped outline</span><br><span class="tk">Mapped area</span> <span class="tv">${fmt.ha(b[1])}</span>${mp ? `<br><span class="tk">Reported</span> <span class="tv">${isoDate(mp[2])}</span><br><span class="tk">Cause</span> ${CAUSE[mp[4]].name}` : `<br><span class="tk">Year</span> <span class="tv">${b[0]}</span>`}`;
       }

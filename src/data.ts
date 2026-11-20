@@ -710,15 +710,16 @@ export type HistoryIndex = {
 
 const historyMemo = new Map<string, Promise<unknown>>();
 const liveAllowed = () => { const q = new URLSearchParams(location.search); return !q.has('film') || q.has('now'); };
-/** The history index, or null (no history in this copy, or the film). */
-export function loadHistoryIndex(): Promise<HistoryIndex | null> {
-  if (!liveAllowed()) return Promise.resolve(null);
+/** The history index, or null (no history in this copy, or the film). `force` reads it for the film too: the season
+ *  replay, which the film handle asks for by name. */
+export function loadHistoryIndex(force = false): Promise<HistoryIndex | null> {
+  if (!force && !liveAllowed()) return Promise.resolve(null);
   if (!historyMemo.has('index')) historyMemo.set('index', load<HistoryIndex>('history/index'));
   return historyMemo.get('index') as Promise<HistoryIndex | null>;
 }
 /** One feed's month file ('YYYY-MM'), or null. Each is fetched once. */
-export function loadHistory<T>(feed: HistoryFeed, month: string): Promise<T | null> {
-  if (!liveAllowed()) return Promise.resolve(null);
+export function loadHistory<T>(feed: HistoryFeed, month: string, force = false): Promise<T | null> {
+  if (!force && !liveAllowed()) return Promise.resolve(null);
   const k = `${feed}/${month}`;
   if (!historyMemo.has(k)) historyMemo.set(k, load<T>(`history/${k}`));
   return historyMemo.get(k) as Promise<T | null>;

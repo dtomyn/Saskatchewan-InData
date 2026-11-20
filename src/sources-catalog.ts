@@ -473,6 +473,7 @@ export const BARK: BarkSource[] = [
 export const DERIVED = [
   ['Provincial warming', 'the climate anomaly is the average of every station’s difference from its own 1961–90 baseline.'],
   ['Fire scars', 'are circles with the same area as each fire’s reported size, centred where it started; they are not the fire’s real shape.'],
+  ['Season replay edges', 'the dashed edges in Wildfires’ season replay are worked out here from the daily record’s satellite hotspots: each hotspot is dropped on a grid of about 2 km, a cell keeps the day it first lit, and an edge is drawn around patches of six cells or more. They show where heat has been seen so far, not a mapped perimeter and not a burned area.'],
   ['Crime by place', 'uses each place’s own police service; northern villages with no municipal series use their rural RCMP detachment, which covers a wider area, and the report says so.'],
   ['Police in town', 'OpenStreetMap misses many police buildings here, so a place Statistics Canada lists with its own municipal police service (a city force or a municipal RCMP detachment) counts as having police in town when none is mapped within 6 km of its centre.'],
   ['Tornado track ends', 'for Northern Tornadoes Project events are estimated here from the start point, track length and direction of motion it publishes; mapped end points from Environment Canada are used as they are.'],
