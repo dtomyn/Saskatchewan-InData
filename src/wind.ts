@@ -22,7 +22,9 @@ export const WIND_DROP_H = 3;
 /** The scrubber moves on a frame this often while it plays, and rests this long on the last one. */
 const FRAME_MS = 750, LAST_MS = 2200;
 
-const st = { wind: false, plume: false, frame: 0, playing: true, stepped: 0 };
+// `frame` indexes plumeFrames(), which drops frames as they pass: `frameT` (the frame's time) is what is shown, and the
+// index is found again from it (`frameAt`), so the map, the tooltip and the panel always describe the same frame
+const st = { wind: false, plume: false, frame: 0, frameT: null as string | null, playing: true, stepped: 0 };
 /** Which chips are on (for a caller that draws something to go with them). */
 export const airOn = () => ({ wind: st.wind, plume: st.plume });
 
@@ -47,6 +49,17 @@ export function plumeFrames(p: NowPlume | null | undefined) {
   const now = Date.now();
   return p.frames.filter((f) => Date.parse(f.t) + p.everyH * 36e5 > now);
 }
+/** The frame on show among `frames` (its index), kept by its time: a frame that has passed gives way to the next. */
+function frameAt(frames: NowPlume['frames']) {
+  if (!frames.length) return -1;
+  let i = st.frameT == null ? -1 : frames.findIndex((f) => f.t === st.frameT);
+  if (i < 0) { const t = st.frameT == null ? NaN : Date.parse(st.frameT); i = Math.max(0, frames.findIndex((f) => Date.parse(f.t) > t)); }
+  st.frame = i;
+  st.frameT = frames[i].t;
+  return i;
+}
+/** Shows frame `i` of `frames`. */
+const setFrame = (frames: NowPlume['frames'], i: number) => { st.frame = Math.max(0, Math.min(frames.length - 1, i)); st.frameT = frames[st.frame]?.t ?? null; };
 const decoded = new WeakMap<object, Float32Array>();
 /** A frame's values in µg/m³ at the grid's nodes. */
 function plumeValues(p: NowPlume, f: NowPlume['frames'][number]) {
@@ -124,11 +137,11 @@ export function airLayers(owner: string, ctx: Ctx): Layer[] {
   const frames = st.plume ? plumeFrames(nw.plume) : [];
   if (frames.length) {
     const still = reducedMotion();
+    frameAt(frames);
     if (st.playing && !still && ctx.clock - st.stepped > (st.frame >= frames.length - 1 ? LAST_MS : FRAME_MS)) {
-      st.frame = (st.frame + 1) % frames.length;
+      setFrame(frames, (st.frame + 1) % frames.length);
       st.stepped = ctx.clock;
     }
-    st.frame = Math.min(st.frame, frames.length - 1);
     const f = frames[st.frame];
     out.push(new BitmapLayer({
       id: `${owner}-air-plume-base`, image: plumeImage(nw.plume!, f), bounds: gridBounds(nw.plume!.grid), pickable: true,
@@ -169,7 +182,7 @@ export function airLayers(owner: string, ctx: Ctx): Layer[] {
 /** The tooltip over the smoke picture; `undefined` when the thing under the pointer is not one of the chips' layers. */
 export function airTooltip(info: PickingInfo, data: Data): string | null | undefined {
   if (!info.layer?.id.endsWith('-air-plume-base')) return undefined;
-  const p = data.now.plume, f = plumeFrames(p)[st.frame];
+  const fs = plumeFrames(data.now.plume), p = data.now.plume, f = fs[frameAt(fs)];
   const [lon, lat] = (info.coordinate ?? []) as number[];
   if (!p || !f || lon == null || lat == null) return null;
   const v = gridAt(p.grid, plumeValues(p, f), lon, lat);
@@ -194,7 +207,7 @@ export function airPanel(host: HTMLElement, data: Data, opts: { id: string; atNo
   </div>`);
   const body = host.querySelector<HTMLElement>('.air-body')!, away = host.querySelector<HTMLElement>('.air-away')!;
   const places = data.munis;
-  let time = NaN, shown = -1, shownPlay: boolean | null = null, shownStill: boolean | null = null;
+  let time = NaN, shown: string | null = null, shownN = -1, shownPlay: boolean | null = null, shownStill: boolean | null = null;
 
   const windBlock = () => {
     if (!st.wind) return '';
@@ -216,7 +229,7 @@ export function airPanel(host: HTMLElement, data: Data, opts: { id: string; atNo
     if (P && frames.length) {
       const peak = frames.reduce((b, f) => (f.max > b.max ? f : b));
       text = `<p>Fine particles (PM2.5) from wildfire smoke at the surface, forecast by Environment Canada’s FireWork model (${esc(P.model)}), model run of <b>${esc(skTime(P.run))}</b> Saskatchewan time, shown every ${P.everyH} hours until ${esc(skTime(frames.at(-1)!.t))} (a new run every 12 hours).</p>
-        <div class="air-scrub"><button class="air-play" type="button" aria-label="Play or pause the forecast"></button><input type="range" min="0" max="${frames.length - 1}" step="1" value="${Math.min(st.frame, frames.length - 1)}" aria-label="Forecast hour"><span class="air-when"></span></div>
+        <div class="air-scrub"><button class="air-play" type="button" aria-label="Play or pause the forecast"></button><input type="range" min="0" max="${frames.length - 1}" step="1" value="${Math.max(0, frameAt(frames))}" aria-label="Forecast hour"><span class="air-when"></span></div>
         <p class="air-stat"></p>
         <div class="ramp" style="background:linear-gradient(90deg,${[0.3, 1, 5, 25, 100, 400].map((v, i, a) => `${d3.color(plumeRamp(v))!.copy({ opacity: plumeAlpha(v) })} ${(i / (a.length - 1)) * 100}%`).join(',')}),#0b1220"></div>
         <div class="ramp-labels"><span>0</span><span>1</span><span>5</span><span>25</span><span>100</span><span>400+ µg/m³</span></div>
@@ -227,11 +240,14 @@ export function airPanel(host: HTMLElement, data: Data, opts: { id: string; atNo
   /** the scrubber's own line and the play button, which change with every frame */
   const syncFrame = () => {
     const frames = plumeFrames(P), scrub = body.querySelector<HTMLInputElement>('.air-scrub input');
+    // a frame passed since the block was built (the list is shorter, or empty): build it again for the new list
+    if (st.plume && P && scrub && frames.length !== shownN && shownN >= 0) { draw(); return; }
     if (!scrub || !P || !frames.length) return;
     const still = reducedMotion();
-    if (shown === st.frame && shownPlay === st.playing && shownStill === still) return;
-    shown = st.frame; shownPlay = st.playing; shownStill = still;
-    const f = frames[Math.min(st.frame, frames.length - 1)];
+    frameAt(frames);
+    if (shown === st.frameT && shownN === frames.length && shownPlay === st.playing && shownStill === still) return;
+    shown = st.frameT; shownN = frames.length; shownPlay = st.playing; shownStill = still;
+    const f = frames[st.frame];
     scrub.value = String(st.frame);
     scrub.style.setProperty('--p', `${(st.frame / Math.max(1, frames.length - 1)) * 100}%`);
     body.querySelector('.air-when')!.textContent = `${skTime(f.t)} · ${ahead(f.t)}`;
@@ -245,21 +261,21 @@ export function airPanel(host: HTMLElement, data: Data, opts: { id: string; atNo
   const draw = () => {
     body.innerHTML = plumeBlock() + windBlock();
     host.querySelectorAll<HTMLElement>('[data-air]').forEach((b) => b.classList.toggle('on', st[b.dataset.air as 'wind' | 'plume']));
-    shown = -1;
+    shown = null; shownN = -1;
     syncFrame();
   };
   host.querySelector('.air-live .chips')!.addEventListener('click', (e) => {
     const k = (e.target as HTMLElement).closest<HTMLElement>('[data-air]')?.dataset.air as 'wind' | 'plume' | undefined;
     if (!k) return;
     st[k] = !st[k];
-    if (k === 'plume' && st.plume) { st.frame = 0; st.playing = true; st.stepped = performance.now(); }
+    if (k === 'plume' && st.plume) { setFrame(plumeFrames(P), 0); st.playing = true; st.stepped = performance.now(); }
     // the chips draw at Now only: turning one on from elsewhere on the timeline goes there (which rebuilds this panel)
     if (st[k] && !opts.atNow(time)) window.dispatchEvent(new CustomEvent('atlas:layer', { detail: opts.id }));
     else draw();
   });
   body.addEventListener('input', (e) => {
     if (!(e.target as HTMLElement).matches('.air-scrub input')) return;
-    st.frame = +(e.target as HTMLInputElement).value;
+    setFrame(plumeFrames(P), +(e.target as HTMLInputElement).value);
     st.playing = false;
     syncFrame();
   });

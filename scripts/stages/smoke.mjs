@@ -19,7 +19,13 @@ export default async function smoke() {
   // only years with a published hourly PM2.5 file (the current year has none yet)
   const files = (await pool(years, 4, async (y) => {
     const hp = `${DIR}/${y}/ContinuousData-DonneesContinu/HourlyData-DonneesHoraires`;
-    const f = (await list(hp).catch(() => [])).find((c) => /^PM25_\d{4}\.csv$/i.test(c.name));
+    // a folder the API does not have (4xx) is no file yet; any other failure is an error, except for the latest two
+    // years, which may simply not be published yet (logged, so the omission shows)
+    const f = (await list(hp).catch((e) => {
+      if (e.status >= 400 && e.status < 500) return [];
+      if (y >= new Date().getFullYear() - 1) { log(`  ${y}: listing failed (${e.message}); left out`); return []; }
+      throw new Error(`NAPS ${y} listing failed: ${e.message}`);
+    })).find((c) => /^PM25_\d{4}\.csv$/i.test(c.name));
     return f ? { y, path: `${hp}/${f.name}` } : null;
   })).filter(Boolean);
   log(`  ${files.length} yearly PM2.5 files (${files[0]?.y}–${files.at(-1)?.y})`);

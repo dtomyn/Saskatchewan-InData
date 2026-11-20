@@ -3,7 +3,7 @@ import { BBOX } from '../lib/config.mjs';
 import { driveTimes } from '../lib/drive.mjs';
 import { distKm } from '../lib/geo.mjs';
 import { cached, fetchBuf, log, round, writeOut } from '../lib/io.mjs';
-import { getPlaces, getProvince, inSask } from '../lib/places.mjs';
+import { getPlaces, getProvince, inSask, straightTimes } from '../lib/places.mjs';
 
 // Newcomer services: where to get settlement help, English classes, a Social Insurance Number (Service Canada) and a
 // driver's licence and plates (an SGI motor licence issuer), and the drive from each place to the nearest of each.
@@ -44,6 +44,20 @@ export default async function newcomer() {
     });
   }
   if (!agencies.length) throw new Error(`no Saskatchewan offices among IRCC's ${national} records`);
+  // offices at one street address (units apart) are one building: an office placed far from two or more that agree
+  // there is moved to them (IRCC's own position for it is off)
+  const street = (a) => `${(a.city ?? '').toLowerCase()}|${(a.addr ?? '').split(',')[0].replace(/\s+/g, ' ').trim().toLowerCase()}`;
+  let moved = 0;
+  for (const a of agencies) {
+    if (!a.addr) continue;
+    const same = agencies.filter((b) => b !== a && street(b) === street(a));
+    const agree = same.filter((b) => same.some((c) => c !== b && distKm(b.lon, b.lat, c.lon, c.lat) < 0.2));
+    if (agree.length < 2 || agree.some((b) => distKm(a.lon, a.lat, b.lon, b.lat) < 0.5)) continue;
+    a.lon = round(agree.reduce((s, b) => s + b.lon, 0) / agree.length, 5);
+    a.lat = round(agree.reduce((s, b) => s + b.lat, 0) / agree.length, 5);
+    moved++;
+  }
+  if (moved) log(`  ${moved} offices moved to the others at the same street address`);
   log(`  ${agencies.length} in-person IRCC-funded offices in or near Saskatchewan (of ${national} in Canada)`);
 
   // --- the province's settlement services. HAND-TYPED: the Government of Saskatchewan publishes this list only as a
@@ -67,7 +81,7 @@ export default async function newcomer() {
     { n: 'Northeast Newcomer Services (Town of Tisdale)', town: 'tisdale', addr: '800 101 Street, Tisdale', tel: '306-873-2681', ircc: null },
     { n: 'YWCA Prince Albert', town: 'prince albert', addr: '1895 Central Avenue, Prince Albert', tel: '306-763-0736', ircc: /YWCA Prince Albert/i },
     { n: 'Battlefords Immigration Resource Centre', town: 'north battleford', addr: '761C 106th Street, North Battleford', tel: '306-446-0622', ircc: /Battlefords Immigration Resource/i },
-    { n: 'Catholic Social Services (Lloydminster)', town: 'lloydminster', addr: '6612 35 Street, Lloydminster, AB', tel: '780-875-9084', ircc: null },
+    { n: 'Catholic Social Services (Lloydminster)', town: 'lloydminster', addr: '6612 35 Street, Lloydminster, AB', tel: '780-875-9084', ircc: /^Catholic Social Services\b.*Lloydminster/i },
   ];
   for (const s of SK_SETTLEMENT) {
     const hits = s.ircc ? agencies.filter((a) => s.ircc.test(a.n)) : [];
@@ -115,12 +129,12 @@ export default async function newcomer() {
     g: idx(offices).filter((o) => o.k === 'sgi' || o.k === 'ins'),
   };
   const towns = Object.fromEntries(places.map((p) => [p.key, {}]));
-  let routed = true;
-  for (const [k, list] of Object.entries(sets)) {
-    const d = await driveTimes(places, list, `newcomer-${k}`, { keep: 1 });
-    routed &&= d.routed;
-    for (const [key, v] of Object.entries(d.towns)) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
-  }
+  const drives = {};
+  for (const [k, list] of Object.entries(sets)) drives[k] = await driveTimes(places, list, `newcomer-${k}`, { keep: 1 });
+  // one `routing` label covers every set: when any could not be routed, all are straight lines
+  const routed = Object.values(drives).every((d) => d.routed);
+  for (const [k, list] of Object.entries(sets))
+    for (const [key, v] of Object.entries(routed ? drives[k].towns : straightTimes(places, list))) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
 
   await writeOut('newcomer', {
     source: 'Immigration, Refugees and Citizenship Canada, “Find free newcomer services near you” (ircc.canada.ca/english/newcomers/services), the IRCC-funded settlement and language offices it lists',

@@ -37,14 +37,15 @@ Turn on a history layer and press play, or set a year; click an event for its pa
 ## Check it
 
 ```js
+// one line at a time: a panel fills a moment after it opens, and a tour replaces one still running
 atlas.tour('hazards')    // the guided tour: rivers in 2011, tornadoes, hail, flood-prone land in Moose Jaw
-atlas.tour('province')   // wildfires played from 1959, the north in 2015, drought in July 2021
+atlas.tour('province')   // once hazards has finished: wildfires played from 1959, the north in 2015, drought in July 2021
 // live readings: load /?film&now (plain ?film skips them)
 atlas.clearMap(); atlas.focus('rivers')   // lands on Now; flood-prone land shaded around mapped towns
-document.querySelector('.bldg-list li[data-area="Prince Albert"]').click()   // flies in: buildings, the water, 1,441 tinted
-atlas.map.querySourceFeatures('bldg', { sourceLayer: 'buildings' }).length   // > 0 past zoom 12; no .pmtiles request further out
+document.querySelector('.bldg-list li[data-area="Prince Albert"]').click()   // once the panel shows; flies in: buildings, the water, 1,441 tinted
+atlas.map.querySourceFeatures('bldg', { sourceLayer: 'buildings' }).length   // after the flight and tiles: > 0 past zoom 12; no .pmtiles request further out
 atlas.openTown('regina')                   // Right now, then Outlooks
 atlas.clearMap(); atlas.focus('smoke')    // then the Wind chip: trails drift; Smoke forecast: the scrubber plays
 await atlas.replaySeason(2026)             // Wildfires: the season plays to Oct 31; the counter's total is the rows in history/fires/2026-04…10
-atlas.leaveReplay()                        // back to Wildfires' own timeline
+atlas.leaveReplay()                        // once it has played (about 40 s): back to Wildfires' own timeline
 ```

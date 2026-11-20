@@ -95,11 +95,13 @@ export function smokeLayer(data: Data): AtlasLayer {
     },
   };
   const borrowers = (i: number) => Object.entries(nowA?.towns ?? {}).filter(([, [c]]) => c === i).map(([k]) => data.munis.find((m) => m.key === k)?.name ?? k);
+  /** a community's forecast maximum while its valid time is still ahead; dropped once it has passed */
+  const fcLive = (c: AqhiCommunity) => c.fv != null && !!c.ft && Date.parse(c.fto ?? c.ft) > Date.now();
   function airNow() {
     if (data.now.skipped) return '';
     const live = comms.filter((c) => drawable(c.t));
     const body = `<p>Environment Canada’s Air Quality Health Index, the latest hour at each community it reports for, and the highest value its newest forecast expects. AQHI rolls three pollutants (ozone, nitrogen dioxide and fine particles) into one 1–10+ health-risk scale: it is not the smoke-day count below, and the two are never drawn together. A place without its own reading borrows the nearest community within ${nowA?.reachKm ?? 150} km; its Town Report says which.</p>
-      <div class="now-list">${live.map((c) => `<div><span class="sw" style="background:${aqhiColor(c.v)}"></span><b>${aqhiText(c.v)}</b> ${esc(c.name)}${c.out ? ' <span class="tk">(outside Sask.)</span>' : ''} <span class="tk">${aqhiWord(c.v)}${c.fv != null && c.ft && Date.parse(c.fto ?? c.ft) > Date.now() ? ` · forecast up to ${aqhiText(c.fv)} by ${esc(skTime(c.fto ?? c.ft))}${c.pub ? `, issued ${esc(skTime(c.pub))}` : ''}` : ''}</span> ${ageTag(c.t)}</div>`).join('') || '<div class="tk">No community has reported in the past day.</div>'}</div>
+      <div class="now-list">${live.map((c) => `<div><span class="sw" style="background:${aqhiColor(c.v)}"></span><b>${aqhiText(c.v)}</b> ${esc(c.name)}${c.out ? ' <span class="tk">(outside Sask.)</span>' : ''} <span class="tk">${aqhiWord(c.v)}${fcLive(c) ? ` · forecast up to ${aqhiText(c.fv!)} by ${esc(skTime(c.fto ?? c.ft!))}${c.pub ? `, issued ${esc(skTime(c.pub))}` : ''}` : ''}</span> ${ageTag(c.t)}</div>`).join('') || '<div class="tk">No community has reported in the past day.</div>'}</div>
       ${provinceOutlook(data, 'smoke')}
       ${alertList(alertsInEffect(data, 'smoke'), data)}`;
     return nowBlock({ color, asOf: nowA?.asOf ?? null, body, source: nowA?.source ?? '', sourceUrl: nowA?.sourceUrl, missing: 'This copy of the data has no air-quality readings.' });
@@ -290,7 +292,7 @@ export function smokeLayer(data: Data): AtlasLayer {
           body: `Environment Canada’s Air Quality Health Index for ${c.name}${c.out ? ' (outside Saskatchewan)' : ''}, ${aqhiWord(c.v)}. The index combines ozone, nitrogen dioxide and fine particles into one health-risk number; it is not a count of smoke days.`,
           stats: [
             { v: aqhiText(c.v), l: `observed ${ago(c.t)}${freshness(c.t) === 'stale' ? ' · stale' : ''}` },
-            ...(c.fv != null && c.ft ? [{ v: aqhiText(c.fv), l: `highest forecast, ${skTime(c.ft)} (Sask. time)` }] : []),
+            ...(fcLive(c) ? [{ v: aqhiText(c.fv!), l: `highest forecast, by ${skTime(c.fto ?? c.ft!)} (Sask. time)${c.pub ? `, issued ${skTime(c.pub)}` : ''}` }] : []),
             { v: String(who.length), l: `of the atlas’s places borrow this reading` },
           ],
           ...(who.length ? { sections: [{ title: 'Places that borrow this reading', text: who.join(', ') }] } : {}),
@@ -325,7 +327,7 @@ export function smokeLayer(data: Data): AtlasLayer {
       if (isLive(info.layer.id)) {
         if (o.a) return alertTooltip(o.a);
         const c: AqhiCommunity | undefined = o.c;
-        return c ? `<b>${esc(c.name)}</b> <span class="tk">AQHI</span><br><span class="tk">Right now</span> <span class="tv">${aqhiText(c.v)}, ${aqhiWord(c.v)}</span><br><span class="tk">Observed</span> <span class="tv">${ago(c.t)}${freshness(c.t) === 'stale' ? ' · stale' : ''}</span>${c.fv != null ? `<br><span class="tk">Forecast up to</span> <span class="tv">${aqhiText(c.fv)}</span>` : ''}` : null;
+        return c ? `<b>${esc(c.name)}</b> <span class="tk">AQHI</span><br><span class="tk">Right now</span> <span class="tv">${aqhiText(c.v)}, ${aqhiWord(c.v)}</span><br><span class="tk">Observed</span> <span class="tv">${ago(c.t)}${freshness(c.t) === 'stale' ? ' · stale' : ''}</span>${fcLive(c) ? `<br><span class="tk">Forecast up to</span> <span class="tv">${aqhiText(c.fv!)} by ${esc(skTime(c.fto ?? c.ft!))}</span>` : ''}` : null;
       }
       const s: SmokeStation = o.s ?? o;
       const yy = years(s);

@@ -54,7 +54,8 @@ export default async function twins() {
   const match = (t, p, ok = () => true) => {
     let bi = -1, bd = Infinity;
     stations.forEach((s, i) => { if (!ok(s)) return; const d = Math.hypot((s.t - t) / sdT, (s.p - p) / sdP); if (d < bd) { bd = d; bi = i; } });
-    const i = bd <= MAX_D ? bi : t > maxT ? -1 : -2;
+    // above every station is "warmer than anywhere", even when a station is within MAX_D
+    const i = t > maxT ? -1 : bd <= MAX_D ? bi : -2;
     return [i, Math.round(t * 10) / 10, Math.round(p), Math.round(bd * 100) / 100];
   };
   const towns = {};
@@ -73,6 +74,8 @@ export default async function twins() {
         const med = at(1), mt = med[0] >= 0 ? stations[med[0]].t : null;
         const lo = at(2, mt == null ? undefined : (s) => s.t <= mt), hi = at(3, mt == null ? undefined : (s) => s.t >= mt);
         if (med[0] === -1) hi[0] = -1; // past the warmest station at the median: the 90th percentile is too
+        // no median twin to narrow them: ends whose stations read backwards are left as projected values (no twin)
+        if (med[0] === -2 && lo[0] >= 0 && hi[0] >= 0 && stations[lo[0]].t > stations[hi[0]].t) lo[0] = hi[0] = -2;
         return [med, lo, hi];
       });
     for (const sc of scens) for (const [med, lo, hi] of tw[sc]) {

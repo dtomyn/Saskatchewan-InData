@@ -1,6 +1,7 @@
 // Small d3 charts for the side panel. Every chart has a hover tooltip and a moving "playhead"
 // that tracks the timeline.
 import * as d3 from 'd3';
+import { esc } from './html';
 
 export type ChartHandle = { setPlayhead: (x: number) => void };
 
@@ -63,29 +64,33 @@ export function barChart(
     yFormat?: (v: number) => string;
     tooltip: (d: { x: number; y: number }) => string;
     diverging?: boolean;
+    /** the width of a bar in x: 1 (a year, the default) or 1/12 (a month, for a monthly layer) */
+    step?: number;
   },
 ): ChartHandle {
   const f = frame(el, opts.height ?? 140);
   const [x0, x1] = opts.xDomain;
-  const x = d3.scaleLinear().domain([x0, x1 + 1]).range([0, f.w]);
+  const step = opts.step ?? 1;
+  const bucket = (v: number) => Math.round(v / step);
+  const x = d3.scaleLinear().domain([x0, x1 + step]).range([0, f.w]);
   const ext = d3.extent(opts.data, (d) => d.y) as [number, number];
   const y = d3.scaleLinear().domain(opts.diverging ? [Math.min(0, ext[0]), Math.max(0, ext[1])] : [0, ext[1] || 1]).nice().range([f.h, 0]);
   const g = axes(f, x, y, opts.yFormat ?? ((v) => d3.format('~s')(v)));
-  const bw = Math.max(1, f.w / (x1 - x0 + 1) - 1);
+  const bw = Math.max(1, f.w / ((x1 - x0) / step + 1) - (step < 1 ? 0.3 : 1));
   g.append('g').selectAll('rect').data(opts.data).join('rect')
     .attr('x', (d) => x(d.x) + 0.5).attr('width', bw)
     .attr('y', (d) => y(Math.max(0, d.y))).attr('height', (d) => Math.max(d.y === 0 ? 0 : 1, Math.abs(y(d.y) - y(0))))
     .attr('rx', Math.min(2, bw / 2)).attr('fill', (d) => d.color ?? opts.color);
   if (opts.diverging) g.append('line').attr('x1', 0).attr('x2', f.w).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'rgba(255,255,255,.35)');
 
-  const byX = new Map(opts.data.map((d) => [d.x, d]));
+  const byX = new Map(opts.data.map((d) => [bucket(d.x), d]));
   const hover = g.append('rect').attr('width', bw + 1).attr('height', f.h).attr('fill', 'rgba(255,255,255,.08)').attr('opacity', 0).style('pointer-events', 'none');
   g.append('rect').attr('width', f.w).attr('height', f.h).attr('fill', 'transparent')
     .on('mousemove', (ev: MouseEvent) => {
-      const xv = Math.floor(x.invert(d3.pointer(ev)[0]));
-      const d = byX.get(xv);
+      const b = Math.floor(x.invert(d3.pointer(ev)[0]) / step + 1e-9);
+      const d = byX.get(b);
       if (!d) { hideTip(); hover.attr('opacity', 0); return; }
-      hover.attr('x', x(xv)).attr('opacity', 1);
+      hover.attr('x', x(d.x)).attr('opacity', 1);
       showTip(ev, opts.tooltip(d));
     })
     .on('mouseleave', () => { hideTip(); hover.attr('opacity', 0); });
@@ -123,13 +128,16 @@ export function lineChart(
   g.append('rect').attr('width', f.w).attr('height', f.h).attr('fill', 'transparent')
     .on('mousemove', (ev: MouseEvent) => {
       const xv = x.invert(d3.pointer(ev)[0]);
-      const rows: { s: LineSeries; v: { x: number; y: number } }[] = [];
+      // one x for every row under the heading: the nearest point of any series, then each series' value at that x
+      // (a series with no value there is left out, never shown with a neighbouring year's)
+      let at: number | null = null;
       for (const s of opts.series) {
         if (!s.values.length) continue;
-        const i = d3.bisector((d: { x: number }) => d.x).center(s.values, xv);
-        const v = s.values[i];
-        if (v && Math.abs(v.x - xv) < (opts.xDomain[1] - opts.xDomain[0]) / 20) rows.push({ s, v });
+        const v = s.values[d3.bisector((d: { x: number }) => d.x).center(s.values, xv)];
+        if (v && Math.abs(v.x - xv) < (opts.xDomain[1] - opts.xDomain[0]) / 20 && (at == null || Math.abs(v.x - xv) < Math.abs(at - xv))) at = v.x;
       }
+      const rows: { s: LineSeries; v: { x: number; y: number } }[] = [];
+      if (at != null) for (const s of opts.series) { const v = s.values.find((p) => Math.abs(p.x - at!) < 1e-9); if (v) rows.push({ s, v }); }
       if (!rows.length) { hideTip(); cross.attr('opacity', 0); dots.selectAll('*').remove(); return; }
       const px = x(rows[0].v.x);
       cross.attr('x1', px).attr('x2', px).attr('opacity', 1);
@@ -137,7 +145,7 @@ export function lineChart(
       dots.selectAll('circle').data(shown).join('circle').attr('r', 3.5).attr('cx', (r) => x(r.v.x)).attr('cy', (r) => y(r.v.y))
         .attr('fill', (r) => r.s.color).attr('stroke', '#0b1220').attr('stroke-width', 2);
       const label = Number.isInteger(rows[0].v.x) ? rows[0].v.x : `${Math.floor(rows[0].v.x)} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.round((rows[0].v.x % 1) * 12) % 12]}`;
-      showTip(ev, `<b>${label}</b><br>${shown.map((r) => `<span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${r.s.color};margin-right:6px"></span>${r.s.label} <span class="tv">${vf(r.v.y)}</span>`).join('<br>')}`);
+      showTip(ev, `<b>${label}</b><br>${shown.map((r) => `<span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${r.s.color};margin-right:6px"></span>${esc(r.s.label)} <span class="tv">${vf(r.v.y)}</span>`).join('<br>')}`);
     })
     .on('mouseleave', () => { hideTip(); cross.attr('opacity', 0); dots.selectAll('*').remove(); });
   return playhead(f, x, '#fff');

@@ -7,7 +7,7 @@ import type { Layer } from '@deck.gl/core';
 import type { ChildcareCentre, ChildcareHomes, Data } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, townColumns } from './layer-kit';
 import { metric, na, link } from './report-kit';
 
 export const CHILDCARE_COLOR = '#ffc4a3';
@@ -58,7 +58,10 @@ export function childcareLayer(data: Data): AtlasLayer {
   let target: TargetId = 'c';
   const places = new Map(data.munis.map((m) => [m.key, placeChildcare(data, m.key)]));
   const tripOf = (key: string, k: TargetId) => places.get(key)?.[k] ?? null;
-  const val = (key: string) => { const t = tripOf(key, target); return t ? t.min ?? t.km : null; };
+  // one unit for every comparison: minutes when the data are routed, otherwise kilometres (a run whose router failed
+  // part-way keeps its earlier minutes, which would not compare with the later kilometres)
+  const tv = (t: ChildcareTrip) => (routed ? t.min ?? t.km : t.km);
+  const val = (key: string) => { const t = tripOf(key, target); return t ? tv(t) : null; };
   const ramp = d3.scaleLinear<string>().domain([2, 30, 120]).range(['#fff4ec', color, '#e0567a']).interpolate(d3.interpolateRgb).clamp(true);
   const height = (v: number) => 2600 + Math.min(v, 300) * 600;
   const tcol = (k: TargetId) => TARGETS.find((g) => g.id === k)!.color;
@@ -146,7 +149,7 @@ export function childcareLayer(data: Data): AtlasLayer {
       const draw = () => {
         el.querySelectorAll<HTMLButtonElement>('[data-k]').forEach((b) => b.classList.toggle('on', b.dataset.k === target));
         const g = TARGETS.find((x) => x.id === target)!;
-        const rows = data.munis.flatMap((m) => { const t = tripOf(m.key, target); const p = places.get(m.key); return t && p ? [{ m, t, v: t.min ?? t.km, n: target === 'c' ? p.nc : p.nc + p.nh }] : []; }).sort((a, b) => a.v - b.v);
+        const rows = data.munis.flatMap((m) => { const t = tripOf(m.key, target); const p = places.get(m.key); return t && p ? [{ m, t, v: tv(t), n: target === 'c' ? p.nc : p.nc + p.nh }] : []; }).sort((a, b) => a.v - b.v);
         hero(0, String(target === 'c' ? centres.length : centres.length + nHomes), target === 'c' ? 'licensed centres' : 'licensed centres and homes');
         hero(1, `${rows.filter((r) => r.n > 0).length} of ${rows.length}`, `places with a ${g.short} in town`);
         hero(2, `${Math.round(d3.median(rows, (r) => r.v) ?? 0)} ${unit}`, `median place to the nearest ${target === 'c' ? 'centre' : 'licensed care'}`);
@@ -168,7 +171,7 @@ export function childcareLayer(data: Data): AtlasLayer {
         <div class="legend"><span><i class="sw" style="background:${color}"></i>Licensed centre (${centres.length})</span><span><i class="sw" style="background:${color};box-shadow:0 0 0 2px #fff"></i>Takes infants (${centres.filter((s) => s.i).length})</span><span><i class="sw" style="background:${HOMES_COLOR}"></i>Family child care homes, by community (${nHomes}, ${d3.sum(homes, (h) => h.g)} group homes)</span></div>
         <div class="callout" style="--c:${color}"><b>Licensed does not mean a space is open.</b> Waitlists of a year or more are common, especially for infants, and $10 a day applies only to regulated spaces. Call the centre or home, and add your name to waitlists early.</div>
         <p class="note">Every centre and family child care home the Ministry of Education regulates, as listed on ${src ? `<a href="${src}" target="_blank" rel="noopener">saskatchewan.ca’s child care finder</a>` : 'saskatchewan.ca’s child care finder'}, with the ministry’s own points (it calls them approximate). The list gives no licensed capacity, so spaces are not shown, only how many facilities there are. Family child care homes are people’s homes: only how many there are in each community is kept, shown at a point rounded to about 2 km. The ministry’s points are approximate and some are far off: a facility whose point lies outside the atlas place its address names is shown faded at that place’s centre. A listing with no type is counted as a centre or a home by its name (inferred). Unlicensed care, preschools and school-age programs not on the list are not shown. “In town” uses Daily needs’ town limits and ${D.slackKm} km slack.</p>
-        ${sourceLine(`${D.source}; ${lic ? `<a href="${lic}" target="_blank" rel="noopener">Crown copyright</a>` : 'Crown copyright'}, reproduced for non-commercial use. ${D.routingSource ?? 'Straight-line distances.'} Read ${D.asOf}.`)}`);
+        <div class="source">Source: ${esc(D.source)}; ${lic ? `<a href="${lic}" target="_blank" rel="noopener">Crown copyright</a>` : 'Crown copyright'}, reproduced for non-commercial use. ${esc(D.routingSource ?? 'Straight-line distances.')} Read ${esc(D.asOf)}.</div>`);
       return { update() {} };
     },
     tooltip(info) {

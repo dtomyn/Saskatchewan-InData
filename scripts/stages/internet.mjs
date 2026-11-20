@@ -26,6 +26,7 @@ export default async function internet() {
   let rows;
   try {
     rows = (await fs.readFile(skFile, 'utf8')).split('\n').filter(Boolean).map((l) => l.split('\t'));
+    if (!rows.length) throw new Error('empty cache'); // rebuilt below
   } catch {
     const phhZip = await cachedFile('internet/PHH_2021_CSV.zip', `${API}/PHH_2021_CSV.zip`);
     const spdZip = await cachedFile('internet/NBD_PHH_Speeds.zip', `${API}/NBD_PHH_Speeds.zip`);
@@ -58,7 +59,9 @@ export default async function internet() {
     log(`  speeds matched for ${matched} of them`);
     if (!matched) throw new Error('no speeds matched Saskatchewan pseudo-households');
     rows = [...sk.values()].map((r) => r.map(String));
-    await fs.writeFile(skFile, rows.map((r) => r.join('\t')).join('\n'));
+    // through a .part file, so a run stopped mid-write never leaves a short cache behind
+    await fs.writeFile(`${skFile}.part`, rows.map((r) => r.join('\t')).join('\n'));
+    await fs.rename(`${skFile}.part`, skFile);
   }
   const phh = rows.map((r) => ({ lon: +r[1], lat: +r[2], hh: +r[3], hex: r[4], comb: +r[5], wired: +r[6], lte: +r[7] }));
 

@@ -35,11 +35,14 @@ export default async function power() {
     p: joinPaths(parts).map((l) => dp(l, 0.0008).map(([x, y]) => [round(x, 4), round(y, 4)])).filter((l) => l.length >= 2),
   })).sort((a, b) => (b.kv ?? 0) - (a.kv ?? 0));
   const lineKm = (parts) => parts.reduce((a, l) => a + l.reduce((s, c, i) => s + (i ? distKm(l[i - 1][0], l[i - 1][1], c[0], c[1]) : 0), 0), 0);
+  // whole source tokens ("gas;oil"), so "biogas" is never read as gas
   const SOURCE = (t) => {
-    const s = String(t['plant:source'] ?? t['generator:source'] ?? '').toLowerCase();
-    return /coal/.test(s) ? 'coal' : /gas/.test(s) ? 'gas' : /hydro|water/.test(s) ? 'hydro' : /wind/.test(s) ? 'wind' : /solar/.test(s) ? 'solar' : /biomass|biogas|waste|heat/.test(s) ? 'heat' : 'other';
+    const s = new Set(String(t['plant:source'] ?? t['generator:source'] ?? '').toLowerCase().split(/[;,]/).map((x) => x.trim()));
+    const has = (...k) => k.some((x) => s.has(x));
+    return has('coal') ? 'coal' : has('gas', 'natural_gas') ? 'gas' : has('hydro', 'water') ? 'hydro' : has('wind') ? 'wind' : has('solar') ? 'solar' : has('biomass', 'biogas', 'biofuel', 'waste', 'heat') ? 'heat' : 'other';
   };
-  const mw = (t) => { const m = /([\d.]+)\s*(mw|kw|gw)?/i.exec(String(t['plant:output:electricity'] ?? '')); if (!m) return null; const v = +m[1] * ({ kw: 0.001, gw: 1000 }[m[2]?.toLowerCase()] ?? 1); return v > 0 ? round(v, 1) : null; };
+  // "39 MW", "500 kW", "1.2 GW", "15000 W" → MW, a bare number as MW; anything else ("yes") is unknown
+  const mw = (t) => { const m = /^\s*(\d+(?:\.\d+)?)\s*(w|kw|mw|gw)?\s*$/i.exec(String(t['plant:output:electricity'] ?? '')); if (!m) return null; const v = +m[1] * ({ w: 1e-6, kw: 0.001, gw: 1000 }[m[2]?.toLowerCase()] ?? 1); return v > 0 ? round(v, 1) : null; };
   const subs = [], plants = [];
   for (const e of siteOSM.elements) {
     const t = e.tags ?? {};
@@ -84,7 +87,7 @@ export default async function power() {
           }
         }
     let sub = null;
-    for (const s of subs) { if (distKm(p.lon, p.lat, s[0], s[1]) > 60) continue; const k = d(s[0], s[1]); if (!sub || k < sub) sub = k; }
+    for (const s of subs) { if (distKm(p.lon, p.lat, s[0], s[1]) > 60) continue; const k = d(s[0], s[1]); if (sub == null || k < sub) sub = k; }
     let plant = null;
     plants.forEach((x, i) => { if (distKm(p.lon, p.lat, x.lon, x.lat) > 60) return; const k = d(x.lon, x.lat); if (k <= PLANT_KM && (!plant || k < plant.km)) plant = { i, km: k }; });
     towns[p.key] = {

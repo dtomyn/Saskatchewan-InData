@@ -34,7 +34,8 @@ export default async function nowAurora() {
     const last = rows.at(-1);
     const head = Array.isArray(rows[0]) ? rows[0] : null;
     const t = head ? last[head.indexOf('time_tag')] : last.time_tag;
-    const k = Number(head ? last[head.indexOf('Kp')] : last.Kp);
+    const raw = head ? last[head.indexOf('Kp')] : last.Kp;
+    const k = raw == null || raw === '' ? NaN : Number(raw); // Number(null) is 0, a false quiet sky
     const iso = `${String(t).trim().replace(' ', 'T').slice(0, 19)}Z`;
     if (!Number.isFinite(k) || k < 0 || k > 9 || !Number.isFinite(Date.parse(iso))) throw new Error('no Kp value in the last row');
     kp = { t: iso, v: Math.round(k * 100) / 100, hours: 3 };
@@ -51,7 +52,8 @@ export default async function nowAurora() {
     const out = [];
     for (const r of head ? rows.slice(1) : rows) {
       if (get(r, 'observed') !== 'predicted') continue;
-      const t = Date.parse(`${String(get(r, 'time_tag')).trim().replace(' ', 'T').slice(0, 19)}Z`), k = Number(get(r, 'kp'));
+      const raw = get(r, 'kp');
+      const t = Date.parse(`${String(get(r, 'time_tag')).trim().replace(' ', 'T').slice(0, 19)}Z`), k = raw == null || raw === '' ? NaN : Number(raw);
       if (!Number.isFinite(t) || !Number.isFinite(k) || k < 0 || k > 9) continue;
       if (t + 3 * 36e5 > now && t < now + 36 * 36e5) out.push([new Date(t).toISOString(), Math.round(k * 100) / 100]);
     }

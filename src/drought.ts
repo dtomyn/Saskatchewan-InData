@@ -29,8 +29,8 @@ const WINDOW = 10;
 const level = (ch: string): number | null => (ch === 'n' ? null : ch >= 'b' && ch <= 'f' ? ch.charCodeAt(0) - 98 : -1);
 const catText = (v: number | null) => (v == null ? 'not analyzed' : v < 0 ? 'no drought' : `${DROUGHT_CATS[v].short} ${DROUGHT_CATS[v].label.toLowerCase()}`);
 const catColor = (v: number | null) => (v == null ? NA_COLOR : v < 0 ? NONE_COLOR : DROUGHT_CATS[v].c);
-/** "2021-07" → 2021.5 (the start of July on the timeline) */
-const ymT = (ym: string) => +ym.slice(0, 4) + (+ym.slice(5, 7) - 1) / 12;
+/** "2021-07" → 2021.583 (the end of July on the timeline: each map is the monitor's for the end of its month) */
+const ymT = (ym: string) => +ym.slice(0, 4) + +ym.slice(5, 7) / 12;
 const ymText = (ym: string) => `${MONTHS[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)}`;
 
 /** A place's drought record: months at D2 or worse in the last ten years of maps, and the latest month's category. */
@@ -106,7 +106,7 @@ export function droughtLayer(data: Data): AtlasLayer {
     pics.set(i, cv);
     return cv;
   };
-  /** the map in force at time t: the latest month that has started (a missing month keeps the one before) */
+  /** the map in force at time t: the latest month that has ended (a missing month keeps the one before) */
   const monthAt = (t: number) => {
     const i = lowerBound(ts, t + 1e-6, (x) => x) - 1;
     return i >= 0 && t - ts[i] < 3 / 12 ? i : -1;
@@ -135,7 +135,7 @@ export function droughtLayer(data: Data): AtlasLayer {
   const worstYear = fullYears.reduce((a, y) => (yMean(y) > yMean(a) ? y : a), fullYears[0] ?? 0);
   const worstMonth = share.reduce((a, s, i) => (s[2] > share[a][2] ? i : a), 0);
   const worstCat = (s: number[]) => (s[4] >= 0.5 ? 4 : s[3] >= 0.5 ? 3 : s[2] >= 0.5 ? 2 : s[1] >= 0.5 ? 1 : 0);
-  const a0 = ts[0] ?? 2002.8, a1 = (ts.at(-1) ?? 2026) + 1 / 12 - 0.001;
+  const a0 = ts[0] ?? 2002.9, a1 = ts.at(-1) ?? 2026.75;
   const yr0 = Math.floor(a0), yr1 = Math.floor(a1);
   const towns = data.munis.filter((m) => D?.towns[m.key]);
   const SRC = { label: 'AAFC Canadian Drought Monitor (open.canada.ca)', url: D?.sourceUrl ?? 'https://open.canada.ca/data/en/dataset/292646cd-619f-4200-afb1-8b2c52f984a2' };
@@ -193,9 +193,9 @@ export function droughtLayer(data: Data): AtlasLayer {
       const d3max = Math.max(...yi.map((i) => share[i][3])), d4max = Math.max(...yi.map((i) => share[i][4]));
       const hit = towns.filter((m) => yi.some((i) => (level(D.towns[m.key][i]) ?? -1) >= 3));
       return [{
-        t: ts[p] + 0.5 / 12, layer: 'drought', kind: 'Drought year', layers: ['drought'], lon: -106.5, lat: 51, zoom: 5.4,
+        t: ts[p], layer: 'drought', kind: 'Drought year', layers: ['drought'], lon: -106.5, lat: 51, zoom: 5.4,
         title: `${y}: the worst drought year on the map`,
-        body: `In ${y} an average ${yMean(y).toFixed(0)}% of Saskatchewan was in severe drought or worse (D2+) on the Canadian Drought Monitor’s month-end maps, the most of any year since ${yr0 + 1}. It peaked at the end of ${ymText(months[p])}, with ${s[2].toFixed(0)}% of the province at D2 or worse${d3max >= 1 ? ` and, at its height that year, ${d3max.toFixed(0)}% in extreme drought (D3)${d4max >= 0.5 ? ` and ${d4max.toFixed(1)}% in exceptional drought (D4)` : ''}` : ''}.${hit.length ? ` ${hit.length} of the atlas’s places sat in extreme drought or worse at least one month that year.` : ''}`,
+        body: `In ${y} an average ${yMean(y).toFixed(0)}% of Saskatchewan was in severe drought or worse (D2+) on the Canadian Drought Monitor’s month-end maps, the most of any year since ${yr0 + 1}. It peaked at the end of ${ymText(months[p])}, with ${s[2].toFixed(0)}% of the province at D2 or worse${d3max >= 1 ? ` and, at its height that year, ${d3max.toFixed(0)}% in extreme drought or worse (D3+)${d4max >= 0.5 ? ` and ${d4max.toFixed(1)}% in exceptional drought (D4)` : ''}` : ''}.${hit.length ? ` ${hit.length} of the atlas’s places sat in extreme drought or worse at least one month that year.` : ''}`,
         stats: [
           { v: `${yMean(y).toFixed(0)}%`, l: `of the province at D2+, ${y} average` },
           { v: `${s[2].toFixed(0)}%`, l: `at D2+, end of ${ymText(months[p])}` },
@@ -226,7 +226,15 @@ export function droughtLayer(data: Data): AtlasLayer {
         <div class="legend" style="display:grid;gap:6px">${DROUGHT_CATS.map((c) => `<span><span class="sw" style="background:${c.c}"></span><b>${c.short}</b> ${c.label} <span class="tk">· expected ${c.every}</span></span>`).join('')}<span><span class="sw" style="background:${NA_COLOR}"></span>Not analyzed (the earliest maps covered farmland only)</span></div>
         <h3>Driest years</h3>
         <div class="legend" style="display:grid;gap:6px">${rank.map((r) => `<span><b>${r.y}</b> · ${r.v.toFixed(0)}% of the province at D2+ on average · worst ${ymText(months[byYear[r.y].peak])} (${share[byYear[r.y].peak][2].toFixed(0)}%)</span>`).join('')}</div>
-        <div class="callout" style="--c:${color}">Over the last ten years of maps, ${(() => { const ps = towns.map((m) => placeDrought(data, m.key)).filter((p): p is PlaceDrought => !!p); const top = ps.length ? Math.max(...ps.map((p) => p.d2)) : 0; const who = towns.filter((m) => placeDrought(data, m.key)?.d2 === top).map((m) => esc(m.name)); return `${who.slice(0, 3).join(', ')}${who.length > 3 ? ` and ${who.length - 3} more` : ''} spent the most months in severe drought or worse: ${top} of ${ps[0]?.n ?? 120}`; })()}.</div>
+        <div class="callout" style="--c:${color}">Over the last ten years of maps, ${(() => {
+          // each town keeps its own record: its count of months analyzed can differ from the next town's
+          const ps = towns.flatMap((m) => { const p = placeDrought(data, m.key); return p ? [{ m, p }] : []; });
+          const top = ps.length ? Math.max(...ps.map((x) => x.p.d2)) : 0;
+          const lead = ps.filter((x) => x.p.d2 === top);
+          const ns = [...new Set(lead.map((x) => x.p.n))];
+          const who = lead.map((x) => `${esc(x.m.name)}${ns.length > 1 ? ` (of ${x.p.n})` : ''}`);
+          return `${who.slice(0, 3).join(', ')}${who.length > 3 ? ` and ${who.length - 3} more` : ''} spent the most months in severe drought or worse: ${top}${ns.length === 1 ? ` of ${ns[0]}` : ''}`;
+        })()}.</div>
         <p class="note">The Drought Monitor is a consensus map drawn by hand from many indicators, not a measurement; its edges are generalised, and a place takes the category of the 10 km map cell its centre is in, so a town near an edge can read one step off. Each month is the map for the end of that month. ${lastNA >= 0 ? `Until ${ymText(months[lastNA])} the maps covered only the agricultural south, so the north shows as not analyzed. ` : ''} Percentages are of the province’s land and lakes. Data: Open Government Licence – Canada.</p>
         ${sourceLine(D?.source ?? '')}`);
       return {

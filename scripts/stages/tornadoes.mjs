@@ -10,7 +10,10 @@ export default async function tornadoes() {
   const csv = (await cached('raw/tornado-events.csv', () => fetchBuf(`${base}GIS_CAN_VerifiedTornadoes_1980-2009.csv`))).toString('latin1');
   if (/^\s*</.test(csv)) throw new Error('tornado database answered with a web page');
   const rows = parseCSV(csv);
-  const num = (v) => { const n = Number(v); return Number.isFinite(n) && n > -998 ? n : null; };
+  // a blank field is unknown, never 0
+  const num = (v) => { if (v == null || String(v).trim() === '') return null; const n = Number(v); return Number.isFinite(n) && n > -998 ? n : null; };
+  // HHMM local time → fraction of a year past midnight (noon when unknown)
+  const hhmm = (v) => { const n = num(v) ?? 1200; return (Math.floor(n / 100) + (n % 100) / 60) / 24 / 365; };
   const out = [];
   for (const r of rows) {
     if (r.PROVINCE !== 'SK') continue;
@@ -21,7 +24,7 @@ export default async function tornadoes() {
     const f = num(r.FUJITA);
     // row: lon, lat, t, Fujita (null unknown), end lon, end lat, length m, width m, deaths, injuries, damage $K, nearest community
     // … source (0 ECCC, 1 NTP), flags (bit 0: default rating, seen but no damage to rate; bit 1: end point estimated)
-    out.push([round(lon, 3), round(lat, 3), round(ymdFrac(y, m, d) + (num(r.HHMM_LOCAL) ?? 1200) / 2400 / 365, 4), f, lon2 == null ? null : round(lon2, 3), lat2 == null ? null : round(lat2, 3), num(r.LENGTH_M), num(r.WIDTH_MAX_), num(r.HUMAN_FATA) ?? 0, num(r.HUMAN_INJ) ?? 0, num(r.DMG_THOUS), r.NEAR_CMMTY || null, 0, 0]);
+    out.push([round(lon, 3), round(lat, 3), round(ymdFrac(y, m, d) + hhmm(r.HHMM_LOCAL), 4), f, lon2 == null ? null : round(lon2, 3), lat2 == null ? null : round(lat2, 3), num(r.LENGTH_M), num(r.WIDTH_MAX_), num(r.HUMAN_FATA) ?? 0, num(r.HUMAN_INJ) ?? 0, num(r.DMG_THOUS), r.NEAR_CMMTY || null, 0, 0]);
   }
   const eccc = out.length;
 
@@ -48,7 +51,7 @@ export default async function tornadoes() {
       estimatedEnds++;
     }
     const n = (v) => (/^\d+$/.test(String(v ?? '').trim()) ? Number(v) : 0);
-    out.push([round(lon, 3), round(lat, 3), round(ymdFrac(p.Year, p.month, p.day) + (p.time ?? 1200) / 2400 / 365, 4), ef ? Number(ef[1]) : null, lon2, lat2,
+    out.push([round(lon, 3), round(lat, 3), round(ymdFrac(p.Year, p.month, p.day) + hhmm(p.time), 4), ef ? Number(ef[1]) : null, lon2, lat2,
       p.track_length > 0 ? Math.round(p.track_length * 1000) : null, p.max_path_width || null, n(p.fatalities_text), n(p.injuries), null, (p.event_name || '').trim() || null, 1, flags | est]);
   }
   out.sort((a, b) => a[2] - b[2]);

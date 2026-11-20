@@ -99,14 +99,32 @@ export default async function transit() {
   for (const g of GTFS) {
     try {
       const zip = await cached(`transit/gtfs-${g.key.replace(/ /g, '_')}.zip`, async () => { const b = await fetchBuf(g.url, { timeout: 300_000 }); if (b[0] !== 0x50 || b[1] !== 0x4b) throw new Error('not a zip'); return b; });
-      const files = unzipSync(new Uint8Array(zip), { filter: (f) => /^(routes|trips|shapes|stops|calendar|feed_info|frequencies)\.txt$/.test(f.name.split('/').pop()) });
+      const files = unzipSync(new Uint8Array(zip), { filter: (f) => /^(routes|trips|shapes|stops|calendar|calendar_dates|feed_info|frequencies)\.txt$/.test(f.name.split('/').pop()) });
       const read = (n) => { const k = Object.keys(files).find((f) => f.split('/').pop() === `${n}.txt`); return k ? parseCSV(strFromU8(files[k])) : []; };
       const routes = read('routes'), trips = read('trips'), shapes = read('shapes'), stops = read('stops'), cal = read('calendar'), info = read('feed_info')[0];
       const pts = new Map();
       for (const s of shapes) { if (!pts.has(s.shape_id)) pts.set(s.shape_id, []); pts.get(s.shape_id).push([+s.shape_pt_sequence, +s.shape_pt_lon, +s.shape_pt_lat]); }
+      // in the feed's own order (shape_pt_sequence), for both the length and the drawing
+      for (const p of pts.values()) p.sort((a, b) => a[0] - b[0]);
       const len = (id) => { const p = pts.get(id) ?? []; let d = 0; for (let i = 1; i < p.length; i++) d += distKm(p[i - 1][1], p[i - 1][2], p[i][1], p[i][2]); return d; };
-      const wed = new Set(cal.filter((c) => c.wednesday === '1').map((c) => c.service_id));
-      const end = [info?.feed_end_date, ...cal.map((c) => c.end_date)].filter(Boolean).sort().at(-1) ?? null;
+      const caldates = read('calendar_dates');
+      const end = [info?.feed_end_date, ...cal.map((c) => c.end_date), ...caldates.map((c) => c.date)].filter(Boolean).sort().at(-1) ?? null;
+      // the services running on one Wednesday: the next one in the feed's dates (or its last, for an expired feed), from
+      // calendar.txt's weekly pattern with calendar_dates.txt's added (1) and removed (2) days. No Wednesday: unknown.
+      const wed = (() => {
+        const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
+        const day = (s) => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)));
+        const start = [info?.feed_start_date, ...cal.map((c) => c.start_date), ...caldates.map((c) => c.date)].filter(Boolean).sort()[0];
+        if (!start || !end) return null;
+        // today, held inside the feed's dates; then the nearest Wednesday after it, else before it, still inside them
+        const t = Math.min(Math.max(+day(ymd(new Date())), +day(start)), +day(end));
+        const w = [0, 1, 2, 3, 4, 5, 6, -1, -2, -3, -4, -5, -6].map((k) => ymd(new Date(t + k * 864e5)))
+          .find((s) => day(s).getUTCDay() === 3 && s >= start && s <= end);
+        if (!w) return null;
+        const on = new Set(cal.filter((c) => c.wednesday === '1' && c.start_date <= w && w <= c.end_date).map((c) => c.service_id));
+        for (const c of caldates) if (c.date === w) { if (c.exception_type === '1') on.add(c.service_id); else if (c.exception_type === '2') on.delete(c.service_id); }
+        return on;
+      })();
       // a feed that runs by headway (frequencies.txt) has one template trip per route, so its trip count means nothing
       const byHeadway = read('frequencies').length > 0;
       const out = [];
@@ -116,19 +134,21 @@ export default async function transit() {
         // the longest shape the route runs stands for it (the other direction mostly retraces it)
         const ids = [...new Set(rt.map((t) => t.shape_id).filter((id) => pts.has(id)))];
         const best = ids.sort((a, b) => len(b) - len(a))[0];
-        const path = best ? line(pts.get(best).sort((a, b) => a[0] - b[0]).map(([, x, y]) => [x, y]), 0.0003) : [];
-        out.push({ s: r.route_short_name || null, n: (r.route_long_name || r.route_short_name || '').trim(), c: /^[0-9a-f]{6}$/i.test(r.route_color ?? '') ? `#${r.route_color.toLowerCase()}` : null, trips: byHeadway ? null : rt.filter((t) => wed.has(t.service_id)).length, path });
+        const path = best ? line(pts.get(best).map(([, x, y]) => [x, y]), 0.0003) : [];
+        out.push({ s: r.route_short_name || null, n: (r.route_long_name || r.route_short_name || '').trim(), c: /^[0-9a-f]{6}$/i.test(r.route_color ?? '') ? `#${r.route_color.toLowerCase()}` : null, trips: byHeadway || !wed ? null : rt.filter((t) => wed.has(t.service_id)).length, path });
       }
       out.sort((a, b) => (parseInt(a.s) || 999) - (parseInt(b.s) || 999) || String(a.s).localeCompare(String(b.s)));
       const nStops = stops.filter((s) => !s.location_type || s.location_type === '0').length;
       const endDate = end ? `${end.slice(0, 4)}-${end.slice(4, 6)}-${end.slice(6, 8)}` : null;
       systems.push({ key: g.key, n: g.n, src: 'gtfs', url: g.url, licence: g.licence, licUrl: g.licUrl, stops: nStops, end: endDate, routes: out });
-      log(`  ${g.n} (GTFS): ${out.length} routes, ${nStops} stops, ${byHeadway ? 'runs by headway' : `${out.reduce((s, r) => s + r.trips, 0)} trips on a Wednesday`}; timetable to ${endDate}`);
+      log(`  ${g.n} (GTFS): ${out.length} routes, ${nStops} stops, ${byHeadway ? 'runs by headway' : !wed ? 'no Wednesday in its dates' : `${out.reduce((s, r) => s + r.trips, 0)} trips on a Wednesday`}; timetable to ${endDate}`);
     } catch (e) { log(`  ${g.n}: GTFS failed (${e.message}); left out`); }
   }
 
   // --- bus routes in OpenStreetMap that no GTFS feed covers: intercity (spanning 40 km or more) or a town's own buses
-  const gtfsOps = new RegExp(GTFS.map((g) => g.n).join('|'), 'i');
+  // only operators whose feed was read and gave routes: a failed feed leaves its OSM routes in
+  const okOps = systems.filter((s) => s.src === 'gtfs' && s.routes.length).map((s) => s.n);
+  const gtfsOps = okOps.length ? new RegExp(okOps.join('|'), 'i') : /(?!)/;
   const busOSM = await overpass('sk-bus-routes.json', `[out:json][timeout:240];rel["route"~"^(bus|coach)$"](${B})->.r;.r out geom qt;node(r.r);out tags qt;`);
   const nodeTags = new Map(busOSM.elements.filter((e) => e.type === 'node').map((e) => [e.id, e.tags ?? {}]));
   const busRoutes = [], busStops = [], localOSM = [];

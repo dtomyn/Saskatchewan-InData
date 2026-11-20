@@ -36,8 +36,9 @@ export default async function normals() {
     const p = f.properties;
     if (!usable(p) || !f.geometry || p.MONTH > 12) continue;
     const s = stn(f);
-    if (!s.wet || p.VALUE > s.wet[1]) s.wet = [p.MONTH, round(p.VALUE, 0)];
+    if (!s.wet || p.VALUE > s.wet[1]) s.wet = [p.MONTH, p.VALUE];
   }
+  for (const s of byStn.values()) if (s.wet) s.wet[1] = round(s.wet[1], 0);
   const stations = [...byStn.values()]
     .filter((s) => inSask(s.lon, s.lat, 0.05))
     .filter((s) => ['sun', 'wetDays', 'frostDays', 'snow'].some((k) => s[k] != null))

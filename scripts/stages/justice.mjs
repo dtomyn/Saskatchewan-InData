@@ -35,15 +35,22 @@ export default async function justice() {
   const courts = sites.map((s, i) => ({ ...s, i })).filter((s) => s.kind === 'court');
   const police = sites.map((s, i) => ({ ...s, i })).filter((s) => s.kind === 'police');
   const remap = (r, list) => Object.fromEntries(Object.entries(r.towns).map(([k, v]) => [k, v.map((t) => ({ ...t, f: list[t.f].i }))]));
-  const c = await driveTimes(places, courts, 'court');
-  const p = await driveTimes(places, police, 'police', { keep: 1 });
+  let c = await driveTimes(places, courts, 'court');
+  let p = await driveTimes(places, police, 'police', { keep: 1 });
+  // one `routing` label covers both: when either could not be routed, both are straight lines
+  if (!c.routed || !p.routed) {
+    c = { towns: straightTimes(places, courts, { keep: 3 }), routed: false };
+    p = { towns: straightTimes(places, police), routed: false };
+  }
   const towns = {};
-  for (const pl of places) towns[pl.key] = { court: remap(c, courts)[pl.key] ?? [], police: remap(p, police)[pl.key] ?? [] };
+  const rc = remap(c, courts), rp = remap(p, police);
+  for (const pl of places) towns[pl.key] = { court: rc[pl.key] ?? [], police: rp[pl.key] ?? [] };
   // tier 2: straight lines only (min null), labelled in the app
   const smallP = await getSmallPlaces();
   const sc = { towns: straightTimes(smallP, courts, { keep: 3 }) }, sp = { towns: straightTimes(smallP, police) };
   const small = {};
-  for (const pl of smallP) small[pl.key] = { court: remap(sc, courts)[pl.key] ?? [], police: remap(sp, police)[pl.key] ?? [] };
+  const rsc = remap(sc, courts), rsp = remap(sp, police);
+  for (const pl of smallP) small[pl.key] = { court: rsc[pl.key] ?? [], police: rsp[pl.key] ?? [] };
   await writeOut('justice', {
     source: 'OpenStreetMap contributors (amenity=courthouse, police, prison; ODbL), via Overpass',
     routing: c.routed ? 'OSRM (router.project-osrm.org) on OpenStreetMap roads, typical free-flow driving' : 'straight-line',

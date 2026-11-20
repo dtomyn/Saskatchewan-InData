@@ -49,6 +49,7 @@ function directories(entries) {
  * metadata JSON (vector_layers, attribution…); `bounds` [w, s, e, n]; `center` [lon, lat, zoom].
  */
 export function writePMTiles(tiles, { meta, bounds, center }) {
+  if (!tiles.length) throw new Error('writePMTiles: no tiles');
   const sorted = tiles.map((t) => ({ ...t, id: zxyToTileId(t.z, t.x, t.y) })).sort((a, b) => a.id - b.id);
   // identical tiles are stored once; consecutive ids with the same contents share one entry (run length)
   const seen = new Map();
@@ -67,7 +68,6 @@ export function writePMTiles(tiles, { meta, bounds, center }) {
   const data = Buffer.concat(blobs);
   const { root, leaves } = directories(entries);
   const metadata = gzipSync(Buffer.from(JSON.stringify(meta)));
-  const zs = sorted.map((t) => t.z);
 
   const h = Buffer.alloc(127);
   h.write('PMTiles', 0, 'latin1');
@@ -83,8 +83,9 @@ export function writePMTiles(tiles, { meta, bounds, center }) {
   h.writeUInt8(2, 97); // internal compression: gzip
   h.writeUInt8(2, 98); // tile compression: gzip
   h.writeUInt8(1, 99); // tile type: MVT
-  h.writeUInt8(Math.min(...zs), 100);
-  h.writeUInt8(Math.max(...zs), 101);
+  // tile ids order by zoom first, so the ends of `sorted` hold the zoom range (no spread over thousands of tiles)
+  h.writeUInt8(sorted[0].z, 100);
+  h.writeUInt8(sorted.at(-1).z, 101);
   const e7 = (pos, v) => h.writeInt32LE(Math.round(v * 1e7), pos);
   e7(102, bounds[0]); e7(106, bounds[1]); e7(110, bounds[2]); e7(114, bounds[3]);
   h.writeUInt8(center[2], 118);

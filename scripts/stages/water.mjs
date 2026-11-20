@@ -20,8 +20,8 @@ export default async function water() {
   const ISC_ST = 'https://www.sac-isc.gc.ca/eng/1562856509704/1562856530304';
   const ISC_LT = 'https://www.sac-isc.gc.ca/DAM/DAM-ISC-SAC/DAM-WTR/STAGING/texte-text/lTDWA_map_data_1572010201618_eng.txt';
   // advisories change daily, so the cache is per day
-  const envPdf = await cached(`water/EnvActive-${today}.pdf`, () => fetchBuf(`${GOC}/EnvActive.pdf`));
-  const rhaPdf = await cached(`water/RhaActive-${today}.pdf`, () => fetchBuf(`${GOC}/RhaActive.pdf`));
+  const envPdf = await cached(`water/EnvActive-${today}.pdf`, () => fetchBuf(`${GOC}/EnvActive.pdf`, { maxBytes: 20e6 }));
+  const rhaPdf = await cached(`water/RhaActive-${today}.pdf`, () => fetchBuf(`${GOC}/RhaActive.pdf`, { maxBytes: 20e6 }));
   const stHtml = (await cached(`water/isc-short-term-${today}.html`, () => fetchBuf(ISC_ST))).toString('utf8');
   const noBom = (b) => b.toString('utf8').replace(/^﻿/, '');
   const lt = JSON.parse(noBom(await cached(`water/isc-long-term-${today}.json`, async () => { const b = await fetchBuf(ISC_LT); JSON.parse(noBom(b)); return b; })));
@@ -89,8 +89,10 @@ export default async function water() {
   const kindOf = (k, title) => (/do not (consume|drink|use)/i.test(title ?? '') ? 'dnc' : k === 'EBWO' ? 'boil' : 'pdwa');
   const createdOn = (buf) => { const t = pdfText(buf).find((i) => /^Created on:/.test(i.s))?.s; const d = t && new Date(t.replace(/^Created on:\s*/, '').replace(/ CST/, ' GMT-0600')); return d && !Number.isNaN(+d) ? d.toISOString().slice(0, 10) : today; };
 
-  const sites = [], unplaced = [];
+  const sites = [], unplaced = [], scheduled = [];
   const add = (s, hit) => {
+    // a notice that takes effect after today is not in effect yet: listed apart (with its date), never counted or mapped
+    if (s.d && s.d > today) { scheduled.push(hit ? { ...s, lon: round(hit.g.lon, 3), lat: round(hit.g.lat, 3) } : s); return; }
     if (hit) sites.push({ ...s, lon: round(hit.g.lon, 3), lat: round(hit.g.lat, 3), loc: hit.loc, at: hit.loc === 'name' ? null : hit.g.name });
     else unplaced.push(s);
   };
@@ -124,18 +126,28 @@ export default async function water() {
   }
   // --- First Nations: short-term (web table), placed at the community
   const html = stHtml.replace(/<!--[\s\S]*?-->/g, '');
-  const sec = html.match(/<section id="sask"[\s\S]*?<\/section>/)?.[0] ?? '';
+  const sec = html.match(/<section id="sask"[\s\S]*?<\/section>/)?.[0];
   const cell = (s) => s.replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, '’').replace(/\s+/g, ' ').trim();
-  const stRows = (sec.split(/<\/tr>/).map((r) => [...r.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => cell(m[1]))).filter((c) => c.length >= 6));
+  // columns found by their header text; no Saskatchewan section or header is a new layout, never "no advisories"
+  const heads = [...(sec ?? '').matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((m) => cell(m[1]).toLowerCase());
+  const COLS = { fn: /^first nation/, community: /^community/, system: /^system name/, type: /^type of advisory/, set: /^date set/, revoked: /^date revoked/, pop: /^population/ };
+  const ci = Object.fromEntries(Object.entries(COLS).map(([k, re]) => [k, heads.findIndex((h) => re.test(h))]));
+  const lostCols = Object.keys(ci).filter((k) => ci[k] < 0);
+  if (!sec || lostCols.length) throw new Error(`ISC short-term page: ${sec ? `no ${lostCols.join(', ')} column` : 'no Saskatchewan section'} (has its layout changed?)`);
+  const isoSlash = (s) => (/^\d{4}\/\d{2}\/\d{2}$/.test(s ?? '') ? s.replace(/\//g, '-') : null);
+  const stAll = sec.split(/<\/tr>/).map((r) => [...r.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => cell(m[1]))).filter((c) => c.length > Math.max(...Object.values(ci)));
+  // the table keeps advisories revoked lately: one with a revocation date on or before today is no longer in effect
+  const stRows = stAll.filter((c) => { const r = isoSlash(c[ci.revoked]); return !(r && r <= today); });
   const fnKey = (s) => normalizeName(s).replace(/\b(cree|first|dakota|nation|band|no|indian|reserve|ir)\b|\b\d+[a-z]?\b/g, ' ').replace(/\s+/g, ' ').trim();
   const STT = { BWA: 'boil', DNC: 'dnc', DNU: 'dnc' };
-  for (const [fn, community, system, type, set, , pop] of stRows) {
+  for (const row of stRows) {
+    const [fn, community, system, type, set, pop] = ['fn', 'community', 'system', 'type', 'set', 'pop'].map((k) => row[ci[k]]);
     const c = comms.find((x) => fnKey(x.CommunityName) === fnKey(fn)) ?? comms.find((x) => fnKey(x.CommunityName) === fnKey(community));
     const hit = c ? { g: { name: c.CommunityName, lon: +c.Longitude, lat: +c.Latitude }, loc: 'fn' } : await locate(system, community, fn);
-    add({ n: system, sys: null, src: 'isc', lt: false, k: STT[type] ?? 'boil', d: set?.replace(/\//g, '-') || null, t: `${{ BWA: 'Boil water advisory', DNC: 'Do not consume', DNU: 'Do not use' }[type] ?? type}`, why: null, reg: fn, pop: pop ?? null, part: null }, hit);
+    add({ n: system, sys: null, src: 'isc', lt: false, k: STT[type] ?? 'boil', d: isoSlash(set) ?? (set || null), t: `${{ BWA: 'Boil water advisory', DNC: 'Do not consume', DNU: 'Do not use' }[type] ?? type}`, why: null, reg: fn, pop: pop ?? null, part: null }, hit);
   }
   const stAsOf = (() => { const m = stHtml.match(/As of <span[^>]*>([^<]+)<\/span>/); const d = m && new Date(m[1].replace(/&nbsp;/g, ' ')); return d && !Number.isNaN(+d) ? d.toISOString().slice(0, 10) : today; })();
-  log(`  ${sites.length} advisories placed, ${unplaced.length} not placed (${sites.filter((s) => s.src === 'isc').length} on First Nations; ${stRows.length} short-term)`);
+  log(`  ${sites.length} advisories placed, ${unplaced.length} not placed (${sites.filter((s) => s.src === 'isc').length} on First Nations; ${stRows.length} short-term, ${stAll.length - stRows.length} revoked left out); ${scheduled.length} not yet in effect`);
   for (const k of ['name', 'text', 'lake', 'fn']) log(`    placed by ${k}: ${sites.filter((s) => s.loc === k).length}`);
 
   // --- per place: the town system's own advisories, and every advisory within NEAR_KM of the town centre
@@ -154,6 +166,7 @@ export default async function water() {
     wsaUrl: `${GOC}/EnvActive.pdf`, shaUrl: `${GOC}/RhaActive.pdf`, iscUrl: ISC_ST, iscLtUrl: 'https://www.sac-isc.gc.ca/eng/1506514143353/1533317130660',
     wellUrl: 'https://wsask.ca/drinking-water-wastewater/groundwater/domestic-water-well-management/',
     asOf: today, provAsOf, stAsOf, nearKm: NEAR_KM,
-    sites: sites.map(({ sys, ...s }) => s), unplaced: unplaced.map(({ sys, ...s }) => s), towns,
+    // `scheduled`: notices dated after asOf, not in effect yet (never in `sites`, `unplaced` or `towns`)
+    sites: sites.map(({ sys, ...s }) => s), unplaced: unplaced.map(({ sys, ...s }) => s), scheduled: scheduled.map(({ sys, ...s }) => s), towns,
   });
 }

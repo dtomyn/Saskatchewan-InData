@@ -10,7 +10,7 @@ export default async function population() {
   const seen = {};
   for (const r of rows) {
     const geo = r.GEO ?? '';
-    if (!/Saskatchewan/.test(geo) || r.VALUE === '' || (r.Gender && !/^Total/i.test(r.Gender)) || (r['Age group'] && !/^All ages/i.test(r['Age group']))) continue;
+    if (!/Saskatchewan/.test(geo) || r.VALUE === '' || !Number.isFinite(Number(r.VALUE)) || (r.Gender && !/^Total/i.test(r.Gender)) || (r['Age group'] && !/^All ages/i.test(r['Age group']))) continue;
     // e.g. "Regina (CY), Saskatchewan" or "Lloydminster (Part) (CY), Saskatchewan"
     const name = geo.split(',')[0].replace(/\((part|partie)\)/i, '');
     const type = (name.match(/\(([A-Z]+)\)\s*$/) ?? [])[1] ?? '';
@@ -24,5 +24,6 @@ export default async function population() {
   const missing = PLACES_LIST.filter((p) => !munis[normalizeName(p.name)]).map((p) => p.name);
   if (missing.length) log('  population: no match for', missing.join(', '));
   log(`  ${Object.keys(munis).length} places matched`);
+  if (Object.keys(munis).length < PLACES_LIST.length / 2) throw new Error(`only ${Object.keys(munis).length} of ${PLACES_LIST.length} places in table 17-10-0155: layout changed?`);
   await writeOut('population', { source: 'Statistics Canada, Table 17-10-0155-01, Population estimates, July 1, by census subdivision, 2021 boundaries', munis });
 }

@@ -3,7 +3,7 @@ import * as d3 from 'd3';
 import { ColumnLayer, ScatterplotLayer, PolygonLayer } from '@deck.gl/layers';
 import { Data, FloodZone, NowRiverRow, interpYearly, fmt } from './data';
 import { AtlasLayer, RGBA, RecentSpan, rgb, NO_DEPTH, glowWindow, ADDITIVE, TimedEvent, kicker, heroStats, deferChart, mk, sourceLine, detailBars } from './layer-kit';
-import { riversHistory, dayT, tDay, dayText } from './history';
+import { riversHistory, dayT, tDay, dayText, onHistory } from './history';
 import { drawable, ageTag, alertList, alertsInEffect, nowBlock, NOW_T, ms, freshness, alertOutlines, tickAges, isNow, alertEvent, ago, alertTooltip } from './now';
 import { esc, safeUrl } from './html';
 import { barChart, rampCSS } from './charts';
@@ -12,7 +12,8 @@ import { buildingsSection, wireBuildingsList } from './buildings';
 export function riversLayer(data: Data): AtlasLayer {
   const color = '#4cc9f0';
   const stations = data.rivers?.stations ?? [];
-  const ratio = (s: (typeof stations)[number], y: number) => (s.peaks[y] != null ? s.peaks[y] / s.median : null);
+  // a gauge whose normal peak is 0 (a stream dry in a median year) has no ratio: never NaN, never counted as reporting
+  const ratio = (s: (typeof stations)[number], y: number) => (s.peaks[y] != null && s.median > 0 ? s.peaks[y] / s.median : null);
   // flood-prone land: the Water Security Agency's published 1:500-year mapping, the same at every point of the timeline
   const FL = data.floods;
   const FLOOD_KIND: Record<FloodZone['kind'], { label: string; fill: RGBA; line: RGBA }> = {
@@ -67,6 +68,8 @@ export function riversLayer(data: Data): AtlasLayer {
   const rDays = () => (riversHistory()?.sorted ?? []).filter((d) => dayT(d) >= RFROM);
   const rRows = (d: string) => (riversHistory()?.days.get(d) ?? []).flatMap((h) => { const s = gauge.get(h.id); return s?.median ? [{ s, h, r: h.max / s.median, day: d }] : []; });
   let rSpark: { x: number; y: number }[] | null = null;
+  // a month of the record that loads later (or on a retry) redraws the sparkline
+  onHistory(() => { rSpark = null; });
   const riversRecent: RecentSpan = {
     feed: 'rivers', from: RFROM,
     first: () => { const d = rDays()[0]; return d ? dayT(d) : null; },
@@ -166,7 +169,7 @@ export function riversLayer(data: Data): AtlasLayer {
       const y = Math.floor(time);
       const tiled = view.zoom >= sheetZoom;
       const W = glowWindow(speed, 1.2);
-      const live = stations.map((s) => ({ s, r: interpYearly(Object.fromEntries(Object.entries(s.peaks).map(([k, v]) => [k, v / s.median])), time) }));
+      const live = stations.filter((s) => s.median > 0).map((s) => ({ s, r: interpYearly(Object.fromEntries(Object.entries(s.peaks).map(([k, v]) => [k, v / s.median])), time) }));
       const ripples = stations
         .map((s) => ({ s, r: ratio(s, y), t: peakT(s, y) }))
         .filter((d) => d.r != null && d.r >= 1.5 && time >= d.t && time - d.t < W);
@@ -245,6 +248,7 @@ export function riversLayer(data: Data): AtlasLayer {
         }),
       );
       const records = stations
+        .filter((s) => s.median > 0)
         .flatMap((s) => Object.entries(s.peaks).map(([y, v]) => ({ s, y, r: v / s.median })))
         .sort((a, b) => b.r - a.r)
         .filter((d, i, arr) => arr.findIndex((x) => x.s === d.s) === i)
@@ -299,19 +303,22 @@ export function riversLayer(data: Data): AtlasLayer {
           sources: [{ label: 'Water Security Agency GeoHub', url: FL.sourceUrl }, ...(pdf ? [{ label: 'Flood map (PDF)', url: pdf }] : [])],
         };
       }
+      // a day from the daily record: its own tooltip (that day's flows) makes the panel
+      if (o.h) return null;
       const st = o.s ?? o;
       const lv = liveOf.get(st.id);
       const years = Object.keys(st.peaks).map(Number).sort((a, b) => a - b);
       if (!years.length) return null;
+      const hasRatio = st.median > 0;
       const rec = years.reduce((a, y) => (st.peaks[y] > st.peaks[a] ? y : a), years[0]);
-      const high = years.filter((y) => st.peaks[y] / st.median >= 1.5).length;
+      const high = hasRatio ? years.filter((y) => st.peaks[y] / st.median >= 1.5).length : 0;
       return {
         layer: 'rivers', kind: 'River gauge', lon: st.lon, lat: st.lat, zoom: 9.5,
         title: st.name, body: `Water Survey of Canada gauge ${st.id}, ${years.length} years of record (${years[0]}–${years.at(-1)}). Each bar is a year's highest flow against the river's normal annual peak.`,
         stats: [
           ...(lv && drawable(lv.row[1]) ? [{ v: liveValue(lv.row), l: `right now, read ${ago(lv.row[1])}${lv.row[5] ? ` (${FLAG[lv.row[5]]})` : ''}${freshness(lv.row[1]) === 'stale' ? ' · stale' : ''}` }] : nowR ? [{ v: 'no reading', l: 'in the past day (many gauges are seasonal)' }] : []),
-          { v: `${st.median} m³/s`, l: 'normal annual peak' }, { v: `${(st.peaks[rec] / st.median).toFixed(1)}×`, l: `record, ${rec}` }, { v: `${high} of ${years.length}`, l: 'years at 1.5× normal or more' }, ...(st.area ? [{ v: `${fmt.int(st.area)} km²`, l: 'drains' }] : [])],
-        detail: detailBars('Peak flow each year, against normal', years.map((y) => ({ x: y, y: st.peaks[y] / st.median, color: ratioColor(st.peaks[y] / st.median) })), color, (v) => `${v.toFixed(1)}×`, (d) => `<b>${d.x}</b> · ${d.y.toFixed(2)}× normal`),
+          { v: `${st.median} m³/s`, l: 'normal annual peak' }, ...(hasRatio ? [{ v: `${(st.peaks[rec] / st.median).toFixed(1)}×`, l: `record, ${rec}` }, { v: `${high} of ${years.length}`, l: 'years at 1.5× normal or more' }] : [{ v: `${st.peaks[rec]} m³/s`, l: `record, ${rec} (no ratio: the normal peak is 0)` }]), ...(st.area ? [{ v: `${fmt.int(st.area)} km²`, l: 'drains' }] : [])],
+        detail: hasRatio ? detailBars('Peak flow each year, against normal', years.map((y) => ({ x: y, y: st.peaks[y] / st.median, color: ratioColor(st.peaks[y] / st.median) })), color, (v) => `${v.toFixed(1)}×`, (d) => `<b>${d.x}</b> · ${d.y.toFixed(2)}× normal`) : undefined,
         sources: [{ label: 'HYDAT, Environment and Climate Change Canada', url: 'https://wateroffice.ec.gc.ca/' }],
       };
     },

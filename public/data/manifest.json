@@ -5,27 +5,27 @@
   },
   "places": {
     "ok": true,
-    "updated": "2026-11-13T21:07:35.938Z"
+    "updated": "2026-11-20T18:22:56.494Z"
   },
   "fires": {
     "ok": true,
-    "updated": "2026-11-13T19:27:27.874Z"
+    "updated": "2026-11-20T18:23:11.168Z"
   },
   "tornadoes": {
     "ok": true,
-    "updated": "2026-11-11T00:33:50.562Z"
+    "updated": "2026-11-20T18:23:11.193Z"
   },
   "population": {
     "ok": true,
-    "updated": "2026-11-10T23:49:23.480Z"
+    "updated": "2026-11-20T18:23:38.741Z"
   },
   "crime": {
     "ok": true,
-    "updated": "2026-11-10T23:49:27.956Z"
+    "updated": "2026-11-20T18:23:39.230Z"
   },
   "treaties": {
     "ok": true,
-    "updated": "2026-11-10T23:50:07.048Z"
+    "updated": "2026-11-20T18:23:41.182Z"
   },
   "rivers": {
     "ok": true,
@@ -37,27 +37,27 @@
   },
   "normals": {
     "ok": true,
-    "updated": "2026-11-10T23:50:28.837Z"
+    "updated": "2026-11-20T18:23:37.910Z"
   },
   "justice": {
     "ok": true,
-    "updated": "2026-11-13T21:09:43.737Z"
+    "updated": "2026-11-20T18:23:41.290Z"
   },
   "hospitals": {
     "ok": true,
-    "updated": "2026-11-13T21:09:44.240Z"
+    "updated": "2026-11-20T18:24:14.939Z"
   },
   "camping": {
     "ok": true,
-    "updated": "2026-11-11T01:13:33.086Z"
+    "updated": "2026-11-20T18:24:24.380Z"
   },
   "housing": {
     "ok": true,
-    "updated": "2026-11-13T20:44:15.339Z"
+    "updated": "2026-11-20T18:23:40.307Z"
   },
   "needs": {
     "ok": true,
-    "updated": "2026-11-13T21:09:42.955Z"
+    "updated": "2026-11-20T18:23:41.104Z"
   },
   "commute": {
     "ok": true,
@@ -69,11 +69,11 @@
   },
   "schools": {
     "ok": true,
-    "updated": "2026-11-13T21:09:45.755Z"
+    "updated": "2026-11-20T18:24:28.697Z"
   },
   "internet": {
     "ok": true,
-    "updated": "2026-11-13T21:09:52.199Z"
+    "updated": "2026-11-20T18:24:31.106Z"
   },
   "community": {
     "ok": true,
@@ -81,19 +81,19 @@
   },
   "newcomer": {
     "ok": true,
-    "updated": "2026-11-12T23:50:26.325Z"
+    "updated": "2026-11-20T18:25:06.690Z"
   },
   "doctors": {
     "ok": true,
-    "updated": "2026-11-13T21:09:53.260Z"
+    "updated": "2026-11-20T18:26:31.090Z"
   },
   "childcare": {
     "ok": true,
-    "updated": "2026-11-13T21:09:54.369Z"
+    "updated": "2026-11-20T18:28:58.944Z"
   },
   "smoke": {
     "ok": true,
-    "updated": "2026-11-13T00:36:03.182Z"
+    "updated": "2026-11-20T18:23:37.855Z"
   },
   "industry": {
     "ok": true,
@@ -101,15 +101,15 @@
   },
   "water": {
     "ok": true,
-    "updated": "2026-11-13T01:28:55.480Z"
+    "updated": "2026-11-20T18:29:01.881Z"
   },
   "radon": {
     "ok": true,
-    "updated": "2026-11-13T21:09:56.038Z"
+    "updated": "2026-11-20T18:29:02.473Z"
   },
   "light": {
     "ok": true,
-    "updated": "2026-11-13T21:09:56.485Z"
+    "updated": "2026-11-20T18:29:02.531Z"
   },
   "hail": {
     "ok": true,
@@ -117,11 +117,11 @@
   },
   "transit": {
     "ok": true,
-    "updated": "2026-11-13T13:00:02.926Z"
+    "updated": "2026-11-20T18:29:03.530Z"
   },
   "tax": {
     "ok": true,
-    "updated": "2026-11-13T22:24:40.192Z"
+    "updated": "2026-11-20T18:23:40.984Z"
   },
   "drought": {
     "ok": true,
@@ -141,22 +141,22 @@
   },
   "power": {
     "ok": true,
-    "updated": "2026-11-13T19:20:30.532Z"
+    "updated": "2026-11-20T18:29:00.131Z"
   },
   "subdivisions": {
     "ok": true,
-    "updated": "2026-11-13T21:07:25.599Z"
+    "updated": "2026-11-20T18:22:56.600Z"
   },
   "tracts": {
     "ok": true,
-    "updated": "2026-11-13T21:25:45.080Z"
+    "updated": "2026-11-20T18:22:56.641Z"
   },
   "twins": {
     "ok": true,
-    "updated": "2026-11-20T13:28:42.162Z"
+    "updated": "2026-11-20T18:23:37.922Z"
   },
   "buildings": {
     "ok": true,
-    "updated": "2026-11-20T13:45:35.033Z"
+    "updated": "2026-11-20T18:23:21.958Z"
   }
 }

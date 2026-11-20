@@ -29,7 +29,7 @@ export default async function radon() {
   const byHR = {}, byFSA = {}, hrOfFSA = {}, prov = tally();
   for (const r of rows) {
     const raw = r.AverageRadonConcentrationInBqPerM3;
-    const v = /^</.test(raw) ? 0 : Number(raw);
+    const v = raw == null || String(raw).trim() === '' ? NaN : /^\s*</.test(raw) ? 0 : Number(raw);
     if (!Number.isFinite(v)) continue;
     add(prov, v);
     add(byHR[r.HealthRegionCode2007] ??= tally(), v);

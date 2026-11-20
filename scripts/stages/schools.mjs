@@ -28,7 +28,7 @@ export default async function schools() {
   const level = (name) => (/\bjunior high\b|\b(elementary|middle|primary|junior)\b|\bél[ée]mentaire\b/i.test(name) ? 'e'
     : /\b(high|collegiate|composite|comprehensive|secondary)\b|\bsecondaire\b/i.test(name) ? 'h' : '?');
   const bandLevel = (lo, hi) => {
-    const g = (x) => (x === 'K' || x === 'P' ? 0 : Number(x));
+    const g = (x) => (x === 'K' || x === 'P' ? 0 : x == null || String(x).trim() === '' ? NaN : Number(x));
     const a = g(lo), b = g(hi);
     if (!Number.isFinite(a) || !Number.isFinite(b)) return '?';
     return b >= 12 ? (a <= 6 ? 'k' : 'h') : 'e';
@@ -126,6 +126,9 @@ export default async function schools() {
   const KIND = { University: 'uni', 'Federated College': 'uni', 'Affiliated College': 'uni', FNUC: 'uni', 'Sask Polytechnic': 'poly', SIIT: 'poly', 'GDI/DTI': 'poly', 'Post Secondary': 'col' };
   const inst = await arcgisAll(`${ED}/AdvancedEducation/MapServer/0`, { where: '1=1', outFields: 'FACILITY_N,GOVERNANCE,CITY,PSETYPE' }, 'ae-institutions');
   const pse = [];
+  const PSE_OFF_KM = 15;
+  const pseTowns = new Map([...(await getSmallPlaces()), ...places].map((p) => [p.key, p]));
+  let pseMoved = 0;
   for (const f of inst) {
     const a = f.properties ?? {};
     const [lon, lat] = f.geometry?.coordinates ?? [];
@@ -134,8 +137,13 @@ export default async function schools() {
     const name = fixName(a.GOVERNANCE).replace(/^SIIT$/, 'Saskatchewan Indian Institute of Technologies (SIIT)') || (a.PSETYPE === 'University' ? 'University of Regina' : fixName(a.PSETYPE));
     const city = fixName(a.CITY).replace(/^Lloydminister AB$/, 'Lloydminster').replace(/^Moosimin$/, 'Moosomin').replace(/^Munester$/, 'Muenster') || null;
     if (pse.some((p) => p.n === name && distKm(p.lon, p.lat, lon, lat) < 0.3)) continue;
+    // a point over PSE_OFF_KM from the town the row names (Great Plains College's Maple Creek campus sat 77 km east)
+    // moves to that town's centre (`approx`)
+    const town = city ? pseTowns.get(normalizeName(city)) : null;
+    if (town && distKm(town.lon, town.lat, lon, lat) > PSE_OFF_KM) { pse.push({ n: name, k, city, lon: town.lon, lat: town.lat, src: 'ae', approx: 1 }); pseMoved++; continue; }
     pse.push({ n: name, k, city, lon: round(lon, 5), lat: round(lat, 5), src: 'ae' });
   }
+  if (pseMoved) log(`  ${pseMoved} post-secondary sites moved to their town's centre (point over ${PSE_OFF_KM} km from it)`);
   const aeCount = pse.length;
   // campuses the ministry list lacks (it has one Saskatchewan Polytechnic campus): OpenStreetMap's universities and
   // colleges named for Saskatchewan Polytechnic or the two universities, unless a listed site is already there
@@ -164,15 +172,14 @@ export default async function schools() {
     f: openIdx.filter((s) => s.fr || s.imm?.includes('French')),
   };
   const towns = Object.fromEntries(places.map((p) => [p.key, { n: schools.filter((s) => open(s) && inTown(p, s)).length }]));
-  let routed = true;
-  for (const [k, list] of Object.entries(sets)) {
-    const d = await driveTimes(places, list, `school-${k}`, { keep: 1 });
-    routed &&= d.routed;
-    for (const [key, v] of Object.entries(d.towns)) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
-  }
+  const drives = {};
+  for (const [k, list] of Object.entries(sets)) drives[k] = await driveTimes(places, list, `school-${k}`, { keep: 1 });
   const dp_ = await driveTimes(places, pse, 'pse', { keep: 1 });
-  routed &&= dp_.routed;
-  for (const [key, v] of Object.entries(dp_.towns)) if (v[0]) towns[key].p = v[0];
+  // one `routing` label covers every set: when any could not be routed, all are straight lines
+  const routed = dp_.routed && Object.values(drives).every((d) => d.routed);
+  for (const [k, list] of Object.entries(sets))
+    for (const [key, v] of Object.entries(routed ? drives[k].towns : straightTimes(places, list))) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
+  for (const [key, v] of Object.entries(routed ? dp_.towns : straightTimes(places, pse))) if (v[0]) towns[key].p = v[0];
   // tier 2: schools in town; the nearest of each kind by straight line (min null)
   const smallP = await getSmallPlaces();
   const small = Object.fromEntries(smallP.map((p) => [p.key, { n: schools.filter((s) => open(s) && inTown(p, s)).length }]));

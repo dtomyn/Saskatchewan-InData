@@ -42,7 +42,7 @@ export default async function treaties() {
     const ring = ps[0][0];
     const c = [ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length];
     if (!inSask(c[0], c[1], 0.01)) continue;
-    const areaKm2 = ps.reduce((a, p) => a + Math.abs(ringArea(p[0])) * 111.32 * 111.32 * Math.cos((c[1] * Math.PI) / 180), 0);
+    const areaKm2 = ps.reduce((a, p) => a + p.reduce((s, r, i) => s + (i ? -1 : 1) * Math.abs(ringArea(r)), 0) * 111.32 * 111.32 * Math.cos((c[1] * Math.PI) / 180), 0);
     // the survey lists names in capitals: title-case them, keeping "I.R." and "No."
     const name = (f.properties.adminAreaNameEng ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
       .replace(/\b[a-z]/g, (c) => c.toUpperCase()).replace(/\bI\.r\./g, 'I.R.').replace(/\bIr\b/g, 'IR');

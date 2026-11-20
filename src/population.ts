@@ -13,10 +13,12 @@ export function populationLayer(data: Data): AtlasLayer {
   const ys = [...allYears].sort((a, b) => a - b);
   const y0 = ys[0] ?? 2001, y1 = ys.at(-1) ?? 2025;
   const total = (y: number) => d3.sum(Object.values(pop), (p) => p.pop[y] ?? 0);
-  // colour: growth over the previous five years (or since the first year), so booming and shrinking towns stand apart
+  // colour: growth over the previous five years, so booming and shrinking towns stand apart; none until the record
+  // holds five years (a shorter window is not five-year growth, and at the first year it would compare a year with itself)
   const growth = (key: string, t: number) => {
+    if (t - 5 < y0) return null;
     const p = pop[key]?.pop;
-    const now = interpYearly(p, t), before = interpYearly(p, Math.max(y0, t - 5));
+    const now = interpYearly(p, t), before = interpYearly(p, t - 5);
     return now != null && before ? now / before - 1 : null;
   };
   const ramp = d3.scaleLinear<string>().domain([-0.1, 0, 0.1, 0.25]).range(['#7a2e3a', '#5d6b84', '#3ecf8e', '#d9ffef']).interpolate(d3.interpolateRgb).clamp(true);
@@ -39,7 +41,7 @@ export function populationLayer(data: Data): AtlasLayer {
     panel(el) {
       el.innerHTML = `${kicker(l, `Statistics Canada estimates · ${y0} → ${y1}`)}
         <h2>Where Saskatchewan is growing</h2>
-        <p class="lede">Column height shows each place’s population on 1 July; colour shows how much it grew over the five years before (green growing, grey flat, red shrinking). Watch the bedroom towns around Saskatoon and Regina pull ahead.</p>`;
+        <p class="lede">Column height shows each place’s population on 1 July; colour shows how much it grew over the five years before (green growing, grey flat, red shrinking; grey for every place until the estimates span five years). Watch the bedroom towns around Saskatoon and Regina pull ahead.</p>`;
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Population, largest places</h3>`);
       const palette = ['#3ecf8e', '#4cc9f0', '#ffd166', '#ff8a3d', '#b388ff', '#ff5d8f'];
@@ -61,7 +63,10 @@ export function populationLayer(data: Data): AtlasLayer {
         update({ time }) {
           const y = Math.min(Math.floor(time), y1);
           hero(0, fmt.int(total(y)), `people in the atlas’s ${keys.length} places, ${y}`);
-          hero(1, `${fmt.signed(((total(y) / total(y0)) - 1) * 100, 0)}%`, `growth since ${y0}`);
+          // only places with an estimate in both years: a place whose series starts later is not growth
+          const both = keys.filter((k) => pop[k].pop[y0] != null && pop[k].pop[y] != null);
+          const t0 = d3.sum(both, (k) => pop[k].pop[y0]), t1 = d3.sum(both, (k) => pop[k].pop[y]);
+          hero(1, t0 ? `${fmt.signed((t1 / t0 - 1) * 100, 0)}%` : '–', `growth since ${y0}${both.length < keys.length ? ` (the ${both.length} places with both years)` : ''}`);
           const share = (total(y) && pop.saskatoon && pop.regina) ? ((pop.saskatoon.pop[y] ?? 0) + (pop.regina.pop[y] ?? 0)) / total(y) : null;
           hero(2, share != null ? `${Math.round(share * 100)}%` : '–', `of them in Saskatoon or Regina`);
           const top = keys.map((k) => ({ k, g: growth(k, y) })).filter((r) => r.g != null && (pop[r.k].pop[y] ?? 0) >= 2000).sort((a, b) => b.g! - a.g!)[0];

@@ -15,7 +15,9 @@ export function hospitalsLayer(data: Data): AtlasLayer {
   const routed = !!H && H.routing !== 'straight-line';
   const unit = routed ? 'min' : 'km';
   const tripsOf = (key: string) => H?.towns[key];
-  const tv = (t: Trip) => t.min ?? t.km;
+  // one unit for every comparison: minutes when routed, otherwise kilometres (a run whose router failed part-way keeps
+  // its earlier minutes, which would not compare with the later kilometres)
+  const tv = (t: Trip) => (routed ? t.min ?? t.km : t.km);
   // a place's trip to its nearest hospital: the real one, or under a closure scenario (src/scenario.ts) the nearest open
   // one the stage kept; `beyond` when every kept hospital is closed (the drive is then longer than the last kept one)
   const nearest = (key: string): { t: Trip; beyond: boolean } | null => {
@@ -30,7 +32,9 @@ export function hospitalsLayer(data: Data): AtlasLayer {
   const height = (v: number) => 3600 + Math.min(v, 300) * 600;
   const edColor = (f: Facility) => (f.hospital ? color : '#7d879c');
   const tripText = (t: Trip) => (t.min != null ? `${t.min} min` : `${Math.round(t.km)} km (straight line)`);
-  const addText = (a: Affected) => (a.added == null ? `more than +${Math.round(tv(a.beyond!) - tv(a.before))} ${unit}` : `+${Math.round(a.added)} ${unit}`);
+  // scenario.ts gives the added trip in its own unit (minutes only when both trips were routed); when every kept site is
+  // closed there is no next one to measure, so no number is given
+  const addText = (a: Affected) => (a.added == null ? 'longer: every one kept for it is closed' : `+${Math.round(a.added)} ${a.unit ?? 'km'}`);
 
   // road lines: the hovered / selected town's (its nearest and next, or under a scenario its closed and new routes), and
   // with a scenario and nothing hovered, every affected town's new route. Cumulative lengths drive the travelling pulse.
@@ -243,7 +247,7 @@ export function hospitalsLayer(data: Data): AtlasLayer {
       if (id === 'hospitals-sites') {
         const f = info.object as Facility;
         const shut = isClosed('hospitals', info.index);
-        return `<b>${esc(f.name)}</b><br><span class="tk">${f.hospital ? 'Hospital' : 'Health centre or clinic'} · ${esc(f.city)}</span>${f.type ? `<br><span class="tk">Listed as</span> <span class="tv">${esc(f.type)}</span>` : ''}${shut ? '<br><span class="tk sc-closed">Closed in your scenario</span>' : ''}${f.hospital ? `<br><span class="tk tk-click">Click: ${shut ? 'reopen it' : 'what if this closed?'}</span>` : ''}`;
+        return `<b>${esc(f.name)}</b><br><span class="tk">${f.hospital ? 'Hospital' : 'Health centre or clinic'} · ${esc(f.city)}</span>${f.type ? `<br><span class="tk">Listed as</span> <span class="tv">${esc(f.type)}</span>` : ''}${f.approx ? '<br><span class="tk">Placed at the town centre: its listed point is far from its town</span>' : ''}${shut ? '<br><span class="tk sc-closed">Closed in your scenario</span>' : ''}${f.hospital ? `<br><span class="tk tk-click">Click: ${shut ? 'reopen it' : 'what if this closed?'}</span>` : ''}`;
       }
       const o: any = info.object;
       const n = o.m ? nearest(o.m.key) : null;

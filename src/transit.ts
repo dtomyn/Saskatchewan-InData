@@ -9,7 +9,7 @@ import type { Layer } from '@deck.gl/core';
 import type { Data, TransitAirport, TransitStation, TransitSystem } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
-import { AtlasLayer, NO_DEPTH, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
+import { AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { metric, link } from './report-kit';
 
 export const TRANSIT_COLOR = '#f28482';
@@ -63,10 +63,13 @@ export function transitLayer(data: Data): AtlasLayer {
   const unit = routed ? 'min' : 'km';
   let chip: Chip = 'air';
   const places = new Map(data.munis.map((m) => [m.key, placeTransit(data, m.key)]));
+  // one unit for every comparison: minutes when routed, otherwise kilometres (a run whose router failed part-way keeps
+  // its earlier minutes, which would not compare with the later kilometres)
+  const airV = (a: NonNullable<PlaceTransit['air']>) => (routed ? a.min ?? a.km : a.km);
   const val = (key: string) => {
     const p = places.get(key);
     if (!p) return null;
-    return chip === 'air' ? (p.air ? p.air.min ?? p.air.km : null) : p.carFree;
+    return chip === 'air' ? (p.air ? airV(p.air) : null) : p.carFree;
   };
   const ramp = d3.scaleLinear<string>().domain([5, 60, 240]).range(['#fff0ee', color, '#7b2cbf']).interpolate(d3.interpolateRgb).clamp(true);
   const colOf = (v: number) => (chip === 'air' ? ramp(v) : CARFREE[Math.round(v)]);
@@ -98,7 +101,7 @@ export function transitLayer(data: Data): AtlasLayer {
         } as any),
         new PathLayer<{ n: string; p: [number, number][] }>({
           id: 'transit-bus', data: busPaths, getPath: (d) => d.p, getColor: rgb(BUS_COLOR, focused ? 230 : 170),
-          getWidth: 2.5, widthUnits: 'pixels', getDashArray: [4, 3], pickable: true, parameters: NO_DEPTH, updateTriggers: { getColor: focused },
+          getWidth: 2.5, widthUnits: 'pixels', extensions: dashExt, getDashArray: [4, 3], dashJustified: true, pickable: true, parameters: NO_DEPTH, updateTriggers: { getColor: focused },
         } as any),
         new PathLayer<{ n: string; p: [number, number][] }>({
           id: 'transit-rail', data: railPaths, getPath: (d) => d.p, getColor: rgb(RAIL_COLOR, focused ? 240 : 180),
@@ -160,7 +163,7 @@ export function transitLayer(data: Data): AtlasLayer {
         const rows = data.munis.flatMap((m) => { const v = val(m.key); const p = places.get(m.key); return v != null && p ? [{ m, p, v }] : []; })
           .sort((a, b) => (chip === 'air' ? a.v - b.v : b.v - a.v));
         hero(0, String(airports.length), 'airports with scheduled flights');
-        hero(1, `${Math.round(d3.median(all.filter((p) => p.air), (p) => p.air!.min ?? p.air!.km) ?? 0)} ${unit}`, 'median place to the nearest');
+        hero(1, `${Math.round(d3.median(all.filter((p) => p.air), (p) => airV(p.air!)) ?? 0)} ${unit}`, 'median place to the nearest');
         hero(2, `${all.filter((p) => p.sys).length} of ${all.length}`, 'places with a city bus');
         hero(3, `${all.filter((p) => p.rail.length || p.bus.stops).length} of ${all.length}`, 'places with a train or intercity bus stop mapped');
         const max = d3.max(rows, (r) => r.v) || 1;

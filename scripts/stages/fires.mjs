@@ -15,6 +15,8 @@ export default async function fires() {
   const h = lines[0].split(',');
   const I = (k) => h.indexOf(k);
   const iLat = I('LATITUDE'), iLon = I('LONGITUDE'), iY = I('YEAR'), iM = I('MONTH'), iD = I('DAY'), iHa = I('SIZE_HA'), iC = I('CAUSE'), iAg = I('SRC_AGENCY'), iT = I('FIRE_TYPE'), iName = I('FIRENAME');
+  const lost = Object.entries({ LATITUDE: iLat, LONGITUDE: iLon, YEAR: iY, MONTH: iM, DAY: iD, SIZE_HA: iHa, CAUSE: iC, SRC_AGENCY: iAg }).filter(([, i]) => i < 0).map(([k]) => k);
+  if (lost.length) throw new Error(`CNFDB points file has no ${lost.join(', ')} column: layout changed`);
   // CNFDB causes: N natural (lightning), H human, H-PB prescribed burn, U unknown, RE reburn
   const cause = (c) => (c === 'N' || c === 'L' ? 0 : /^H/.test(c) ? 1 : 2);
   const points = [];
@@ -33,6 +35,8 @@ export default async function fires() {
     if (ha >= 20000 && nm) points.at(-1).push(nm);
   }
   points.sort((a, b) => a[2] - b[2]);
+  // the database holds well over 20,000 Saskatchewan fires since the 1940s: far fewer means a broken download
+  if (points.length < 10_000) throw new Error(`only ${points.length} Saskatchewan fires in the CNFDB points file`);
   log(`  ${points.length} Saskatchewan fires (${skipped} rows off the map or undated), ${points[0]?.[2] | 0}–${points.at(-1)?.[2] | 0}`);
 
   // the National Burned Area Composite: mapped burn outlines, one WFS request a year (a big year is ~20 MB), cached.

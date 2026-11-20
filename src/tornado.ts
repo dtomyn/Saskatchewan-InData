@@ -35,9 +35,11 @@ export function tornadoLayer(data: Data): AtlasLayer {
     const y = Math.floor(r[2]);
     byYear[y] = (byYear[y] ?? 0) + 1;
     if ((r[3] ?? 0) >= 2) strongByYear[y] = (strongByYear[y] ?? 0) + 1;
-    byMonth[Math.min(11, Math.floor((r[2] % 1) * 12))]++;
+    byMonth[+isoDate(r[2]).slice(5, 7) - 1]++; // the calendar month (times are fractions of the real year, not twelfths)
   }
-  const y0 = Math.floor(rows[0]?.[2] ?? 1980), y1 = Math.floor(rows.at(-1)?.[2] ?? 2009);
+  // the timeline spans the sources' coverage (a covered year with no tornado is a 0, not off the end); rows when no spans
+  const y0 = T?.sources?.length ? d3.min(spans, (s) => s.from)! : Math.floor(rows[0]?.[2] ?? 1980);
+  const y1 = T?.sources?.length ? d3.max(spans, (s) => s.to)! : Math.floor(rows.at(-1)?.[2] ?? 2009);
   const gap = d3.range(y0, y1 + 1).filter((y) => !covered(y));
   const gapText = gap.length ? `${gap[0]}–${gap.at(-1)}` : '';
   const tracks = rows.filter((r) => r[4] != null && r[5] != null);
@@ -45,6 +47,7 @@ export function tornadoLayer(data: Data): AtlasLayer {
   const where = (r: TornadoRow) => {
     if (r[11]) return `near ${r[11]}`;
     const { town, km } = nearestTown(data.munis, r[0], r[1]);
+    if (!town) return 'location as recorded'; // no places loaded (a failed municipalities file)
     return `${Math.round(km)} km from ${town.name}`;
   };
 

@@ -50,6 +50,8 @@ export function commuteLayer(data: Data): AtlasLayer {
   // ---- the wave: restarted whenever the workplace or the limit changes
   let waveStart = -1e9;
   let waveFor = '';
+  // what `rows` were measured for: kept current even while the layer is only on, not focused (no wave, no camera then)
+  let measuredFor = '';
   let rows: Reach[] = []; // every place with a drive to the workplace, nearest first
   const sig = () => `${workplace(data) ?? ''}:${getWork().limit}`;
   const waveMin = (clock: number) => Math.min(getWork().limit, Math.max(0, (clock - waveStart) / MS_PER_MIN));
@@ -79,12 +81,12 @@ export function commuteLayer(data: Data): AtlasLayer {
   };
   const ignite = () => {
     measure();
-    waveFor = sig();
+    waveFor = measuredFor = sig();
     waveStart = performance.now();
     if (rows.length) fly();
   };
   // a change from the Finder or the Town Report while the layer is up: roll the wave again on the next frame
-  window.addEventListener('atlas:work', () => { waveFor = ''; });
+  window.addEventListener('atlas:work', () => { waveFor = measuredFor = ''; });
 
   const l: AtlasLayer = {
     id: 'commute',
@@ -100,6 +102,7 @@ export function commuteLayer(data: Data): AtlasLayer {
       const focused = focusedId === 'commute';
       const w = workplace(data);
       if (focused && sig() !== waveFor) ignite();
+      else if (sig() !== measuredFor) { measure(); measuredFor = sig(); }
       const origin = muni(w);
       const limit = getWork().limit;
       const wm = focused ? waveMin(clock) : limit;

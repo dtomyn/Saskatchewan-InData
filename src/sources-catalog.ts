@@ -212,7 +212,7 @@ export const ALL_SOURCES: Source[] = [
     endpoint: 'api.weather.gc.ca/collections/climate:candcsu6:projected:annual:P30Y-Avg/coverage · one grid per window, scenario and percentile', licence: 'ECCC Data Servers End-use Licence',
     gives: 'Model projections, not a record: the change in mean temperature, daily highs and lows and precipitation from 1971–2000, for 2021–2050, 2041–2070 and 2071–2100, under low (SSP1-2.6) and high (SSP5-8.5) emissions, as the median and 10th–90th percentile of 26 models at each place.',
     read: (d) => d.projections && { n: Object.keys(d.projections.towns).length, what: `projections for ${Object.keys(d.projections.towns).length} places, ${d.projections.windows.length} windows to 2100` },
-    rings: (d) => Object.fromEntries((d.projections?.windows ?? []).map((w) => [w + 15, { v: 0.45, label: `projection, ${w}–${w + 29} average (not a record)` }])),
+    rings: (d) => Object.fromEntries((d.projections?.windows ?? []).map((w) => [w + 15, { v: 0.45, proj: true, label: `projection, ${w}–${w + 29} average (not a record)` }])),
   },
   {
     id: 'normals', key: 'normals', name: 'Climate normals', color: '#c5e86c', group: 'Climate',

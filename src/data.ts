@@ -53,7 +53,7 @@ export type NormalsStation = {
 };
 export type PopSeries = { pop: Record<string, number> };
 /** A health facility. `hospital`: a hospital proper, not a health centre or clinic; `type` is the source's own label. */
-export type Facility = { name: string; city: string; lon: number; lat: number; hospital: boolean; ed: null; hours: null; type?: string };
+export type Facility = { name: string; city: string; lon: number; lat: number; hospital: boolean; ed: null; hours: null; type?: string; approx?: 1 };
 /** One place -> facility trip: facility index, drive minutes (null if straight-line only), km, road line. */
 export type Trip = { f: number; min: number | null; km: number; ferry?: boolean; line?: [number, number][] };
 
@@ -163,7 +163,7 @@ export type School = {
   osm?: string;
 };
 /** A post-secondary site: a university or college ('uni'), polytechnic or technical institute ('poly') or regional college ('col'). */
-export type PostSec = { n: string; k: 'uni' | 'poly' | 'col'; city: string | null; campus?: string | null; lon: number; lat: number; src: 'ae' | 'osm'; osm?: string };
+export type PostSec = { n: string; k: 'uni' | 'poly' | 'col'; city: string | null; campus?: string | null; lon: number; lat: number; src: 'ae' | 'osm'; osm?: string; approx?: 1 };
 export type Schools = {
   source: string; pseSource: string; routing: string; routingSource: string | null; asOf: string; inferKm: number;
   schools: School[]; pse: PostSec[];
@@ -736,18 +736,26 @@ export type HistoryIndex = {
 };
 
 const historyMemo = new Map<string, Promise<unknown>>();
+/** A history file, or null when this copy has none (404, or not JSON). A failed request (network, server error)
+ *  rejects, so `memoHistory` forgets it and the next call asks again. */
+async function loadHistoryFile<T>(name: string): Promise<T | null> {
+  const res = await fetch(`${base}data/${name}.json`);
+  if (!res.ok) { if (res.status === 404 || res.status === 410) return null; throw new Error(`${name}: HTTP ${res.status}`); }
+  try { return (await res.json()) as T; } catch { return null; }
+}
+function memoHistory<T>(k: string): Promise<T | null> {
+  if (!historyMemo.has(k)) historyMemo.set(k, loadHistoryFile<T>(`history/${k}`).catch(() => { historyMemo.delete(k); return null; }));
+  return historyMemo.get(k) as Promise<T | null>;
+}
 const liveAllowed = () => { const q = new URLSearchParams(location.search); return !q.has('film') || q.has('now'); };
 /** The history index, or null (no history in this copy, or the film). `force` reads it for the film too: the season
  *  replay, which the film handle asks for by name. */
 export function loadHistoryIndex(force = false): Promise<HistoryIndex | null> {
   if (!force && !liveAllowed()) return Promise.resolve(null);
-  if (!historyMemo.has('index')) historyMemo.set('index', load<HistoryIndex>('history/index'));
-  return historyMemo.get('index') as Promise<HistoryIndex | null>;
+  return memoHistory<HistoryIndex>('index');
 }
-/** One feed's month file ('YYYY-MM'), or null. Each is fetched once. */
+/** One feed's month file ('YYYY-MM'), or null. Each is fetched once (a failed request is asked again next time). */
 export function loadHistory<T>(feed: HistoryFeed, month: string, force = false): Promise<T | null> {
   if (!force && !liveAllowed()) return Promise.resolve(null);
-  const k = `${feed}/${month}`;
-  if (!historyMemo.has(k)) historyMemo.set(k, load<T>(`history/${k}`));
-  return historyMemo.get(k) as Promise<T | null>;
+  return memoHistory<T>(`${feed}/${month}`);
 }

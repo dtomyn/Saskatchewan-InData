@@ -86,10 +86,13 @@ export function renderEventPanel(el: HTMLElement, ev: AtlasEvent, c: EventContex
       if (!box) return;
       const data = chartLayer.spark();
       const xs = data.map((d) => d.x);
+      // a monthly layer (Drought) has a bar a month: its width, the hover and "this moment" go by the month
+      const step = chartLayer.monthly ? 1 / 12 : 1;
+      const same = (d: { x: number }) => Math.floor(t! / step + 1e-9) === Math.round(d.x / step);
       barChart(box, {
-        data, xDomain: [Math.min(...xs), Math.max(...xs)], color: chartLayer.color, height: 110,
+        data, xDomain: [Math.min(...xs), Math.max(...xs)], color: chartLayer.color, height: 110, step,
         diverging: data.some((d) => d.y < 0),
-        tooltip: (d) => `<b>${d.x}</b>${Math.floor(t!) === d.x ? ' · this moment' : ''}`,
+        tooltip: (d) => `<b>${step < 1 ? eventDate(d.x) : d.x}</b>${same(d) ? ' · this moment' : ''}`,
       }).setPlayhead(t!);
     });
   }

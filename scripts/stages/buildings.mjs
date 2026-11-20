@@ -158,6 +158,8 @@ export default async function buildings() {
     feats.push({ ring: ring.map(([x, y]) => [Math.round(x * 1e6) / 1e6, Math.round(y * 1e6) / 1e6]), rbox, a, f: 0, h: null, m2: ringM2(ring) });
   });
   log(`  ${feats.length} of ${read} footprints inside the areas`);
+  if (!read) throw new Error('Saskatchewan.zip: no footprints read (has the file changed?)');
+  if (!feats.length) throw new Error(`none of ${read} footprints fell inside the areas`);
 
   // heights: OpenStreetMap buildings tagged with a height or a storey count, matched to the footprint under their centre
   const q = `[out:json][timeout:300];(${areas.map((a) => { const bb = `${a.box[1].toFixed(4)},${a.box[0].toFixed(4)},${a.box[3].toFixed(4)},${a.box[2].toFixed(4)}`; return `way["building"]["height"](${bb});way["building"]["building:levels"](${bb});relation["building"]["height"](${bb});relation["building"]["building:levels"](${bb});`; }).join('')});out tags center;`;
@@ -238,10 +240,11 @@ export default async function buildings() {
       ],
     },
   });
+  log(`  ${tiles.length} tiles (largest ${(biggest / 1024).toFixed(0)} KB raw), ${FILE} ${(pm.length / 1048576).toFixed(1)} MB`);
+  // checked before anything is written, so the archive and buildings.json are only ever replaced together
+  if (pm.length > 40 * 1048576) throw new Error(`${FILE} is ${(pm.length / 1048576).toFixed(1)} MB, over the 40 MB budget`);
   await fs.mkdir(path.join(OUT, 'tiles'), { recursive: true });
   await fs.writeFile(path.join(OUT, FILE), pm);
-  log(`  ${tiles.length} tiles (largest ${(biggest / 1024).toFixed(0)} KB raw), ${FILE} ${(pm.length / 1048576).toFixed(1)} MB`);
-  if (pm.length > 40 * 1048576) throw new Error(`${FILE} is ${(pm.length / 1048576).toFixed(1)} MB, over the 40 MB budget`);
 
   const r6 = (v) => Math.round(v * 1e4) / 1e4;
   await writeOut('buildings', {

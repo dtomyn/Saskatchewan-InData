@@ -46,6 +46,22 @@ function hailKm(r: HailRow, lon: number, lat: number) {
   return best;
 }
 
+/**
+ * A research-database storm that a radar swath already holds (within 2 days, its point within 25 km of the swath's
+ * centre line) is the same storm: counted once, as the swath (its measured stone still counts for the largest hail).
+ */
+const SAME_DAYS = 2 / 365.25, SAME_KM = 25;
+const sameCache = new WeakMap<HailRow[], Set<HailRow>>();
+function sameStorms(rows: HailRow[]) {
+  let s = sameCache.get(rows);
+  if (!s) {
+    const sw = rows.filter(isSwath);
+    s = new Set(rows.filter((r) => !isSwath(r) && sw.some((w) => Math.abs(w[2] - r[2]) <= SAME_DAYS && hailKm(w, r[0], r[1]) <= SAME_KM)));
+    sameCache.set(rows, s);
+  }
+  return s;
+}
+
 /** Hail on record near a place: storms whose swath or point passes within 50 km, and the largest hail among them. */
 export type PlaceHail = { n: number; from: number; to: number; max: { mm: number; t: number; name: string | null; radar: boolean } | null };
 export function placeHail(data: Data, m: { lon: number; lat: number }): PlaceHail | null {
@@ -53,9 +69,10 @@ export function placeHail(data: Data, m: { lon: number; lat: number }): PlaceHai
   if (!rows?.length) return null;
   let n = 0;
   let max: PlaceHail['max'] = null;
+  const same = sameStorms(rows);
   for (const r of rows) {
     if (hailKm(r, m.lon, m.lat) > HAIL_REACH_KM) continue;
-    n++;
+    if (!same.has(r)) n++;
     if (r[3] != null && (!max || r[3] > max.mm)) max = { mm: r[3], t: r[2], name: r[5], radar: isSwath(r) };
   }
   return { n, from: Math.floor(rows[0][2]), to: Math.floor(rows.at(-1)![2]), max };
@@ -77,7 +94,7 @@ export function hailLayer(data: Data): AtlasLayer {
     byYear[y] = (byYear[y] ?? 0) + 1;
     if ((r[3] ?? 0) >= 50) bigByYear[y] = (bigByYear[y] ?? 0) + 1;
     if (r[3] != null) maxByYear[y] = Math.max(maxByYear[y] ?? 0, r[3]);
-    byMonth[Math.min(11, Math.floor((r[2] % 1) * 12))]++;
+    byMonth[+isoDate(r[2]).slice(5, 7) - 1]++; // the calendar month (times are fractions of the real year, not twelfths)
   }
   const y0 = Math.floor(rows[0]?.[2] ?? 2022), y1 = Math.floor(rows.at(-1)?.[2] ?? 2024);
   const radar = (y: number) => y >= radarSpan.from && y <= radarSpan.to;
@@ -85,9 +102,12 @@ export function hailLayer(data: Data): AtlasLayer {
   const sizeless = swaths.length - sized.length;
   const sizeless0 = swaths.filter((r) => r[3] == null && Math.floor(r[2]) === radarSpan.from).length;
   const radius = (r: HailRow) => 1800 + (r[3] ?? 20) * 55;
+  // research storms a radar swath already holds: not counted twice
+  const sameTimes = [...sameStorms(rows)].map((r) => r[2]).sort((a, b) => a - b);
   const where = (r: HailRow) => {
     if (r[5]) return `near ${r[5]}`;
     const { town, km } = nearestTown(data.munis, r[0], r[1]);
+    if (!town) return 'location as recorded'; // no places loaded (a failed municipalities file)
     return `${Math.round(km)} km from ${town.name}`;
   };
 
@@ -217,7 +237,7 @@ export function hailLayer(data: Data): AtlasLayer {
             hero(0, '–', `no radar record for ${y}`);
             hero(1, '–', `radar swaths: ${radarSpan.from}–${radarSpan.to}`);
           }
-          hero(2, fmt.int(lowerBound(rows, time, (r) => r[2])), `storms on record since ${y0}`);
+          hero(2, fmt.int(lowerBound(rows, time, (r) => r[2]) - lowerBound(sameTimes, time, (t) => t)), `storms on record since ${y0}`);
           const peak = byMonth.indexOf(Math.max(...byMonth));
           hero(3, MONTHS[peak], `busiest month (${Math.round((byMonth[peak] / (swaths.length || 1)) * 100)}%)`);
           set(time);

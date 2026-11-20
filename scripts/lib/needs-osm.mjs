@@ -19,7 +19,15 @@ export const NEEDS_KINDS = [
 export const needsOSM = () => overpass('sk-needs.json', `[out:json][timeout:300];(nwr["shop"~"^(supermarket|grocery)$"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});nwr["amenity"~"^(pharmacy|school|bank|fuel|library|post_office|clinic|doctors)$"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});nwr["healthcare"~"^(pharmacy|clinic|doctor)$"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east}););out center tags qt;`);
 
 // Statistics Canada's Open Database of Healthcare Facilities (shared by `hospitals` and `doctors`).
-export const odhfRows = async () => parseCSV((await cached('raw/odhf.csv', () => fetchBuf('https://ftp.maps.canada.ca/pub/statcan_statcan/Health-care-facilities_Etablissement-de-sante/ODHF_BDOES/odhf_bdoes_v1.csv'))).toString('latin1')).filter((r) => r.province === 'sk');
+// The file is Windows-1252 (its dashes and apostrophes are 0x96, 0x92: Latin-1 reads them as control characters). An
+// answer with no Saskatchewan rows (an HTML page, a new layout) is refused before it is cached.
+const ODHF = 'https://ftp.maps.canada.ca/pub/statcan_statcan/Health-care-facilities_Etablissement-de-sante/ODHF_BDOES/odhf_bdoes_v1.csv';
+const skRows = (buf) => parseCSV(new TextDecoder('windows-1252').decode(buf)).filter((r) => r.province === 'sk');
+export const odhfRows = async () => skRows(await cached('raw/odhf.csv', async () => {
+  const b = await fetchBuf(ODHF);
+  if (!skRows(b).length) throw new Error('ODHF: no Saskatchewan rows (has the file changed?)');
+  return b;
+}));
 // ODHF files health centres, clinics and primary-care teams under "Hospitals" too; many rural Saskatchewan "district
 // health centres" are acute-care hospitals, so the source's type decides, and psychiatric and primary-care sites
 // don't count as somewhere to go in an emergency.

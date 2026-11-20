@@ -30,7 +30,11 @@ export function smallView(data: Data): Data {
     ...d,
     munis: [...d.munis, ...d.small],
     // population: the 2016 and 2021 census counts of its census subdivision (the 62 have annual estimates)
-    population: d.population ? { ...d.population, munis: { ...d.population.munis, ...byKey((_, s) => (s.pop != null ? { pop: { ...(s.pop16 != null ? { 2016: s.pop16 } : {}), 2021: s.pop } } : null)) } } : d.population,
+    // (built from the subdivisions even when the estimates file did not load: the two are separate downloads)
+    population: (() => {
+      const csd = byKey((_, s) => (s.pop != null ? { pop: { ...(s.pop16 != null ? { 2016: s.pop16 } : {}), 2021: s.pop } } : null));
+      return d.population ? { ...d.population, munis: { ...d.population.munis, ...csd } } : Object.keys(csd).length ? { munis: csd, source: 'Statistics Canada, Census 2016 and 2021 (census subdivisions)' } : null;
+    })(),
     housing: d.housing ? { ...d.housing, census: { ...d.housing.census, ...byKey((_, s) => d.housing!.csd?.[s.id]) } } : d.housing,
     jobs: d.jobs ? { ...d.jobs, towns: { ...d.jobs.towns, ...byKey((m, s) => ({ r: d.jobs!.small?.[m.key]?.r ?? null, ...(d.jobs!.csd?.[s.id] ?? {}) })) } } : d.jobs,
     community: d.community ? { ...d.community, towns: { ...d.community.towns, ...byKey((_, s) => (d.community!.csd?.[s.id] ? { ...d.community!.csd![s.id], pw: [] } : null)) } } : d.community,
@@ -109,8 +113,8 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
     </div>
     <h3>Hazards and climate, by location</h3>
     <div class="metric-grid">
-      ${row('Wildfires', String(t.fires25km), `fires started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km)} burned from fires starting within 50 km`)}
-      ${row('Tornadoes', String(t.tornadoes50km), 'on record within 50 km')}
+      ${t.fires25km != null ? row('Wildfires', String(t.fires25km), `fires started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km ?? 0)} burned from fires starting within 50 km`) : absent('Wildfires', 'the fire archive is not available')}
+      ${t.tornadoes50km != null ? row('Tornadoes', String(t.tornadoes50km), 'on record within 50 km') : absent('Tornadoes', 'the tornado record is not available')}
       ${t.hail ? row('Hail', String(t.hail.n), `storms whose swath passed within 50 km, ${t.hail.from}–${t.hail.to}`) : absent('Hail', 'hail data not built')}
       ${t.drought ? row('Drought', String(t.drought.d2), `months at severe drought or worse, ${t.drought.from}–${t.drought.to} (its 10 km map cell)`) : absent('Drought', 'drought data not built')}
       ${t.smoke ? row('Smoke days', t.smoke.avg.toFixed(1), `a year, borrowed from ${esc(t.smoke.name)} (${Math.round(t.smoke.dist)} km)`) : absent('Smoke days', 'no air-monitoring station within 150 km')}

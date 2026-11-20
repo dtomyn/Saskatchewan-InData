@@ -125,6 +125,9 @@ a { color: #9cc7ff; }
 .rank-list li:hover { background: rgba(255,255,255,.05); }
 .rank-list .rk { font-family: var(--mono); color: var(--ink-3); font-size: 12px; text-align: right; }
 .rank-list .nm { font-weight: 600; font-size: 13px; }
+/* each ranked name is a button, so the ranking opens a report from the keyboard too */
+.rank-list .rank-pick { all: unset; cursor: pointer; font-weight: 600; font-size: 13px; color: inherit; }
+.rank-list .rank-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .rank-list .rd { color: var(--ink-3); font-size: 11px; }
 .bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,.07); overflow: hidden; position: relative; }
 .bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: linear-gradient(90deg, #7b61ff, #3ecf8e); }
@@ -600,3 +603,5 @@ body.touring .event-ticker { display: none; }
 .rp-bars { display: block; width: 100%; height: 110px; margin: 6px 0 4px; }
 .rp-btns { display: flex; gap: 6px; margin: 10px 0 4px; }
 .sw.rp-gap { background: rgba(160, 165, 180, .45); }
+/* a census tract reached with Tab (src/tracts.ts) */
+.tr-ct-map path:focus-visible { outline: none; stroke: #fff; stroke-width: 2; }

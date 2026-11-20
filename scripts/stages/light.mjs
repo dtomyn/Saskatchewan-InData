@@ -53,10 +53,13 @@ export default async function light() {
   const coef = (gh, n, m) => {
     const l = lines.find((x) => new RegExp(`^${gh}\\s+${n}\\s+${m}\\s`).test(x));
     if (!l) throw new Error(`IGRF coefficient ${gh}${n}${m} missing`);
-    return Number(l.trim().split(/\s+/)[ci]);
+    const v = Number(l.trim().split(/\s+/)[ci]);
+    if (!Number.isFinite(v)) throw new Error(`IGRF coefficient ${gh}${n}${m} is not a number at ${cols[ci]}`);
+    return v;
   };
   const g10 = coef('g', 1, 0), g11 = coef('g', 1, 1), h11 = coef('h', 1, 1);
   const B0 = Math.hypot(g10, g11, h11);
+  if (!(B0 > 0)) throw new Error('IGRF coefficient file: zero dipole');
   const poleLat = 90 - Math.acos(-g10 / B0) / R;
   const poleLon = Math.atan2(-h11, -g11) / R;
   const mlat = (lat, lon) => round(Math.asin(Math.sin(lat * R) * Math.sin(poleLat * R) + Math.cos(lat * R) * Math.cos(poleLat * R) * Math.cos((lon - poleLon) * R)) / R, 2);
@@ -108,11 +111,16 @@ export default async function light() {
 
   // --- RASC's designated dark-sky sites in Saskatchewan, matched to park outlines by name
   const RASC_URL = 'https://rasc.ca/lpa/dark-sky-sites';
+  // keep only a page with the table and a Saskatchewan row, as parsed below (a bad cached copy is fetched again)
+  const rascOk = (b) => {
+    const t = b.toString('utf8').match(/<table class="sortable">([\s\S]*?)<\/table>/)?.[1] ?? '';
+    return /Dark-Sky Site/i.test(b.toString('utf8')) && /<td[^>]*>[^<]*\bSK\b/.test(t);
+  };
   const html = (await cached('light/rasc-dark-sky-sites.html', async () => {
     const b = await fetchBuf(RASC_URL, { headers: { Accept: 'text/html' } });
-    if (!/Dark-Sky Site/i.test(b.toString('utf8'))) throw new Error('RASC page: no dark-sky table');
+    if (!rascOk(b)) throw new Error('RASC page: no dark-sky table with Saskatchewan sites');
     return b;
-  })).toString('utf8');
+  }, rascOk)).toString('utf8');
   const text = (s) => s.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/&#0?39;|&rsquo;/g, '’').replace(/&nbsp;|&#13;/g, ' ').replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+([),])/g, (_, p) => p).trim();
   const table = html.match(/<table class="sortable">([\s\S]*?)<\/table>/)?.[1];
   if (!table) throw new Error('RASC page: sortable table not found');

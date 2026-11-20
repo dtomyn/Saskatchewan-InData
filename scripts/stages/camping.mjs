@@ -29,7 +29,8 @@ export default async function camping() {
     const ring = ps.map((p) => p[0]).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)))[0];
     const c = [ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length];
     if (!inSask(c[0], c[1], 0.05)) return;
-    const ha = ps.reduce((a, p) => a + Math.abs(ringArea(p[0])) * 111.32 * 111.32 * Math.cos((c[1] * Math.PI) / 180) * 100, 0);
+    // net of holes (interior rings)
+    const ha = ps.reduce((a, p) => a + p.reduce((s, r, i) => s + (i ? -1 : 1) * Math.abs(ringArea(r)), 0) * 111.32 * 111.32 * Math.cos((c[1] * Math.PI) / 180) * 100, 0);
     parks.push({ name, type, ...extra, c: [round(c[0], 3), round(c[1], 3)], ha: Math.round(ha), polys: ps });
   };
   for (const f of await arcgisAll(`${PT}/0`, { where: '1=1', outFields: 'PARKNM', ...geo }, 'parks-national'))
@@ -134,10 +135,14 @@ export default async function camping() {
     });
   }
   // where both sources have a campground, keep Parks Canada's (it counts the sites) and borrow OSM's name and link
+  // (close, and not named as a different site: two names must share a word other than "campground" and the like)
+  const CAMP_WORDS = new Set(['campground', 'campsite', 'campsites', 'camp', 'site', 'sites', 'park', 'rv', 'the', 'and', 'of', 'group', 'backcountry']);
+  const nameWords = (s) => (s ?? '').toLowerCase().normalize('NFD').replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((w) => w && !CAMP_WORDS.has(w));
+  const sameName = (a, b) => { const wa = nameWords(a), wb = nameWords(b); return !wa.length || !wb.length || wa.some((w) => wb.includes(w)); };
   let merged = 0;
   for (const c of pcCamps) {
     if (c.drop) continue;
-    const o = osmCamps.find((o) => !o.drop && distKm(c.lon, c.lat, o.lon, o.lat) < (c.kind === 'backcountry' ? 0.3 : 1.2));
+    const o = osmCamps.find((o) => !o.drop && distKm(c.lon, c.lat, o.lon, o.lat) < (c.kind === 'backcountry' ? 0.3 : 1.2) && sameName(c.name, o.name));
     if (!o) continue;
     c.name ??= o.name;
     if (o.web) c.web ??= o.web;
@@ -161,10 +166,10 @@ export default async function camping() {
   const towns = Object.fromEntries(Object.entries(d.towns).map(([k, v]) => [k, v.map((t) => ({ ...t, f: driveable[t.f].i }))]));
 
   // --- Weekend reach: from each place, the drive to every campground within REACH_MIN, in one OSRM table call per place
-  // (the demo server takes up to 100 coordinates, so the 99 nearest in a straight line are the candidates; the farthest
-  // of those is checked against REACH_MIN so a place never silently loses campgrounds it could reach)
+  // (the demo server takes up to 100 coordinates, so the candidates go in pages of 99, nearest in a straight line
+  // first, out to 400 km, so a place never silently loses campgrounds it could reach)
   const REACH_MIN = 240;
-  const reach = {};
+  const reach = {}, nearBy = {};
   let reachRouted = d.routed, clipped = 0;
   const hash = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
   for (const p of places) {
@@ -174,7 +179,8 @@ export default async function camping() {
     if (reachRouted) {
       try {
         rows = [];
-        // pages of 99 destinations, nearest first, until a page's farthest campground is already out of reach
+        // pages of 99 destinations, nearest first, out to the 400 km bound (a page with nothing in reach does not stop
+        // it: a campground farther in a straight line can be nearer by road)
         for (let at = 0; at < near.length; at += 99) {
           const page = near.slice(at, at + 99);
           const coords = [p, ...page.map((n) => n.c)].map((x) => `${x.lon},${x.lat}`).join(';');
@@ -182,15 +188,17 @@ export default async function camping() {
           if (tb.code !== 'Ok') throw new Error(tb.message ?? tb.code);
           const got = page.map((n, j) => [n.c.i, tb.durations[0][j + 1] == null ? null : Math.round(tb.durations[0][j + 1] / 60)]);
           rows.push(...got.filter((r) => r[1] != null && r[1] <= REACH_MIN));
-          if (!got.some((r) => r[1] != null && r[1] <= REACH_MIN)) break;
           if (at + 99 < near.length) clipped++;
         }
-      } catch (e) { log(`  reach: OSRM unavailable (${e.message}); straight-line reach from here on`); reachRouted = false; rows = null; }
+      } catch (e) { log(`  reach: OSRM unavailable (${e.message}); straight-line reach for every place`); reachRouted = false; rows = null; }
     }
-    // without routing, a rough reach: 80 km/h along a road 1.3× the straight line
-    rows ??= near.map((n) => [n.c.i, Math.round((n.d * 1.3) / 80 * 60)]).filter((r) => r[1] <= REACH_MIN);
-    reach[p.key] = rows.sort((a, b) => a[1] - b[1]);
+    nearBy[p.key] = near;
+    reach[p.key] = rows?.sort((a, b) => a[1] - b[1]);
   }
+  // without routing, a rough reach: 80 km/h along a road 1.3× the straight line. One method for every place, so a
+  // failure part-way never leaves routed and estimated rows under one label.
+  if (!reachRouted)
+    for (const p of places) reach[p.key] = nearBy[p.key].map((n) => [n.c.i, Math.round((n.d * 1.3) / 80 * 60)]).filter((r) => r[1] <= REACH_MIN).sort((a, b) => a[1] - b[1]);
   const medReach = Object.values(reach).map((r) => r.filter((x) => x[1] <= 120).length).sort((a, b) => a - b);
   log(`  reach: median place has ${medReach[medReach.length >> 1]} campgrounds within 2 h (${clipped} extra table pages for places with more than 99 candidates)`);
 

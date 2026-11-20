@@ -31,6 +31,9 @@ export default async function tax() {
     .sort((a, b) => b.year - a.year);
   if (!fmts.length) throw new Error('no yearly workbooks listed in the mill rate product');
   const latest = fmts[0];
+  // the file name comes from the server: keep it to one plain name inside .cache/tax/
+  latest.file = latest.file.replace(/^.*[\\/]/, '');
+  if (!/^[\w][\w .()-]*\.xlsx$/i.test(latest.file)) throw new Error(`unexpected workbook name ${JSON.stringify(latest.file)}`);
   const DL = `${PRODUCT}/formats/${latest.id}/download`;
   const isZip = (b) => b[0] === 0x50 && b[1] === 0x4b;
   const book = await cached(`tax/${latest.file}`, async () => {

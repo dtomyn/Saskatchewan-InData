@@ -6,7 +6,7 @@ import { DataFilterExtension } from '@deck.gl/extensions';
 import * as d3 from 'd3';
 import { Data, FirePoint, BurnPerimeter, lowerBound, Hotspot, fmt, FirePerimeter } from './data';
 import { AtlasLayer, Ctx, rgb, RecentSpan, filterExt, NO_DEPTH, ADDITIVE, dashExt, glowWindow, RGBA, nearestTown, kicker, heroStats, deferChart, mk, sourceLine, isoDate } from './layer-kit';
-import { HistHotspot, firesHistory, dayT, tDay, DAY_T, dayText, FireSeason, fireSeason, fireSeasonYears } from './history';
+import { HistHotspot, firesHistory, dayT, tDay, DAY_T, dayText, FireSeason, fireSeason, fireSeasonYears, onHistory } from './history';
 import { reducedMotion } from './particles';
 import { airLayers, airPanel, airTooltip } from './wind';
 import { ms, freshness, plainAge, provinceOutlook, alertList, alertsInEffect, nowBlock, NOW_T, drawable, alertOutlines, tickAges, isNow, alertEvent, ago, skTime, alertTooltip } from './now';
@@ -103,6 +103,8 @@ export function firesLayer(data: Data): AtlasLayer {
   // the recent span: hotspots kept by the daily record since the archive's last year (heat, not fires; never in the fire statistics)
   const FFROM = y1 + 1;
   let fPts: HistHotspot[] | null = null;
+  // a month of the record that loads later (or on a retry) is picked up
+  onHistory(() => { fPts = null; });
   const fPoints = () => (fPts ??= firesHistory() ? firesHistory()!.points.filter((p) => p[2] >= FFROM) : null) ?? [];
   const fDays = () => (firesHistory()?.sorted ?? []).filter((d) => dayT(d) >= FFROM);
   const firesRecent: RecentSpan = {
@@ -155,11 +157,16 @@ export function firesLayer(data: Data): AtlasLayer {
   /** the last moment of the season's last day, so the end of the replay still reads as that day */
   const sClamp = (s: FireSeason, t: number) => Math.min(Math.max(t, s.a), s.b - DAY_T / 1440);
   const replayEvent = (year: number | null) => window.dispatchEvent(new CustomEvent('atlas:replay', { detail: { layer: 'fires', year } }));
+  /** the nearest place's name, or a stand-in when no places loaded (a failed municipalities file) */
+  const townName = (t: { name: string } | null | undefined) => t?.name ?? 'the nearest place (places not loaded)';
+  // each start takes a ticket: a newer start, or stop() while a season is still loading, makes an older load a no-op
+  let ticket = 0;
   const replay: NonNullable<AtlasLayer['replay']> = {
     seasons: (force) => fireSeasonYears(force),
     async start(year, force) {
+      const mine = ++ticket;
       const s = await fireSeason(year, force);
-      if (!s) return null;
+      if (!s || mine !== ticket) return null;
       season = s;
       spread = spreadEdges(s.points);
       seasonBurns = perimPolys.filter((p) => p.b[0] === year);
@@ -167,7 +174,7 @@ export function firesLayer(data: Data): AtlasLayer {
       const md = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' });
       return { range: [s.a, s.b], ends: [md(s.days[0].day), md(s.days.at(-1)!.day)], camera: { center: [-104.2, 54.7], zoom: 4.7, pitch: 25, bearing: 0 } };
     },
-    stop() { season = null; spread = []; seasonBurns = []; endClock = null; },
+    stop() { ticket++; season = null; spread = []; seasonBurns = []; endClock = null; },
     days: () => (season?.days ?? []).map((d) => ({ x: d.t, y: d.n })),
     at(t) { const s = season, day = tDay(s ? sClamp(s, t) : t); return { day, covered: s?.days.find((d) => d.day === day)?.n != null }; },
     build({ time, clock }) {
@@ -439,12 +446,13 @@ export function firesLayer(data: Data): AtlasLayer {
     spark: () => d3.range(y0, y1 + 1).map((x) => ({ x, y: haByYear[x] ?? 0 })),
     events() {
       return points.filter((p) => p[3] >= 100000).map((p) => {
+        // no places loaded (a failed municipalities file): the event keeps its size and cause, without a town
         const { town, km: d } = nearestTown(data.munis, p[0], p[1]);
         const nmd = fireName(p);
         return {
           t: p[2], layer: 'fires', lon: p[0], lat: p[1], zoom: 7.5,
-          title: `${fmt.ha(p[3])} wildfire ${d < 15 ? 'at' : 'near'} ${town.name}`,
-          body: `${nmd ? `${nmd[0].toUpperCase()}${nmd.slice(1)}, a` : 'A'} ${CAUSE[p[4]].name.toLowerCase()}-caused fire${d >= 15 ? ` about ${Math.round(d)} km from ${town.name}` : ''}: one of the largest in the provincial record.`,
+          title: town ? `${fmt.ha(p[3])} wildfire ${d < 15 ? 'at' : 'near'} ${town.name}` : `${fmt.ha(p[3])} wildfire`,
+          body: `${nmd ? `${nmd[0].toUpperCase()}${nmd.slice(1)}, a` : 'A'} ${CAUSE[p[4]].name.toLowerCase()}-caused fire${town && d >= 15 ? ` about ${Math.round(d)} km from ${town.name}` : ''}: one of the largest in the provincial record.`,
           stats: [{ v: fmt.ha(p[3]), l: 'burned' }, { v: CAUSE[p[4]].name, l: 'cause' }, { v: `#${rankOf.get(p)}`, l: `largest of ${fmt.int(points.length)} recorded fires` }],
         };
       });
@@ -477,7 +485,7 @@ export function firesLayer(data: Data): AtlasLayer {
         <div class="callout" style="--c:${color}">Worst years on record: ${top.map(([y, v]) => `<b>${y}</b> (${fmt.ha(v)})`).join(', ')}. ${Math.round(north * 100)}% of all the area burned since ${y0} lies north of 54° N.</div>
         <h3>Cause</h3>
         <div class="legend">${CAUSE.map((c) => `<span><i class="sw" style="background:${c.c}"></i>${c.name}</span>`).join('')}</div>
-        <p class="note">${perims.length ? `Outlines are the National Burned Area Composite’s mapped burns (from satellite imagery and agency mapping), simplified to about a twelfth of each burn’s width; a fire under 200 ha, before ${py0} or after ${py1} (the composite’s latest year) is a circle. ` : ''}A circle shows how much ground a fire burned, not its real shape. Older records are less complete, especially for small fires, and much of the far north is an observation zone where fires are watched rather than fought. Prescribed burns are left out.</p>
+        <p class="note">${perims.length ? `Outlines are the National Burned Area Composite’s mapped burns (from satellite imagery and agency mapping), simplified to about a sixth of each burn’s width; a fire under 200 ha, before ${py0} or after ${py1} (the composite’s latest year) is a circle. ` : ''}A circle shows how much ground a fire burned, not its real shape. Older records are less complete, especially for small fires, and much of the far north is an observation zone where fires are watched rather than fought. Prescribed burns are left out.</p>
         ${sourceLine(`${fires?.source ?? ''}${fires?.perimeterSource ? `; ${fires.perimeterSource}` : ''}${fires?.licence ? `. ${fires.licence}` : ''}`)}`);
       return {
         update(c) {
@@ -491,7 +499,9 @@ export function firesLayer(data: Data): AtlasLayer {
             const d = tDay(time), n = firesHistory()?.perDay.get(d);
             hero(0, firesRecent.covers(time) ? fmt.int(n ?? 0) : '–', firesRecent.covers(time) ? `satellite hotspots on ${dayText(d)} (not fires)` : `no record for ${dayText(d)}`);
           } else hero(0, fmt.int(countByYear[y] ?? 0), `fires in ${y}`);
-          hero(1, fmt.ha(haByYear[y] ?? 0), `burned in ${y}`);
+          // past the archive's last year (the recent span, Now) there is no record yet: unknown, never 0 ha
+          const past = y > y1;
+          hero(1, past ? '–' : fmt.ha(haByYear[y] ?? 0), past ? `burned in ${y} (not in the record yet)` : `burned in ${y}`);
           const tot = cz[0] + cz[1] + cz[2];
           hero(2, tot ? `${Math.round((cz[0] / tot) * 100)}%` : '–', `started by lightning in ${y}`);
           let cum = 0;
@@ -509,8 +519,8 @@ export function firesLayer(data: Data): AtlasLayer {
         const { town, km: d } = nearestTown(data.munis, lon, lat);
         return {
           t, layer: 'fires', kind: 'Satellite hotspot (recorded)', lon, lat, zoom: 9,
-          title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${town.name}`,
-          body: `A hotspot kept by the atlas’s daily record of CWFIS’s feed${d >= 5 ? `, about ${Math.round(d)} km from ${town.name}` : ''}. It is not a confirmed fire, and hotspots never count in the wildfire statistics.`,
+          title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${townName(town)}`,
+          body: `A hotspot kept by the atlas’s daily record of CWFIS’s feed${d >= 5 ? `, about ${Math.round(d)} km from ${townName(town)}` : ''}. It is not a confirmed fire, and hotspots never count in the wildfire statistics.`,
           stats: [{ v: dayText(tDay(t)), l: 'seen (Sask. day)' }, ...(frp != null ? [{ v: `${frp} MW`, l: 'fire radiative power' }] : [])],
           sources: [{ label: 'CWFIS satellite hotspots', url: 'https://cwfis.cfs.nrcan.gc.ca/maps/fm3' }],
         };
@@ -524,7 +534,7 @@ export function firesLayer(data: Data): AtlasLayer {
           const { town, km: d } = nearestTown(data.munis, c[0], c[1]);
           return {
             layer: 'fires', kind: 'Estimated fire perimeter', lon: c[0], lat: c[1], zoom: 8,
-            title: `A fire perimeter ${d < 15 ? 'at' : 'near'} ${town.name}`,
+            title: `A fire perimeter ${d < 15 ? 'at' : 'near'} ${townName(town)}`,
             body: `An outline the Canadian Wildland Fire Information System draws around clusters of satellite hotspots. It is an estimate from heat seen from space, not a mapped perimeter, so it is drawn dashed.`,
             stats: [{ v: fmt.ha(p.ha), l: 'estimated area' }, { v: ago(p.last), l: 'last heat seen' }, { v: skTime(p.first), l: 'first heat seen' }, { v: fmt.int(p.n), l: 'hotspots in it' }],
             sources: [{ label: 'CWFIS fire M3 hotspots and perimeters', url: nowF?.sourceUrl ?? 'https://cwfis.cfs.nrcan.gc.ca/' }],
@@ -535,8 +545,8 @@ export function firesLayer(data: Data): AtlasLayer {
           const { town, km: d } = nearestTown(data.munis, h[0], h[1]);
           return {
             layer: 'fires', kind: 'Satellite hotspot', lon: h[0], lat: h[1], zoom: 9,
-            title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${town.name}`,
-            body: `A hotspot: a satellite pixel hotter than the ground around it${d >= 5 ? `, about ${Math.round(d)} km from ${town.name}` : ''}. It is not a confirmed fire: gas flares, farm and slash burning and hot industrial sites show up too.`,
+            title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${townName(town)}`,
+            body: `A hotspot: a satellite pixel hotter than the ground around it${d >= 5 ? `, about ${Math.round(d)} km from ${townName(town)}` : ''}. It is not a confirmed fire: gas flares, farm and slash burning and hot industrial sites show up too.`,
             stats: [{ v: ago(h[2]), l: `seen (${skTime(h[2])}, Sask. time)` }, ...(h[3] != null ? [{ v: `${h[3]} MW`, l: 'fire radiative power' }] : []), ...(h[4] ? [{ v: h[4], l: 'sensor' }] : [])],
             sources: [{ label: 'CWFIS satellite hotspots', url: nowF?.sourceUrl ?? 'https://cwfis.cfs.nrcan.gc.ca/' }],
           };
@@ -551,7 +561,7 @@ export function firesLayer(data: Data): AtlasLayer {
         const nmd = mp ? fireName(mp) : null;
         return {
           t: b[3], layer: 'fires', kind: 'Mapped burn outline', lon, lat, zoom: b[1] > 20000 ? 7.5 : 9,
-          title: `${nmd ? `${nmd[0].toUpperCase()}${nmd.slice(1)}: ` : ''}${fmt.ha(b[1])} burned ${d < 5 ? 'at' : 'near'} ${town.name}, ${b[0]}`,
+          title: `${nmd ? `${nmd[0].toUpperCase()}${nmd.slice(1)}: ` : ''}${fmt.ha(b[1])} burned ${d < 5 ? 'at' : 'near'} ${townName(town)}, ${b[0]}`,
           body: `The outline the National Burned Area Composite maps for this burn, from satellite imagery and agency mapping, simplified for the map. ${b[4].length ? `${b[4].length === 1 ? 'One reported fire starts' : `${b[4].length} reported fires start`} inside it${mp ? `; the largest was ${['started by lightning', 'started by people', 'of unknown cause'][mp[4]]}` : ''}.` : 'No reported fire of that year starts inside it, so it appears at the start date the composite gives.'} The area is the composite’s, less unburned islands where it maps them, so it can differ from the size the fire was reported at.`,
           stats: [{ v: fmt.ha(b[1]), l: 'mapped burned area' }, { v: String(b[0]), l: 'year' }, ...(mp ? [{ v: CAUSE[mp[4]].name, l: 'cause' }, { v: fmt.ha(mp[3]), l: 'reported size' }] : [])],
           sources: [{ label: 'National Burned Area Composite (CWFIS)', url: safeUrl(fires?.perimeterUrl) ?? 'https://cwfis.cfs.nrcan.gc.ca/ha/nbac' }],
@@ -564,8 +574,8 @@ export function firesLayer(data: Data): AtlasLayer {
       const nmd = fireName(o);
       return {
         t, layer: 'fires', kind: 'Wildfire', lon, lat, zoom: ha > 10000 ? 8 : 9.5,
-        title: `${ha < 1 ? 'A spot fire' : `A ${fmt.ha(ha)} fire`} ${d < 5 ? 'at' : 'near'} ${town.name}`,
-        body: `${nmd ? `Named ${nmd.replace(/^the /, '')}. ` : ''}Where a reported fire started${d >= 5 ? `, about ${Math.round(d)} km from ${town.name}` : ''}.`,
+        title: `${ha < 1 ? 'A spot fire' : `A ${fmt.ha(ha)} fire`} ${d < 5 ? 'at' : 'near'} ${townName(town)}`,
+        body: `${nmd ? `Named ${nmd.replace(/^the /, '')}. ` : ''}Where a reported fire started${d >= 5 ? `, about ${Math.round(d)} km from ${townName(town)}` : ''}.`,
         stats: [{ v: isoDate(t), l: 'reported' }, { v: ha < 1 ? 'under 1 ha' : fmt.ha(ha), l: 'final size' }, { v: CAUSE[cause].name, l: 'cause' }, { v: `#${fmt.int(rankOf.get(o) ?? 0)}`, l: `by size, of ${fmt.int(points.length)}` }],
         sources: [{ label: 'Canadian National Fire Database (CWFIS)', url: 'https://cwfis.cfs.nrcan.gc.ca/ha/nfdb' }],
       };

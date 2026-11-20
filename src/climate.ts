@@ -22,7 +22,10 @@ export function climateLayer(data: Data): AtlasLayer {
   const trend = slope(ys.filter((y) => y >= 1950).map((y) => [y, anomalies[y]]));
   // past the record: ClimateData.ca's projections at the atlas's places (src/projections.ts), to 2100, hatched
   const P = data.projections;
-  const PFROM = y1 + 1;
+  // the record ends with the last year any station measured (the provincial average needs three, so it can stop sooner,
+  // and its chart then shows a gap): projections start after it, never over a measured column
+  const yObs = Math.max(y1, d3.max(stations, (s) => d3.max(Object.keys(s.temp), Number)) ?? y1);
+  const PFROM = yObs + 1;
   const SCENS: ProjScen[] = ['ssp126', 'ssp585'];
   // the projections are changes from 1971–2000; the record's anomalies are from 1961–1990. The record's own mean anomaly
   // over 1971–2000 moves one onto the other (a province-wide shift, from the atlas's own stations, not from a model)
@@ -57,7 +60,7 @@ export function climateLayer(data: Data): AtlasLayer {
     name: 'Climate',
     icon: '🌡',
     color,
-    range: [y0, P ? 2100.99 : y1 + 0.99],
+    range: [y0, P ? 2100.99 : yObs + 0.99],
     available: !!data.climate,
     projection: P ? { from: PFROM, bands: () => bands().map((b, i) => ({ color: SCEN_COLOR[SCENS[i]], pts: b })) } : undefined,
     build(ctx) {
@@ -91,8 +94,8 @@ export function climateLayer(data: Data): AtlasLayer {
       }
       const live = stations
         .map((s) => {
-          const series = Object.fromEntries(Object.entries(s.temp).map(([k, v]) => [k, v - s.baseline]));
-          return { s, a: interpYearly(series, time) };
+          const v = interpYearly(s.temp, time);
+          return { s, a: v == null ? null : v - s.baseline };
         })
         .filter((d) => d.a != null) as { s: (typeof stations)[number]; a: number }[];
       const layers: Layer[] = [
@@ -132,11 +135,12 @@ export function climateLayer(data: Data): AtlasLayer {
       return layers;
     },
     spark: () => ys.map((x) => ({ x, y: anomalies[x], color: div(anomalies[x]) })),
-    events: () => [{ stats: [{ v: `${fmt.signed(anomalies[warmest])} °C`, l: 'above the 1961–1990 normal' }, { v: `${stations.length}`, l: 'stations averaged' }], t: warmest + 0.5, layer: 'climate', title: `${warmest}: warmest year in the provincial record`, body: `Province-average temperature ran ${fmt.signed(anomalies[warmest])} °C above the 1961–1990 normal.` }],
+    // no provincial average (fewer than three stations in every year): no warmest-year claim
+    events: () => (!ys.length ? [] : [{ stats: [{ v: `${fmt.signed(anomalies[warmest])} °C`, l: 'above the 1961–1990 normal' }, { v: `${stations.length}`, l: 'stations averaged' }], t: warmest + 0.5, layer: 'climate', title: `${warmest}: warmest year in the provincial record`, body: `Province-average temperature ran ${fmt.signed(anomalies[warmest])} °C above the 1961–1990 normal.` }]),
     panel(el) {
       el.innerHTML = `${kicker(l, P ? 'Homogenized temperature record · and projections' : 'Homogenized temperature record')}
         <h2>A warming prairie</h2>
-        <p class="lede">Annual mean temperature at ${stations.length} long-running weather stations, shown as the difference from each station’s 1961–1990 average. Columns grow and redden as years run warm; blue means cooler than normal.${P ? ` Past ${y1} the timeline runs on to 2100, hatched: there it shows <b>published model projections</b>, not a record, as a range between a low- and a high-emissions future.` : ''}</p>
+        <p class="lede">Annual mean temperature at ${stations.length} long-running weather stations, shown as the difference from each station’s 1961–1990 average. Columns grow and redden as years run warm; blue means cooler than normal.${P ? ` Past ${yObs} the timeline runs on to 2100, hatched: there it shows <b>published model projections</b>, not a record, as a range between a low- and a high-emissions future.` : ''}</p>
         <div class="proj-now" hidden>${PROJ_BADGE}</div>`;
       const twin = twinPanel(el, data, color);
       const hero = heroStats(el, 4);
@@ -159,7 +163,7 @@ export function climateLayer(data: Data): AtlasLayer {
         <div class="ramp" style="background:${rampCSS((t) => div(-1.5 + t * 3))}"></div>
         <div class="ramp-labels"><span>−1.5 °C</span><span>normal</span><span>+1.5 °C</span></div>
         <div class="callout" style="--c:${color}">Since 1950 Saskatchewan’s long-running stations have warmed about <b>${trend != null ? (trend * 10).toFixed(2) : '–'} °C per decade</b>. On the prairies the warming is strongest in winter.</div>
-        <p class="note">AHCCD data are adjusted by Environment and Climate Change Canada to remove artificial jumps from station moves and instrument changes, so long-term trends are comparable. Series currently end in ${y1}.</p>`);
+        <p class="note">AHCCD data are adjusted by Environment and Climate Change Canada to remove artificial jumps from station moves and instrument changes, so long-term trends are comparable. Series currently end in ${yObs}.</p>`);
       if (P) {
         const VARS: ProjVar[] = ['tg', 'tx', 'tn', 'pr'];
         const unit = (v: ProjVar) => (P.vars[v].unit === 'mm' ? ' mm' : ' °C');
@@ -170,7 +174,7 @@ export function climateLayer(data: Data): AtlasLayer {
           <div class="legend"><span><i class="sw proj-sw" style="--c:${SCEN_COLOR.ssp126}"></i>${P.scenarios.ssp126}</span><span><i class="sw proj-sw" style="--c:${SCEN_COLOR.ssp585}"></i>${P.scenarios.ssp585}</span></div>
           <table class="proj-table"><thead><tr><th>Change from ${esc(P.baseline)}</th>${P.windows.map((w) => `<th>${windowText(w)}</th>`).join('')}</tr></thead>
           <tbody>${VARS.map((v) => `<tr><td>${esc(P.vars[v].label)}</td>${P.windows.map((w) => `<td>${cell(v, w)}</td>`).join('')}</tr>`).join('')}</tbody></table>
-          <p class="note">Each cell runs from the low-emissions to the high-emissions projection: the middle (median) of ${'26'} models for the median place in the atlas, as a 30-year average. The models’ own spread, their ${P.percentiles[0]}th to ${P.percentiles[1]}th percentile, is wider still: hover the chart above. On the map, past ${y1}, each place shows a solid core for the low-emissions median and a wire frame for the high-emissions one. Between the published windows the map and the chart interpolate, and 1971–2000 is where every model’s change is zero. To continue the record, the chart and the map add ${fmt.signed(SHIFT, 2)} °C, the stations’ own average anomaly over 1971–2000, so both read against 1961–1990; the table does not. Projections are statistically downscaled CMIP6 models (CanDCS-U6) for each place’s ~10 km grid cell, not a forecast of any one year, and they never rank towns in the Town Finder.</p>
+          <p class="note">Each cell runs from the low-emissions to the high-emissions projection: the middle (median) of ${'26'} models for the median place in the atlas, as a 30-year average. The models’ own spread, their ${P.percentiles[0]}th to ${P.percentiles[1]}th percentile, is wider still: hover the chart above. On the map, past ${yObs}, each place shows a solid core for the low-emissions median and a wire frame for the high-emissions one. Between the published windows the map and the chart interpolate, and 1971–2000 is where every model’s change is zero. To continue the record, the chart and the map add ${fmt.signed(SHIFT, 2)} °C, the stations’ own average anomaly over 1971–2000, so both read against 1961–1990; the table does not. Projections are statistically downscaled CMIP6 models (CanDCS-U6) for each place’s ~10 km grid cell, not a forecast of any one year, and they never rank towns in the Town Finder.</p>
           ${sourceLine(`${P.source}, read ${P.asOf}. ${P.licence}`)}`);
       }
       el.insertAdjacentHTML('beforeend', sourceLine(data.climate?.source ?? ''));

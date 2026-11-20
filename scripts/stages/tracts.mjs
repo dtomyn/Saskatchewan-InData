@@ -15,6 +15,8 @@ export default async function tracts() {
   const CHARS = { 1: 'pop', 2: 'pop16', 1474: 'value', 1480: 'rentCost', 229: 'inc', 1451: 'hh', 1453: 'hh30', 1401: 'owners', 1402: 'renters', 1513: 'hhPop', 1515: 'imm', 1522: 'rec', 1388: 'indTot', 1389: 'ind' };
   const sub = await readOut('subdivisions');
   const outline = Object.fromEntries(Object.values(CITY).map((k) => [k, sub.csds.find((c) => c.k === k)?.p]));
+  const noLim = Object.entries(outline).filter(([, p]) => !p?.length).map(([k]) => k);
+  if (noLim.length) throw new Error(`no city outline for ${noLim.join(', ')} in subdivisions.json: rebuild the subdivisions stage`);
   const ids = feats.map((f) => String(f.properties.DGUID).replace('.', '_'));
   const vals = {};
   for (let i = 0; i < ids.length; i += 25) {
@@ -28,9 +30,10 @@ export default async function tracts() {
     if (!city || !f.geometry) continue;
     const ps = polys(f.geometry, 0.0003, 4);
     const big = ps.map((x) => x[0]).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)))[0];
+    if (!big?.length) { log(`  tract ${p.CTUID}: no outline left after simplifying; left out`); continue; }
     const c = [round(big.reduce((a, q) => a + q[0], 0) / big.length, 4), round(big.reduce((a, q) => a + q[1], 0) / big.length, 4)];
     const lim = outline[city];
-    const inside = lim ? booleanPointInPolygon(c, { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: lim } }) : true;
+    const inside = booleanPointInPolygon(c, { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: lim } });
     const v = { ...(vals[String(p.DGUID).replace('.', '_')] ?? {}) };
     if (v.hh && v.hh30 != null) v.stir30 = round((v.hh30 / v.hh) * 100, 1);
     delete v.hh30;

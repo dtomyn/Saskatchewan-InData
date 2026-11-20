@@ -7,20 +7,25 @@ import { asJSON, cached, fetchBuf, log, round, sleep } from './io.mjs';
 export async function osrm(name, url) {
   return asJSON(await cached(`osrm/${name}.json`, async () => {
     await sleep(1100); // the public demo server asks for at most one request a second
-    return fetchBuf(url, { timeout: 60_000 });
+    const b = await fetchBuf(url, { timeout: 60_000 });
+    asJSON(b, name); // an HTML error page answered with a 200 is never cached
+    return b;
   }), name);
 }
 
 /**
  * For every place, the fastest few `targets` by road: [{ f: target index, min, km, line }]. Candidates are the
- * `pre` nearest in a straight line; only the best `keep` get a routed line. Falls back to straight lines.
+ * `pre` nearest in a straight line; only the best `keep` get a routed line. Falls back to straight lines: when the
+ * router fails part-way, every place falls back (cached answers make the next run quick), so `routed` describes all
+ * rows and minutes are never ranked against kilometres.
  */
 export async function driveTimes(places, targets, tag, { pre = 6, keep = 3 } = {}) {
-  const out = {};
+  const out = {}, straight = {};
   let routed = true;
   for (const p of places) {
     const near = targets.map((t, j) => ({ j, d: distKm(p.lon, p.lat, t.lon, t.lat) })).sort((a, b) => a.d - b.d).slice(0, pre);
     let cand = near.map((c) => ({ f: c.j, min: null, km: round(c.d, 1) }));
+    straight[p.key] = cand.slice(0, keep).map((c) => ({ ...c }));
     if (routed) {
       try {
         const coords = [p, ...near.map((c) => targets[c.j])].map((x) => `${x.lon},${x.lat}`).join(';');
@@ -59,5 +64,5 @@ export async function driveTimes(places, targets, tag, { pre = 6, keep = 3 } = {
     }
     out[p.key] = trips;
   }
-  return { towns: out, routed };
+  return { towns: routed ? out : straight, routed };
 }

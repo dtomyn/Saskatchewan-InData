@@ -139,8 +139,8 @@ export const filterExt = [new DataFilterExtension({ filterSize: 1 })];
 /** How long (in timeline years) a "new" event keeps glowing; tied to playback speed so it reads the same at any speed. */
 export const glowWindow = (speed: number, k = 1) => Math.max(0.25, speed * 0.9 * k);
 
-/** A fractional year (2021.49) as a date, "2021-06-28". */
-export const isoDate = (t: number) => new Date(Date.UTC(Math.floor(t), 0, 1) + (t % 1) * 365.25 * 864e5).toISOString().slice(0, 10);
+/** A fractional year (2021.49) as a date, "2021-06-28": the pipeline's `fracYear` calendar (each year its own length). */
+export const isoDate = (t: number) => { const y = Math.floor(t); return new Date(Date.UTC(y, 0, 1) + (t - y) * (Date.UTC(y + 1, 0, 1) - Date.UTC(y, 0, 1))).toISOString().slice(0, 10); };
 
 /** A detail chart for a map feature's panel: a heading and a bar chart, drawn once the panel has its width. */
 export function detailBars(title: string, data: { x: number; y: number; color?: string }[], color: string, yFormat: (v: number) => string, tip: (d: { x: number; y: number }) => string) {
@@ -154,8 +154,9 @@ export function detailBars(title: string, data: { x: number; y: number; color?: 
   };
 }
 
-export function nearestTown(munis: Muni[], lon: number, lat: number) {
-  let best = munis[0], bd = Infinity;
+/** The nearest of `munis` to a point; `town` is null when there are none (a municipalities file that failed to load). */
+export function nearestTown(munis: Muni[], lon: number, lat: number): { town: Muni | null; km: number } {
+  let best: Muni | null = munis[0] ?? null, bd = Infinity;
   for (const m of munis) {
     const d = km(lon, lat, m.lon, m.lat);
     if (d < bd) { bd = d; best = m; }

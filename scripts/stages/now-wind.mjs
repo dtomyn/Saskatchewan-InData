@@ -22,7 +22,7 @@ export default async function nowWind() {
     const s = sp[i], d = dir[i];
     if (!(s >= 0 && s < 120) || !(d >= 0 && d <= 360.5)) throw new Error(`a wind value out of range (${s} m/s from ${d}°)`);
     const r = (d * Math.PI) / 180;
-    const q = (x) => Math.max(-127, Math.min(127, Math.round(x / SCALE)));
+    const q = (x) => Math.round(x / SCALE); // plain JSON numbers: no byte range to clip a gale to
     u[i] = q(-s * Math.sin(r));
     v[i] = q(-s * Math.cos(r));
     top = Math.max(top, s);

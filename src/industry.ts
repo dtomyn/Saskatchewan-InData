@@ -126,7 +126,8 @@ export function industryLayer(data: Data): AtlasLayer {
     range: [new Date().getFullYear(), new Date().getFullYear() + 0.99],
     static: true,
     period: 'licensed and reported today',
-    available: hexes.length > 0,
+    // the grid alone keeps the layer up when the oil and gas files could not be read
+    available: hexes.length > 0 || !!P,
     unavailable: 'The wells, pipelines and emitters could not be downloaded when this copy of the data was built. Run <code>npm run data industry</code>, then reload.',
     build({ selected, focusedId }) {
       const focused = focusedId === 'industry';
@@ -190,8 +191,14 @@ export function industryLayer(data: Data): AtlasLayer {
     panel(el) {
       el.innerHTML = `${kicker(l, 'Around the property · Ministry of Energy and Resources · NPRI')}
         <h2>What’s next door?</h2>`;
+      // the power grid's legend and note, also shown on its own when the oil and gas files are missing
+      const gridSection = () => (P ? `<h3>The power grid</h3>
+        <div class="legend">${[230, 138, 72, 0].filter((k) => P.totals.km[k]).map((k) => `<span><i class="sw" style="background:${KV_CLASSES[k].color}"></i>${KV_CLASSES[k].label} (${fmt.int(P.totals.km[k])} km)</span>`).join('')}<span><i class="sw" style="background:#0b1020;box-shadow:0 0 0 2px ${SUB_COLOR}"></i>Substation (${subs.length})</span></div>
+        <div class="legend">${(Object.keys(PLANT_KINDS) as PowerPlant['s'][]).filter((k) => plants.some((p) => p.s === k)).map((k) => `<span><i class="sw" style="background:${PLANT_KINDS[k].color};box-shadow:0 0 0 2px ${SUB_COLOR}"></i>${PLANT_KINDS[k].label} (${plants.filter((p) => p.s === k).length})</span>`).join('')}</div>
+        <p class="note"><b>The grid is what OpenStreetMap’s mappers have drawn, so coverage is partial:</b> SaskPower publishes no open map of its lines, many lines carry no voltage, and some substations, smaller plants and most distribution lines are missing. A line runs on a right of way that restricts building under it; a place’s report gives the nearest mapped line and substation from its town limits, and a generating station within ${P.plantKm} km. Power is not added to the Town Finder’s count.</p>
+        ${sourceLine(`${P.source}. ${P.licence}. Read ${P.asOf}.`)}` : '');
       if (!I) {
-        el.insertAdjacentHTML('beforeend', `<div class="unavail">${l.unavailable}</div>`);
+        el.insertAdjacentHTML('beforeend', `<div class="unavail">${l.unavailable}</div>${P ? `<p class="lede"><b>Dashed blue lines</b> are the high-voltage power grid, with its substations (hollow dots) and generating stations (ringed, sized by output), as mapped in OpenStreetMap.</p>${gridSection()}` : ''}`);
         return { update() {} };
       }
       const [a, s, b] = I.totals.wells;
@@ -223,11 +230,7 @@ export function industryLayer(data: Data): AtlasLayer {
         <div class="legend">${(Object.keys(MINE_KINDS) as Mine['g'][]).map((k) => `<span><i class="sw" style="background:${MINE_KINDS[k].color};box-shadow:0 0 0 2px #fff"></i>${MINE_KINDS[k].label} (${mines.filter((m) => m.g === k).length})</span>`).join('')}</div>
         <p class="note"><b>Wells include abandoned and suspended ones.</b> The ministry’s list holds every well ever drilled: about half are abandoned (plugged and cut off below ground, often invisible today) and many more are suspended (shut in, not producing). Each place’s report splits them. An abandoned well still matters to a buyer: building over or beside one is restricted, and the licensee stays responsible for it. Planned or cancelled licences that were never drilled are left out.</p>
         <p class="note">A place counts wells and oil and gas facilities (batteries, satellites, injection and compressor sites, gas plants) within ${I.wellKm} km of its town limits, NPRI sites within ${I.npriKm} km, pipelines in use within ${I.pipeKm} km, and a producing mine within ${I.mineKm} km; the Town Finder’s “Fewer industrial neighbours” adds these up, one for each well, site, line or mine, which weighs a pumpjack the same as a gas plant. Pipelines are the province’s licensed lines; the ~95,000 short flowlines from wells to batteries are not drawn or counted. The Canada Energy Regulator publishes no open map of the lines it regulates, so federal lines are those OpenStreetMap names (Enbridge, Keystone, Alliance and others), and some are missing. The NPRI lists only facilities above its reporting thresholds, so many small sites never appear; a release total mixes very different substances, from carbon monoxide to ammonia, and says nothing about exposure. The mines are the ministry’s producing mines (Mineral Deposit Index) plus NPRI mine sites it lacks, such as new and project mines.</p>
-        ${P ? `<h3>The power grid</h3>
-        <div class="legend">${[230, 138, 72, 0].filter((k) => P.totals.km[k]).map((k) => `<span><i class="sw" style="background:${KV_CLASSES[k].color}"></i>${KV_CLASSES[k].label} (${fmt.int(P.totals.km[k])} km)</span>`).join('')}<span><i class="sw" style="background:#0b1020;box-shadow:0 0 0 2px ${SUB_COLOR}"></i>Substation (${subs.length})</span></div>
-        <div class="legend">${(Object.keys(PLANT_KINDS) as PowerPlant['s'][]).filter((k) => plants.some((p) => p.s === k)).map((k) => `<span><i class="sw" style="background:${PLANT_KINDS[k].color};box-shadow:0 0 0 2px ${SUB_COLOR}"></i>${PLANT_KINDS[k].label} (${plants.filter((p) => p.s === k).length})</span>`).join('')}</div>
-        <p class="note"><b>The grid is what OpenStreetMap’s mappers have drawn, so coverage is partial:</b> SaskPower publishes no open map of its lines, many lines carry no voltage, and some substations, smaller plants and most distribution lines are missing. A line runs on a right of way that restricts building under it; a place’s report gives the nearest mapped line and substation from its town limits, and a generating station within ${P.plantKm} km. Power is not added to the Town Finder’s count.</p>
-        ${sourceLine(`${P.source}. ${P.licence}. Read ${P.asOf}.`)}` : ''}
+        ${gridSection()}
         ${sourceLine(`${I.source}. ${I.licence}. NPRI ${I.npriYear} reporting year. Built ${I.asOf}.`)}`);
       return { update() {} };
     },

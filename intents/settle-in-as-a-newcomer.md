@@ -28,6 +28,8 @@ Town Finder → New to Saskatchewan; or turn on Settling in layers and open a To
 ## Check it
 
 ```js
+// one line at a time: a panel fills a moment after it opens, and a tour replaces one still running
 atlas.tour('people')   // the guided tour: ends on Newcomer services
-atlas.openFinder(); document.querySelector('[data-preset="newcomer"]').click()
+atlas.openFinder()
+await new Promise((r) => setTimeout(r, 300)); document.querySelector('[data-preset="newcomer"]').click()
 ```

@@ -12,6 +12,7 @@ import { esc } from './html';
 import { rampCSS } from './charts';
 import { AtlasLayer, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
 import { csdClick, csdOf, csdReport, csdTint, csdTooltip, missing, pctText, share } from './subdivisions';
+import type { CountKey } from './subdivisions';
 import { metric, link } from './report-kit';
 
 export const COMMUNITY_COLOR = '#f0a6ca';
@@ -63,7 +64,9 @@ export function communityLayer(data: Data): AtlasLayer {
   const sites: WorshipSite[] = C?.sites ?? [];
   let target: MeasureId = 'imm';
   const measure = () => MEASURES.find((m) => m.id === target)!;
-  const val = (key: string) => share(C?.towns[key], measure().n, measure().of);
+  // a rounded-0 count reads "—" (pctText): too few to say, so it gets no tint and no column either
+  const shown = (c: Parameters<typeof share>[0], n: CountKey, of: CountKey) => (c?.[n] ? share(c, n, of) : null);
+  const val = (key: string) => shown(C?.towns[key], measure().n, measure().of);
   const ramp = (max: number) => d3.scaleSqrt<string>().domain([0, max / 2, max]).range(['#4b3a63', color, '#fff3d6']).interpolate(d3.interpolateRgb).clamp(true);
   const nameOf = (key: string) => data.munis.find((m) => m.key === key)?.name ?? key;
 
@@ -83,7 +86,7 @@ export function communityLayer(data: Data): AtlasLayer {
         const m = measure();
         const r = ramp(m.max);
         // every census subdivision tinted by the same share; a suppressed share is left clear
-        out.push(...csdTint('community', data, (s) => share(C?.csd?.[s.id], m.n, m.of), (v) => rgb(r(v)), target));
+        out.push(...csdTint('community', data, (s) => shown(C?.csd?.[s.id], m.n, m.of), (v) => rgb(r(v)), target));
         out.push(...townColumns('community', data.munis, (x) => val(x.key), (v) => 2500 + Math.sqrt(Math.min(v, m.max) / m.max) * 60000, (v) => rgb(r(v), 235), 0, `${selected}${target}`));
       }
       out.push(new ScatterplotLayer<WorshipSite>({
@@ -117,7 +120,7 @@ export function communityLayer(data: Data): AtlasLayer {
         el.querySelectorAll<HTMLButtonElement>('[data-k]').forEach((b) => b.classList.toggle('on', b.dataset.k === target));
         const m = measure();
         const r = ramp(m.max);
-        const ranked = rows.map((x) => ({ ...x, v: share(x.p, m.n, m.of) })).sort((a, b) => (b.v ?? -1) - (a.v ?? -1) || a.m.name.localeCompare(b.m.name));
+        const ranked = rows.map((x) => ({ ...x, v: shown(x.p, m.n, m.of) })).sort((a, b) => (b.v ?? -1) - (a.v ?? -1) || a.m.name.localeCompare(b.m.name));
         const max = d3.max(ranked, (x) => x.v ?? 0) || 1;
         const detail = (p: PlaceCommunity) => (target === 'home' ? p.lang : target === 'imm' || target === 'rec' ? p.birth : []).slice(0, 3).map((x) => esc(x[0])).join(', ');
         body.innerHTML = `<h3>Share ${esc(m.label)}</h3>

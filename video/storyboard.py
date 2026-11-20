@@ -19,18 +19,23 @@ The layers are named here as the Layer menu names them; if a layer is renamed, c
 
 This film loads the live readings (LIVE), so run `npm run data now` before filming: the film's clock (CLOCK) stands
 a quarter of an hour after the newest of them was fetched, so every age it shows reads the same on every run of the
-same files. With no live files it stops, rather than filming empty Right now boxes.
+same files. With no live files it stops, rather than filming empty Right now boxes. It also films the daily record,
+which lives on the data-history branch: clone it into public/data/history before building
+(`git clone -b data-history <repo> public/data/history`); without a recorded fire day the film stops.
 """
 import datetime
 import json
 import pathlib
 import re
+import time
 
 # Words the voice reads wrongly from their spelling, as replacements in its phonemes (none needed yet).
 SOUNDS = {}
 
 LIVE = True
-NOW_DIR = pathlib.Path(__file__).resolve().parent.parent / "public" / "data" / "now"
+# The readings the film serves: the build's copy (dist/), so --no-build after a newer `npm run data now` still
+# sets the clock from the snapshot on screen.
+NOW_DIR = pathlib.Path(__file__).resolve().parent.parent / "dist" / "data" / "now"
 
 
 def CLOCK():
@@ -43,7 +48,7 @@ def CLOCK():
         if fetched:
             times.append(datetime.datetime.fromisoformat(fetched.replace("Z", "+00:00")))
     if not times:
-        raise SystemExit("no live readings in public/data/now: run `npm run data now` before filming")
+        raise SystemExit("no live readings in dist/data/now: run `npm run data now` (and build) before filming")
     return max(times).replace(microsecond=0) + datetime.timedelta(minutes=15)
 
 
@@ -179,8 +184,9 @@ def intro(f):
     f.js("Stage.title('How to use Living Skies Atlas', 'Saskatchewan past, present and what if', ['Living', 'Skies'])")
     f.sfx("blip", 0.6, note=0)
     f.say("intro-1")
-    f.board("Title", "Black frame; the title rises word by word.")
     f.wait(2200)
+    # once the words have risen (the board is a screenshot; it takes no film time)
+    f.board("Title", "Black frame; the title rises word by word.")
     f.js("Stage.fade(0, 1600)")
     f.js("Stage.hideTitle(900)")
     f.voice_done(300)
@@ -308,7 +314,9 @@ def timeline(f):
     f.voice_done(200)
     f.say("time-3")
     hint(f, "⏸", "Pause, then drag the slider", "to jump to any year", SPARK)
-    f.click({"sel": "#play"})
+    # a shown click that only pauses: a timeline that already ran to its end must not start again
+    f.click({"sel": "#play"}, real=False)
+    f.run("() => atlas.setPlaying(false)")
     f.wait(300)
     f.drag(range_at(f, "#scrub", scrub_frac(f)), range_at(f, "#scrub", 0.55), 1500)
     f.board("Scrub", "Paused; the slider is dragged forward through the decades.")
@@ -405,10 +413,23 @@ def right_now(f):
     pick_layer(f, "Wildfires")
     f.wait(600)
     f.camera({"sel": "#timeline", "grow": 30}, 1200, whoosh=0.3, max=1.9)
-    # the daily record is a sliver at the slider's right end: a shown click there, then the time is set exactly
-    f.click(range_at(f, "#scrub", scrub_frac(f, 2026.55)), real=False)
-    f.run("() => atlas.setTime(2026.55)")
+    # the daily record is a sliver at the slider's right end: a shown click there, then the time is set exactly.
+    # The day is in the first year after the archive's last, so it is always provisional.
+    day = f.run("() => atlas.layers.find((l) => l.id === 'fires')?.now?.recent?.from ?? null")
+    if day is None:
+        raise SystemExit("Wildfires has no daily record span: run `npm run data now` before filming")
+    day += 0.55
+    f.click(range_at(f, "#scrub", scrub_frac(f, day)), real=False)
+    f.run("t => atlas.setTime(t)", day)
     f.wait(500)
+    # the record's month files load in real time (the film's clock stands still meanwhile); the film shows a
+    # recorded day, never "no record yet"
+    deadline = time.time() + 20
+    while not f.run("() => atlas.layers.find((l) => l.id === 'fires').now.recent.first() !== null") and time.time() < deadline:
+        time.sleep(0.1)
+    if not f.run("t => atlas.layers.find((l) => l.id === 'fires').now.recent.covers(t)", day):
+        raise SystemExit("the daily record has no fire day to show: restore it into public/data/history "
+                         "(git clone -b data-history <repo> public/data/history) and build before filming")
     spot(f, {"sel": "#month", "pad": 8})
     f.board("The daily record", "Wildfires stepped back into this year: the day, marked provisional, from the atlas's own daily record.")
     f.voice_done(300)
@@ -740,7 +761,7 @@ def keys(f):
     f.camera("fill", 800)
     f.say("keys-1")
     f.cursor(False)
-    for key, name, colour in (("L", "Layer menu", KEYS), ("Space", "Play and pause", SPARK), ("← →", "Step a year", SPARK),
+    for key, name, colour in (("L", "Layer menu", KEYS), ("Space", "Play and pause", SPARK), ("← →", "Step the timeline", SPARK),
                               ("P", "Hide the side panel", TOUR), ("S", "Data & sources", SOURCES), ("Esc", "Close", KEYS)):
         hint(f, key, name, "", colour)
         if key == "L":
@@ -776,8 +797,8 @@ def ending(f):
     f.js("([u, fine]) => Stage.end('Saskatchewan’s safety, justice and land, in open data', u, fine)",
          [f.url, "Open data from Saskatchewan, Statistics Canada and the Government of Canada · nothing to install"])
     f.say("end-1")
-    f.board("End card", "The window drifts back; the end card shows the name and address.")
     f.voice_done(3000)
+    f.board("End card", "The window drifts back; the end card shows the name and address.")
     f.js("Stage.blackout(1600)")
     f.wait(1800)
 
@@ -881,7 +902,7 @@ SCENES = [
                 "so-4": "Each source says who publishes it and under what licence. Click See it on the map to open its layer."}),
     dict(id="keys", title="Keyboard shortcuts", run=keys,
          shows="The keyboard shortcuts, each pressed in turn.", camera="Full-frame.", motion="A chip for each key.", sound="Key clicks.",
-         lines={"keys-1": "Last, the shortcuts. L opens the layer menu, space plays and pauses, the arrow keys step a year, P hides the side panel, S opens the sources, and Escape closes things."}),
+         lines={"keys-1": "Last, the shortcuts. L opens the layer menu, space plays and pauses, the arrow keys step the timeline, P hides the side panel, S opens the sources, and Escape closes things."}),
     dict(id="end", title="End card", run=ending,
          shows="Title and address.", camera="Back to the floating window.", motion="Logo spins up.", sound="Soft impact; music fades.",
          lines={"end-1": "That's everything you need. Enjoy exploring."}),

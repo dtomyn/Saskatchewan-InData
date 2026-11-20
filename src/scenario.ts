@@ -47,7 +47,9 @@ export function scenarioTrip(kind: ScenarioKind, trips: Trip[] | undefined): { t
   return open ? { trip: open, beyond: null } : { trip: null, beyond: trips[trips.length - 1] };
 }
 
-export type Affected = { m: Muni; before: Trip; after: Trip | null; beyond: Trip | null; added: number | null };
+/** `added` is in `unit`: minutes when both trips were routed, otherwise kilometres (both trips always have km), so a
+ *  routed trip and a straight-line one are never subtracted from each other. */
+export type Affected = { m: Muni; before: Trip; after: Trip | null; beyond: Trip | null; added: number | null; unit: 'min' | 'km' | null };
 /** The places whose nearest site is closed, worst first (a place with no open site kept goes first). */
 export function affectedTowns(kind: ScenarioKind, munis: Muni[], tripsOf: (key: string) => Trip[] | undefined): Affected[] {
   const out: Affected[] = [];
@@ -56,8 +58,8 @@ export function affectedTowns(kind: ScenarioKind, munis: Muni[], tripsOf: (key: 
     const before = trips?.[0];
     if (!before || !closed[kind].has(before.f)) continue;
     const { trip, beyond } = scenarioTrip(kind, trips);
-    const v = (t: Trip) => t.min ?? t.km;
-    out.push({ m, before, after: trip, beyond, added: trip ? v(trip) - v(before) : null });
+    const unit = trip ? (trip.min != null && before.min != null ? 'min' : 'km') : null;
+    out.push({ m, before, after: trip, beyond, added: trip ? (unit === 'min' ? trip.min! - before.min! : trip.km - before.km) : null, unit });
   }
   return out.sort((a, b) => (b.added ?? Infinity) - (a.added ?? Infinity));
 }

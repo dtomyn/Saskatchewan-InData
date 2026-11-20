@@ -12,12 +12,16 @@ import { createRound } from './sources-round';
 // ---------------------------------------------------------------------------------------------
 
 let root: HTMLElement | null = null;
+/** What closing undoes: the resize observer, the inert background, and focus back to what opened the view. */
+let cleanup: (() => void) | null = null;
 export const sourcesOpen = () => !!root;
 
 export function closeSources() {
   if (!root) return;
   const el = root;
   root = null;
+  cleanup?.();
+  cleanup = null;
   el.classList.add('leaving');
   setTimeout(() => el.remove(), 260);
   if (location.hash === '#sources') history.replaceState(null, '', location.pathname + location.search);
@@ -32,6 +36,8 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   const rings = SOURCES.map((s) => Object.fromEntries(Object.entries(s.rings(data)).filter(([y]) => +y >= Y0 && +y <= FUT)));
   const reads = SOURCES.map((s) => s.read(data));
   const live = SOURCES.map((_, i) => Object.keys(rings[i]).length > 0);
+  // a source with records but no dated rings (flood-prone land, buildings) is still on the map: the card is not dimmed
+  const avail = SOURCES.map((_, i) => live[i] || (reads[i]?.n ?? 0) > 0);
   const records = sum(reads.map((r) => r?.n ?? 0));
   const owners = new Set([...SOURCES, ...BARK].flatMap((s) => s.owner.split(' · ')));
   const licences = d3.rollups([...SOURCES, ...BARK], (v) => v.length, (s) => s.licence.split(';')[0]).sort((a, b) => b[1] - a[1]);
@@ -72,14 +78,14 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
     </div>
     <div class="src-list">
       ${['Right now', 'Justice & safety', 'Hazards', 'Climate', 'People & places'].filter((g) => g !== 'Right now' || !data.now.skipped).map((g) => `<h3>${g}</h3>${SOURCES.map((s, i) => s.group !== g ? '' : `
-        <article class="src-card${live[i] ? '' : ' off'}" data-i="${i}" tabindex="0" style="--c:${s.color}">
+        <article class="src-card${avail[i] ? '' : ' off'}" data-i="${i}" tabindex="0" style="--c:${s.color}">
           <header><span class="src-dot"></span><b>${s.name}</b>${status(s.key)}</header>
           <div class="src-owner">${esc(s.owner)}</div>
           <a class="src-title" href="${s.url}" target="_blank" rel="noopener">${esc(s.title)} ↗</a>
           <p>${s.gives}</p>
           ${reads[i] ? `<div class="src-read"><b data-count="${reads[i]!.n}">0</b> records · ${esc(reads[i]!.what)}${span(rings[i]) ? ` · rings ${span(rings[i])!.join('–')}` : ''}</div>` : ''}
           <code>${esc(s.endpoint)}</code>
-          <footer><span class="src-lic">${esc(s.licence)}</span>${live[i] ? `<button class="src-go" data-id="${s.id}">See it on the map →</button>` : ''}</footer>
+          <footer><span class="src-lic">${esc(s.licence)}</span>${avail[i] ? `<button class="src-go" data-id="${s.id}">See it on the map →</button>` : ''}</footer>
         </article>`).join('')}`).join('')}
       <h3>The bark: what everything sits on</h3>
       ${BARK.map((b, i) => `
@@ -97,6 +103,10 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
       <p class="note">Contains information licensed under the Open Government Licence – British Columbia and the Open Government Licence – Canada. Refresh everything with <code>npm run data</code>; a source that fails keeps its last good copy and shows it above. This is a personal exploration tool, not real-estate, insurance or hazard advice.</p>
       <button class="src-cite">Copy a citation</button>
     </div>`;
+  // a modal: what is behind it can't be reached (inert) until it closes, and focus then goes back to what opened it
+  const opener = document.activeElement as HTMLElement | null;
+  const behind = [...document.body.children].filter((c): c is HTMLElement => c instanceof HTMLElement && !c.inert);
+  behind.forEach((c) => (c.inert = true));
   document.body.appendChild(root);
   if (location.hash !== '#sources') history.replaceState(null, '', '#sources');
 
@@ -105,6 +115,8 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   const canvas = $<HTMLCanvasElement>('canvas');
   const tip = $('.src-tip'), yearEl = $('.src-year'), list = $('.src-list');
   const cards = [...el.querySelectorAll<HTMLElement>('.src-card:not(.bark)')];
+  // the list is grouped, so a card's place in it is not its source's index: look cards up by data-i
+  const cardOf = new Map(cards.map((c) => [+c.dataset.i!, c]));
   const barkCards = [...el.querySelectorAll<HTMLElement>('.src-card.bark')];
 
   const focusCard = (card: HTMLElement | undefined) => {
@@ -117,10 +129,11 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   const round = createRound(canvas, tip, SOURCES, rings, (h) => {
     if (!h) el.querySelectorAll('.src-card.on').forEach((k) => k.classList.remove('on'));
     else if ('b' in h) focusCard(barkCards[h.b]);
-    else focusCard(cards[h.i]);
+    else focusCard(cardOf.get(h.i));
   });
 
-  cards.forEach((card, i) => {
+  cards.forEach((card) => {
+    const i = +card.dataset.i!;
     card.addEventListener('pointerenter', () => round.pin(i));
     card.addEventListener('focus', () => round.pin(i));
   });
@@ -131,7 +144,7 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   const HIST: Record<string, HistoryFeed> = { 'now-rivers': 'rivers', 'now-fires': 'fires', 'now-air': 'air', 'now-alerts': 'alerts', water: 'water' };
   loadHistoryIndex().then((ix) => {
     if (!ix || !root) return;
-    cards.forEach((card, i) => {
+    cards.forEach((card) => {
       const h = ix.feeds[HIST[SOURCES[+(card.dataset.i ?? -1)]?.key ?? '']];
       if (!h) return;
       const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -147,6 +160,14 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); closeSources(); }
     if (e.key === 'Enter' && (e.target as HTMLElement).matches('.src-card')) (e.target as HTMLElement).querySelector<HTMLAnchorElement>('.src-title')?.click();
+    // Tab stays inside the view
+    if (e.key === 'Tab') {
+      const fs = [...el.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((x) => x.offsetParent !== null);
+      if (!fs.length) return;
+      const first = fs[0], last = fs[fs.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !el.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   });
 
   // ---- growth: the round grows from the pith to today, then the halo of projections appears
@@ -156,6 +177,11 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
   let grown = false;
   round.resize();
   ro.observe(canvas.parentElement!);
+  cleanup = () => {
+    ro.disconnect();
+    behind.forEach((c) => (c.inert = false));
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
+  };
   const GROW = calm ? 0 : 2600, HALO = calm ? 0 : 900, t0 = performance.now();
   const ease = d3.easeCubicOut;
   const step = (now: number) => {

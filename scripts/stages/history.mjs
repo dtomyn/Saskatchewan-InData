@@ -8,7 +8,7 @@ export const historyHelpers = () => ({ log, fetchBuf, asJSON, OGC, BBOX, OUT, re
 // The daily record of the live feeds (scripts/history.mjs; plans/digital-twin/2-accumulated-state.md). Run only when
 // named: `history` rolls today in, `history-backfill` (stages/history-backfill.mjs) also reaches back as far as each
 // feed keeps. Both read the live files, so run them after `now`.
-export default async function history() {
+export default async function history({ ran } = {}) {
   const { history: roll } = await import('../history.mjs');
-  await roll(historyHelpers());
+  await roll({ ...historyHelpers(), ran });
 }

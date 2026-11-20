@@ -8,11 +8,14 @@ import { asJSON, cached, cachedJSON, fetchBuf, log, sleep } from './io.mjs';
 export async function ogcAll(collection, params, cacheKey) {
   const features = [];
   const limit = 10000;
-  for (let offset = 0; ; offset += limit) {
+  for (let offset = 0; ; ) {
     const q = new URLSearchParams({ f: 'json', limit: String(limit), offset: String(offset), ...params });
     const page = await cachedJSON(`ogc/${cacheKey}-${offset}.json`, `${OGC}/${collection}/items?${q}`);
     features.push(...page.features);
-    if (page.features.length < limit) break;
+    // a server may cap a page below `limit`: follow its `next` link (by the count it returned), not only a full page
+    const next = page.links?.some((l) => l.rel === 'next');
+    if (!page.features.length || (!next && page.features.length < limit)) break;
+    offset += page.features.length;
   }
   return features;
 }
@@ -20,12 +23,16 @@ export async function ogcAll(collection, params, cacheKey) {
 /** Page through an ArcGIS REST layer's query endpoint as GeoJSON. */
 export async function arcgisAll(layerUrl, params, cacheKey, pageSize = 1000) {
   const features = [];
-  for (let offset = 0; ; offset += pageSize) {
+  // an error answered with a 200 is refused before it is cached; the next page starts after the rows received, since a
+  // server whose maxRecordCount is below pageSize returns fewer (and says exceededTransferLimit)
+  const check = (page) => { if (!Array.isArray(page.features)) throw new Error(`${cacheKey}: ${JSON.stringify(page.error ?? page).slice(0, 200)}`); };
+  for (let offset = 0; ;) {
     const q = new URLSearchParams({ f: 'geojson', outSR: '4326', resultOffset: String(offset), resultRecordCount: String(pageSize), ...params });
-    const page = await cachedJSON(`arcgis/${cacheKey}-${offset}.json`, `${layerUrl}/query?${q}`, { timeout: 300_000 });
-    if (!Array.isArray(page.features)) throw new Error(`${cacheKey}: ${JSON.stringify(page.error ?? page).slice(0, 200)}`);
+    const page = await cachedJSON(`arcgis/${cacheKey}-${offset}.json`, `${layerUrl}/query?${q}`, { timeout: 300_000, check });
+    check(page);
     features.push(...page.features);
-    if (page.features.length < pageSize && !page.properties?.exceededTransferLimit && !page.exceededTransferLimit) break;
+    offset += page.features.length;
+    if (!page.features.length || (page.features.length < pageSize && !page.properties?.exceededTransferLimit && !page.exceededTransferLimit)) break;
   }
   return features;
 }

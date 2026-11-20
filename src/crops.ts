@@ -131,8 +131,8 @@ export function cropsLayer(data: Data): AtlasLayer {
       if (s[3] >= 2 * (d3.median(share, (x) => x[3]) ?? 0))
         ev.push({
           t: years[wetYear] + 0.6, layer: 'crops', kind: 'Farm year', layers: ['crops'], lon: -104.5, lat: 51.2, zoom: 5.6,
-          title: `${years[wetYear]}: fields too wet to seed`,
-          body: `In ${years[wetYear]}, ${s[3].toFixed(0)}% of the mapped farm belt fell in “other crops and fallow”, against a usual ${(d3.median(share, (x) => x[3]) ?? 0).toFixed(0)}%. Most of the difference is land the crop inventory marks as too wet to be seeded: fields that stood under water through a wet spring.`,
+          title: `${years[wetYear]}: the most land in other crops and fallow`,
+          body: `In ${years[wetYear]}, ${s[3].toFixed(0)}% of the mapped farm belt fell in “other crops and fallow”, against a usual ${(d3.median(share, (x) => x[3]) ?? 0).toFixed(0)}%. The class is a mix (summerfallow, minor crops and land the inventory marks as too wet to be seeded), so the inventory alone does not say which part grew; a jump like this often follows a wet spring.`,
           stats: [{ v: `${s[3].toFixed(0)}%`, l: 'other crops and fallow' }, { v: `${s[0].toFixed(0)}%`, l: 'cereals' }, { v: `${s[1].toFixed(0)}%`, l: 'canola' }],
           sources: [SRC],
         });

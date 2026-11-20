@@ -64,12 +64,12 @@ FACTS = """() => {
     often: towns.filter(([, t]) => t.a === 'often').length,
     preserves: word(L.preserves.length),
     parks: C.parks.length, camps: C.camps.filter((c) => c.kind !== 'backcountry').length,
-    reach4: reach.filter((r) => r[1] <= 240).length,
+    reach4: reach.filter((r) => r[1] <= 240).length, reachRouted: !!C.reachRouted,
     treaties: word(d.treaties.treaties.length, true), treatyFrom: Math.min(...years), treatyTo: Math.max(...years),
     sktnBldg: (Math.floor(bldg.n / 1000) * 1000).toLocaleString('en-CA'),
     sktnValue: money(H.value), sktnInc: money(J.inc), sktnOwn30: Math.round(H.own30),
     sktnJan: Math.abs(Math.round(jan.tJan)), sktnFrost: Math.round(jan.frostDays),
-    twinLow: twinName(tw.ssp126[1][0]) || 'warmer than anywhere here today',
+    twinLow: twinName(tw.ssp126[1][0]), twinLowIdx: tw.ssp126[1][0][0],
     twinHighWarm: tw.ssp585[1][0][0] === -1,
     tor: d.tornadoes.rows.filter((r) => r[2] >= 2017).length,
     torFrom: 2017,
@@ -82,6 +82,12 @@ def prepare(found):
     # line fu-2 only holds while Saskatoon's high-emissions twin is "warmer than anywhere": stop rather than say something untrue
     if not found.get("twinHighWarm"):
         raise SystemExit("Saskatoon's 2041-2070 high-emissions twin is no longer 'warmer than anywhere': rewrite line fu-2")
+    # line l-2 calls Weekend Reach's times drives: without routing the atlas calls them rough straight-line estimates
+    if not found.get("reachRouted"):
+        raise SystemExit("Weekend Reach's times are not routed: rewrite line l-2 (and the YouTube text) before filming")
+    # and its low-emissions twin must be a station (-1 is warmer than anywhere, -2 no close match): fu-2 names it
+    if found.get("twinLowIdx", -2) < 0:
+        raise SystemExit("Saskatoon's 2041-2070 low-emissions twin is no longer a station: rewrite line fu-2")
 
 
 def spoken(text):
@@ -304,7 +310,10 @@ def catch(f):
     f.say("h-3")
     pick_layer(f, "Wildfires")
     f.wait(500)
-    f.run("() => { atlas.replaySeason(); }")
+    # resolves once the season plays; false when the daily record has none
+    if not f.run("() => atlas.replaySeason()"):
+        raise SystemExit("Wildfires has no fire season to replay: restore the daily record into public/data/history "
+                         "(git clone -b data-history <repo> public/data/history) and build before filming")
     f.wait(15000)
     f.board("A fire season", "Wildfires replays this year's season from the daily record: hotspots flare, cool to embers, and the panel counts them day by day.")
     f.voice_done(600)
@@ -393,8 +402,8 @@ def ending(f):
     f.js("([u, fine]) => Stage.end('Come for the sky. Stay for everything under it.', u, fine)",
          [f.url, "Every number from open data: Saskatchewan, Statistics Canada and the Government of Canada · unofficial · nothing to install"])
     f.say("end-1")
-    f.board("End card", "The window drifts back; the end card.")
     f.voice_done(3200)
+    f.board("End card", "The window drifts back; the end card.")
     f.js("Stage.blackout(1800)")
     f.wait(2000)
 
@@ -428,7 +437,7 @@ SCENES = [
          motion="The map flies down into the city and circles it; the report scrolls.", sound="Whooshes.",
          lines={"ci-1": "Saskatoon sits on the South Saskatchewan River, a city of bridges. All {sktnBldg} or so of its buildings stand in 3D, right down to the street.",
                 "ci-2": "Every place has a report. In the last census, the median home in Saskatoon was worth {sktnValue}, and the median household earned {sktnInc} a year.",
-                "ci-3": "Only {sktnOwn30} percent of owners spend more than a third of their income on shelter. Keep scrolling: schools, doctors, water, and the land around it."}),
+                "ci-3": "Only {sktnOwn30} percent of owners spend 30 percent or more of their income on shelter. Keep scrolling: schools, doctors, water, and the land around it."}),
     dict(id="stay", title="Day five: what if you stayed?", run=stay,
          shows="Town Finder with the New to Saskatchewan preset; the top place's report.", camera="Full-frame.",
          motion="Columns re-rank as the camera turns.", sound="Clicks.",
@@ -449,7 +458,7 @@ SCENES = [
          motion="Arcs sweep across the province.", sound="Clicks.",
          lines={"fu-1": "And the climate is moving. Match Saskatoon's projected climate for 2041 to 2070 against the whole province today.",
                 "fu-2": "With low emissions, it's like {twinLow} today. With high emissions, it's warmer than anywhere in Saskatchewan now. A model range, never a forecast.",
-                "fu-3": "Do it for every place, and the arcs all point south."}),
+                "fu-3": "Do it for every place, and most arcs point south."}),
     dict(id="home", title="Day seven: come for the sky", run=home_again,
          shows="Back to the opening view: the province under night's shade and the aurora forecast.", camera="Full-frame; the bars return.",
          motion="The map turns slowly.", sound="The music settles.",
@@ -466,7 +475,7 @@ def youtube(found, url, chapters):
 Come for the Sky: a Week in Saskatchewan (and Maybe Longer) | Living Skies Atlas
 
 DESCRIPTION
-Never been to Saskatchewan? Follow a week's visit that turns into the thought of staying: the longest days and the northern lights, {found['camps']} campgrounds lighting up within a drive of Saskatoon, the farm belt from space, Treaty land, Saskatoon in 3D, and Town Finder's take on where a newcomer might live. Then the honest part: winter, wildfire, storms, floods, crime and a warming climate, each shown from the data that maps it.
+Never been to Saskatchewan? Follow a week's visit that turns into the thought of staying: the longest days and the northern lights, {found['reach4']} campgrounds lighting up within four hours' drive of Saskatoon, the farm belt from space, Treaty land, Saskatoon in 3D, and Town Finder's take on where a newcomer might live. Then the honest part: winter, wildfire, storms, floods, crime and a warming climate, each shown from the data that maps it.
 
 Everything in this film is Living Skies Atlas, a free, unofficial 3D map of Saskatchewan's open data, filmed frame by frame from the real app. It is not affiliated with or endorsed by the Government of Saskatchewan or any agency whose data it uses. I built it with Claude Code (Anthropic's AI coding tool). The narration uses a synthetic voice (Kokoro).
 

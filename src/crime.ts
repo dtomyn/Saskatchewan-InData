@@ -76,7 +76,7 @@ export function crimeLayer(data: Data): AtlasLayer {
         const m = MEASURES.find((x) => x.key === k);
         if (m) { cur = m; lastY = -1; el.querySelectorAll<HTMLButtonElement>('[data-m]').forEach((b) => b.classList.toggle('on', b.dataset.m === cur.key)); }
       });
-      el.querySelector<HTMLButtonElement>('[data-m="csi"]')?.classList.add('on');
+      el.querySelector<HTMLButtonElement>(`[data-m="${cur.key}"]`)?.classList.add('on');
       return {
         update({ time }) {
           const y = Math.min(Math.floor(time), y1);

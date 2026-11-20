@@ -70,6 +70,9 @@ export function csdTint(id: string, data: Data, value: (s: Subdivision) => numbe
 export const csdType = (data: Data, s: Subdivision) => data.subdivisions?.types[s.t] ?? s.t;
 const isRM = (s: Subdivision) => s.t === 'RM';
 const isReserve = (s: Subdivision) => s.t === 'IRI' || s.t === 'S-É';
+/** An Indian settlement (S-É) is not a reserve: Statistics Canada counts it separately, and so does the wording here. */
+const isSettlement = (s: Subdivision) => s.t === 'S-É';
+const reserveWord = (s: Subdivision) => (isSettlement(s) ? 'Indian settlement' : 'reserve');
 
 /** What a missing value means here: "not enumerated" on a reserve not fully counted, else "—" (suppressed or none). */
 export const missing = (s: Subdivision) => (s.ne ? 'not enumerated' : '—');
@@ -78,8 +81,8 @@ export const missing = (s: Subdivision) => (s.ne ? 'not enumerated' : '—');
 export function csdNotes(data: Data, s: Subdivision): string[] {
   const out: string[] = [];
   if (isRM(s)) out.push('A rural municipality surrounds the towns and villages inside it but excludes them: its figures are for the countryside, farms and hamlets only.');
-  if (isReserve(s)) out.push('A First Nation reserve is its own census subdivision, not part of the town or rural municipality around it (see the Treaties & reserves layer).');
-  if (s.ne) out.push('This reserve was not fully enumerated in the 2021 census (Statistics Canada’s data quality flag), so its census figures are not published: shown as “not enumerated”, never as zero.');
+  if (isReserve(s)) out.push(isSettlement(s) ? 'An Indian settlement (Statistics Canada’s term: a First Nations community that is not a reserve) is its own census subdivision, not part of the town or rural municipality around it.' : 'A First Nation reserve is its own census subdivision, not part of the town or rural municipality around it (see the Treaties & reserves layer).');
+  if (s.ne) out.push(`This ${reserveWord(s)} was not fully enumerated in the 2021 census (Statistics Canada’s data quality flag), so its census figures are not published: shown as “not enumerated”, never as zero.`);
   if (s.t === 'NO') out.push('The unorganized part of the Northern Saskatchewan Administration District: everything in the north outside its villages, hamlets and reserves.');
   if (/\(Saskatchewan part\)/.test(s.n)) out.push('Only the Saskatchewan side is counted here.');
   return out;
@@ -88,7 +91,7 @@ export function csdNotes(data: Data, s: Subdivision): string[] {
 /** A tooltip for a subdivision in a census tint: its name and type, the layer's own rows, and the notes in short. */
 export function csdTooltip(data: Data, s: Subdivision, rows: [string, string][]): string {
   const row = (k: string, v: string) => `<br><span class="tk">${esc(k)}</span> <span class="tv">${v}</span>`;
-  const short = isRM(s) ? 'surrounds its towns and villages, excludes them' : s.ne ? 'not fully enumerated in 2021' : isReserve(s) ? 'a First Nation reserve, its own subdivision' : '';
+  const short = isRM(s) ? 'surrounds its towns and villages, excludes them' : s.ne ? 'not fully enumerated in 2021' : isReserve(s) ? (isSettlement(s) ? 'an Indian settlement, its own subdivision' : 'a First Nation reserve, its own subdivision') : '';
   return `<b>${esc(s.n)}</b><br><span class="tk">${esc(csdType(data, s))}${short ? ` · ${short}` : ''}</span>`
     + row('Population 2021', s.pop != null ? fmt.int(s.pop) : missing(s))
     + rows.map(([k, v]) => row(k, v)).join('')
@@ -151,7 +154,7 @@ export function csdReport(data: Data, s: Subdivision, layer: string): AtlasEvent
           ${metric('Other home language', pt('nonOff', 'homeTot'), C?.lang?.length ? esc(C.lang.map((b) => b[0]).join(', ')) : 'non-official language most often at home')}
           ${metric('Indigenous identity', pt('ind', 'indTot'), 'First Nations, Métis or Inuit')}
         </div>
-        <p class="note">Census 2021, this census subdivision only. Statistics Canada rounds counts to a multiple of 5 and suppresses figures for the smallest places: “—” means none, a handful, or not published, never zero.${s.ne ? ' “Not enumerated”: this reserve was not fully counted in 2021.' : ''}</p>
+        <p class="note">Census 2021, this census subdivision only. Statistics Canada rounds counts to a multiple of 5 and suppresses figures for the smallest places: “—” means none, a handful, or not published, never zero.${s.ne ? ` “Not enumerated”: this ${reserveWord(s)} was not fully counted in 2021.` : ''}</p>
         <p class="note">${esc(data.subdivisions?.source ?? '')}. ${esc(data.subdivisions?.censusSource ?? '')}.</p>`);
     },
   };

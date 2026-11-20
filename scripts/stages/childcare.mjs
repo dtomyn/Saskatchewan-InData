@@ -71,9 +71,9 @@ export default async function childcare() {
     return distKm(p.lon, p.lat, s.lon, s.lat) <= (needs?.fallbackKm ?? 3);
   };
   // The ministry's points are approximate and some are far off (Unity's daycare sits 39 km north of town). A facility
-  // whose address is in one of the atlas's places but whose point is outside it, or missing, moves to that place's
-  // centre (`approx`). Others with no point are dropped.
-  const byKey = new Map(places.map((p) => [p.key, p]));
+  // whose address is in one of the atlas's places or small communities but whose point is outside it, or missing, moves
+  // to that place's centre (`approx`). Others with no point are dropped.
+  const byKey = new Map([...(await getSmallPlaces()), ...places].map((p) => [p.key, p]));
   let snapped = 0;
   for (const f of [...centres, ...homes]) {
     const p = f.city ? byKey.get(normalizeName(f.city)) : null;
@@ -104,13 +104,12 @@ export default async function childcare() {
   // in town were moved gets one of them as "in town" (0 min) instead.
   const real = centres.map((s, i) => ({ lon: s.lon, lat: s.lat, i, approx: s.approx })).filter((s) => !s.approx);
   const any = [...real.map((s) => ({ ...s, h: 0 })), ...homeSites.map((s, i) => ({ lon: s.lon, lat: s.lat, i, h: 1 }))];
-  let routed = true;
   const dc = await driveTimes(places, real, 'childcare-c', { keep: 1 });
-  routed &&= dc.routed;
-  for (const [key, v] of Object.entries(dc.towns)) if (v[0]) towns[key].c = { ...v[0], f: real[v[0].f].i };
   const da = await driveTimes(places, any, 'childcare-a', { keep: 1 });
-  routed &&= da.routed;
-  for (const [key, v] of Object.entries(da.towns)) if (v[0]) { const t = any[v[0].f]; towns[key].a = { ...v[0], f: t.i, h: t.h }; }
+  // one `routing` label covers both: when either could not be routed, both are straight lines
+  const routed = dc.routed && da.routed;
+  for (const [key, v] of Object.entries(routed ? dc.towns : straightTimes(places, real))) if (v[0]) towns[key].c = { ...v[0], f: real[v[0].f].i };
+  for (const [key, v] of Object.entries(routed ? da.towns : straightTimes(places, any))) if (v[0]) { const t = any[v[0].f]; towns[key].a = { ...v[0], f: t.i, h: t.h }; }
   for (const p of places) {
     if (centres.some((s) => !s.approx && inTown(p, s))) continue;
     const j = centres.findIndex((s) => s.approx && inTown(p, s));

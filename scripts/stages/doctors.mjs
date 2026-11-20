@@ -27,8 +27,11 @@ export default async function doctors() {
 
   // --- ODHF (Saskatchewan Health Authority sites)
   const byKey = new Map(places.map((p) => [p.key, p]));
+  const OFF_KM = 15;
+  const byAll = new Map([...(await getSmallPlaces()), ...places].map((p) => [p.key, p]));
+  const startsWith = (n) => { const w = normalizeName(n).split(' '); for (let i = Math.min(3, w.length - 1); i >= 1; i--) { const p = byAll.get(w.slice(0, i).join(' ')); if (p) return p; } return null; };
   const clinics = [];
-  let odhfNoPoint = 0, odhfPlaced = 0;
+  let odhfNoPoint = 0, odhfPlaced = 0, odhfMoved = 0;
   for (const r of await odhfRows()) {
     const type = r.source_facility_type ?? '';
     const amb = r.odhf_facility_type === 'Ambulatory health care services';
@@ -40,6 +43,10 @@ export default async function doctors() {
     if (walkIn(`${r.facility_name} ${type}`)) f.w = 1;
     if (r.latitude && r.longitude) {
       f.lon = +r.longitude; f.lat = +r.latitude;
+      // A few points are far from the town the row names (or, with no town, the place its name starts with: Spalding's
+      // centre sat on Borden's point): over OFF_KM from it, the site moves to that town's centre (`approx`)
+      const town = byAll.get(normalizeName(r.city ?? '')) ?? (r.city ? null : startsWith(f.n));
+      if (town && distKm(town.lon, town.lat, f.lon, f.lat) > OFF_KM) { Object.assign(f, { lon: town.lon, lat: town.lat, approx: 1 }); odhfMoved++; }
       if (!inSask(f.lon, f.lat, 0.02)) continue;
     } else {
       // no point in the file: put it at its town's centre when the town is one of the atlas's places
@@ -79,8 +86,9 @@ export default async function doctors() {
     if (NOT_PRIMARY.test(name) || (SPECIALIST.test(spec) && !/general|family|community/.test(spec))) continue;
     const f = { n: name || (nurse ? 'Nurse' : t.amenity === 'doctors' ? 'Doctor’s office' : 'Clinic'), city, k: nurse ? 'np' : kindOf(name, spec), lon, lat, src: 'o', osm: `${e.type}/${e.id}` };
     if (walkIn(name) || t.walk_in === 'yes') f.w = 1;
-    // the same site in ODHF or mapped twice in OSM: close by, and the same first word or one unnamed
-    const dup = clinics.find((g) => near(g, f, 0.12) || (name && near(g, f, 0.6) && word(g.n) === word(f.n)));
+    // the same site in ODHF or mapped twice in OSM: unnamed and very close by, or named with the same first word and
+    // close by (two named clinics in one building stay apart)
+    const dup = clinics.find((g) => (!name && near(g, f, 0.12)) || (name && near(g, f, 0.6) && word(g.n) === word(f.n)));
     if (dup) {
       if (dup.src === 's') { dup.src = 'os'; dup.osm = f.osm; merged++; if (dup.approx) Object.assign(dup, { lon, lat, approx: undefined }); }
       if (f.w) dup.w = 1;
@@ -91,7 +99,7 @@ export default async function doctors() {
   }
   for (const s of [...clinics, ...pharmacies]) { s.lon = round(s.lon, 5); s.lat = round(s.lat, 5); for (const k of Object.keys(s)) if (s[k] === undefined || s[k] === null) delete s[k]; }
   const tally = (k) => clinics.filter((c) => c.k === k).length;
-  log(`  ODHF: ${nOdhf} SHA clinics and health centres (${odhfNoPoint} without a point in the file, ${odhfPlaced} of them put at their town's centre); OSM: ${merged} of them matched, ${osmClinics} more; ${tally('md')} medical clinics or doctors' offices, ${tally('phc')} primary health care or health centres, ${tally('np')} nurse sites, ${clinics.filter((c) => c.w).length} walk-in; ${pharmacies.length} pharmacies`);
+  log(`  ODHF: ${nOdhf} SHA clinics and health centres (${odhfNoPoint} without a point in the file, ${odhfPlaced} of them put at their town's centre; ${odhfMoved} moved to their town's centre, over ${OFF_KM} km off); OSM: ${merged} of them matched, ${osmClinics} more; ${tally('md')} medical clinics or doctors' offices, ${tally('phc')} primary health care or health centres, ${tally('np')} nurse sites, ${clinics.filter((c) => c.w).length} walk-in; ${pharmacies.length} pharmacies`);
 
   // --- in town: inside the place's limits (needs.json) or within the same slack, like Daily needs
   let needs = null;
@@ -115,12 +123,12 @@ export default async function doctors() {
   const towns = Object.fromEntries(places.map((p) => [p.key, {
     nc: clinics.filter((s) => inTown(p, s)).length, np: pharmacies.filter((s) => inTown(p, s)).length,
   }]));
-  let routed = true;
-  for (const [k, list] of Object.entries(sets)) {
-    const d = await driveTimes(places, list, `doctors-${k}`, { keep: 1 });
-    routed &&= d.routed;
-    for (const [key, v] of Object.entries(d.towns)) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
-  }
+  const drives = {};
+  for (const [k, list] of Object.entries(sets)) drives[k] = await driveTimes(places, list, `doctors-${k}`, { keep: 1 });
+  // one `routing` label covers every set: when any could not be routed, all are straight lines
+  const routed = Object.values(drives).every((d) => d.routed);
+  for (const [k, list] of Object.entries(sets))
+    for (const [key, v] of Object.entries(routed ? drives[k].towns : straightTimes(places, list))) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
   const none = places.filter((p) => !towns[p.key].nc).map((p) => p.name);
   log(`  ${places.length - none.length} of ${places.length} places have a clinic in town${none.length ? `; none: ${none.join(', ')}` : ''}`);
   // Neither list has most private family practices, so a regional centre like Yorkton can show no clinic. INFERRED: a
@@ -134,7 +142,8 @@ export default async function doctors() {
     const tr = (hosp.towns[p.key] ?? []).find((t) => hosp.facilities[t.f]?.hospital && inTown(p, hosp.facilities[t.f]));
     if (!tr) continue;
     const f = hosp.facilities[tr.f];
-    towns[p.key].h = { n: f.name, min: tr.min, km: tr.km, lon: f.lon, lat: f.lat };
+    // its minutes only under this file's own routed label
+    towns[p.key].h = { n: f.name, min: routed ? tr.min : null, km: tr.km, lon: f.lon, lat: f.lat };
     withHosp.push(p.name);
   }
   if (withHosp.length) log(`  no clinic mapped but a hospital in town (inferred doctors): ${withHosp.join(', ')}`);

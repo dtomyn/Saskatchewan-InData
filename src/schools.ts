@@ -195,7 +195,7 @@ export function schoolsLayer(data: Data): AtlasLayer {
       }
       if (id === 'schools-pse') {
         const p = info.object as PostSec;
-        return `<b>${esc(p.n)}</b><br><span class="tk">${PSE_KINDS[p.k].label}${p.city ? ` · ${esc(p.city)}` : ''}</span>${p.campus ? `<br><span class="tk">${esc(p.campus)}</span>` : ''}`;
+        return `<b>${esc(p.n)}</b><br><span class="tk">${PSE_KINDS[p.k].label}${p.city ? ` · ${esc(p.city)}` : ''}</span>${p.campus ? `<br><span class="tk">${esc(p.campus)}</span>` : ''}${p.approx ? '<br><span class="tk">Placed at the town centre: its listed point is far from its town</span>' : ''}`;
       }
       const o: any = info.object;
       if (!o.m) return null;

@@ -60,6 +60,12 @@ export interface Tour { id: string; title: string; blurb: string; steps: TourSte
 const range = (a: TourApi, id: string) => a.layers.find((l) => l.id === id)!.range;
 /** Picks a layer on an otherwise empty map, at a time of its record. */
 const only = (a: TourApi, id: string, t?: number) => { a.reset(); a.focus(id); if (t != null) a.setTime(t); };
+/** Clicks a panel control once the panel has been drawn (it fills a moment after a layer is focused); gives up after ~1.5 s. */
+const clickWhenShown = (sel: string, tries = 15) => {
+  const b = document.querySelector<HTMLElement>(sel);
+  if (b) { if (!b.classList.contains('on')) b.click(); return; }
+  if (tries > 0) setTimeout(() => clickWhenShown(sel, tries - 1), 100);
+};
 /** The last whole year of a layer's record (before its Now stop, if it has one). */
 const lastYear = (a: TourApi, id: string) => { const l = a.layers.find((x) => x.id === id)!; return Math.floor(l.now?.archiveEnd ?? l.range[1]); };
 const n = (v: number) => v.toLocaleString('en-CA');
@@ -109,7 +115,8 @@ export const TOURS: Tour[] = [
       },
       {
         caption: 'And the light. On the shortest day of the year the north gets less daylight than the south. This is worked out from latitude, not measured.',
-        do: (a) => only(a, 'light'),
+        // the layer keeps the chip a visitor last picked: the caption is about the shortest day, so pick it
+        do: (a) => { only(a, 'light'); clickWhenShown('#panel [data-m="dec"]'); },
         camera: WIDE,
       },
       {

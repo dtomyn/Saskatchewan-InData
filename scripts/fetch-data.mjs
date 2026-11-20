@@ -49,17 +49,20 @@ const MANIFEST = path.join(OUT, 'manifest.json'), NOW_MANIFEST = path.join(OUT, 
 const manifests = { main: await readManifest(MANIFEST), now: await readManifest(NOW_MANIFEST) };
 
 let failures = 0;
+const ran = {}; // stage → whether it succeeded in this process (the daily record counts only files refreshed now)
 for (const name of run) {
   const t0 = Date.now();
   const manifest = LIVE_STAGES.includes(name) ? manifests.now : manifests.main;
   console.log(`\n▶ ${name}`);
   try {
     const { default: stage } = await import(stageUrl(name));
-    await stage();
+    await stage({ ran });
     manifest[name] = { ok: true, updated: new Date().toISOString() };
+    ran[name] = true;
     log(`done in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   } catch (e) {
     failures++;
+    ran[name] = false;
     manifest[name] = { ...(manifest[name] ?? {}), ok: manifest[name]?.ok ?? false, lastError: e.message, lastAttempt: new Date().toISOString() };
     console.error(`✖ ${name} failed: ${e.message}`);
   }

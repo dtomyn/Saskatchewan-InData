@@ -36,7 +36,8 @@ export function placeNet(data: Data, key: string): PlaceNet | null {
   return {
     ...t, f50: t.comb[5] ?? 0, w50: t.wired[5] ?? 0, bestText: tierText(I.tiers, t.best), techText: techList(t.tech),
     // ISED's open data has LTE (and better) but does not single out 5G
-    mobile: (t.lte ?? 0) > 0 || t.mob.length ? 'LTE' : 'none',
+    // households reached, not carriers listed in the town's hexagons; the carriers stand in only when the share is missing
+    mobile: (t.lte != null ? t.lte > 0 : t.mob.length > 0) ? 'LTE' : 'none',
   };
 }
 
