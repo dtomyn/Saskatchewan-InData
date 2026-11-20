@@ -2,6 +2,7 @@
 import { Data, fmt } from './data';
 import { lineChart } from './charts';
 import { townProjectionRow } from './projections';
+import { openTwin, twinRow } from './twins';
 import { smallView } from './small';
 import { cityTractsHTML, drawCityTracts } from './tracts';
 import { esc } from './html';
@@ -86,6 +87,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
       ${metric('Climate', '#f25f5c', t.climate ? `${t.climate.meanTemp.toFixed(1)} °C` : na, t.climate ? `mean since 1991${t.climate.precip ? ` · ${Math.round(t.climate.precip)} mm/yr` : ''} · ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)` : '')}
     </div>
     ${townProjectionRow(data, key)}
+    ${twinRow(data, key)}
     ${feelsRow(t, data)}
     ${data.light && t.light ? lightRows(t.light, data) : ''}
     ${data.drought && t.drought ? `<div class="dm-cap">Drought Monitor, every month since ${data.drought.months[0].slice(0, 4)}</div>${droughtStrip(data, key)}<div class="tr-falls" style="margin-top:8px">${link('drought', '🌾 Drought on the map')}</div>` : ''}
@@ -99,6 +101,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
   el.querySelector('.close-x')!.addEventListener('click', opts.onClose);
   el.querySelector('.tr-reach')?.addEventListener('click', () => startReach(key));
   el.querySelector('.tr-commute')?.addEventListener('click', () => startCommute(key));
+  el.querySelector('.tr-twin')?.addEventListener('click', () => openTwin(key));
   el.querySelectorAll<HTMLElement>('[data-layer]').forEach((b) => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('atlas:layer', { detail: b.dataset.layer }))));
 
   requestAnimationFrame(() => {

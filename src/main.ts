@@ -342,6 +342,9 @@ function onClick(info: PickingInfo) {
   if (!o) return;
   const owner = info.layer ? layers.find((l) => info.layer!.id.startsWith(l.id)) : null;
   if (owner?.click?.(info)) return;
+  // the focused layer may take a click on a town pin for itself (Climate's twin chip picks the town)
+  const front = layers.find((l) => l.id === state.focused);
+  if (front && front !== owner && state.mode === 'layer' && front.click?.(info)) return;
   // a town (a dot, or a town's column on any layer) opens its report
   const key = o.m?.key ?? o.t?.muni?.key ?? (info.layer?.id.startsWith('towns') ? o.key : null);
   if (key) { openPlace(key); return; }

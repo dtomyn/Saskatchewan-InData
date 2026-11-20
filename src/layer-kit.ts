@@ -74,7 +74,7 @@ export interface AtlasLayer {
   describe?: (info: PickingInfo) => AtlasEvent | null;
   panel: (el: HTMLElement, ctx: Ctx) => PanelHandle;
   tooltip: (info: PickingInfo) => string | null;
-  /** Handles a click on one of its own map objects; true if it did. */
+  /** Handles a click on one of its own map objects, or, while it is the focused layer, on a town pin; true if it did. */
   click?: (info: PickingInfo) => boolean;
   /**
    * A live reading (src/now.ts, public/data/now/). A layer with one ends its `range` at today: the timeline's Now stop.
