@@ -156,7 +156,7 @@ export function childcareLayer(data: Data): AtlasLayer {
         hero(3, `${rows.filter((r) => r.v > 30).length}`, `places more than 30 ${unit} away`);
         const max = d3.max(rows, (r) => r.v) ?? 1;
         body.innerHTML = `<h3>${routed ? 'Drive' : 'Distance'} to the nearest ${esc(g.short)}</h3>
-          <ol class="rank-list">${rows.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${esc(r.t.name)}${r.t.city ? `, ${esc(r.t.city)}` : ''} · ${Math.round(r.t.km)} km · ${r.n} in town</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
+          <ol class="rank-list">${rows.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${esc(r.t.name)}${r.t.city ? `, ${esc(r.t.city)}` : ''} · ${r.t.km === 0 ? 'in town' : `${Math.round(r.t.km)} km`} · ${r.n} in town</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
           <div class="ramp" style="background:${rampCSS((t) => ramp(2 + t * 118))}"></div>
           <div class="ramp-labels"><span>2 ${unit}</span><span>30</span><span>120+ ${unit}</span></div>`;
       };
@@ -218,7 +218,7 @@ export function childcareLayer(data: Data): AtlasLayer {
 
 /** Childcare: the drive to the nearest licensed centre, and how many centres and family homes are in town. */
 export function childcareRows(p: PlaceChildcare, slackKm: number) {
-  const sub = (x: ChildcareTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  const sub = (x: ChildcareTrip | null) => (x ? `${x.km === 0 ? `in town: ${esc(x.name)}` : `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km`}<br>${esc(x.note)}` : 'none reachable by road');
   return `<h3>Childcare</h3>
     <div class="metric-grid">
       ${metric('Centre', CHILDCARE_COLOR, p.c ? childcareTripText(p.c) : na, sub(p.c))}

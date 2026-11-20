@@ -46,13 +46,18 @@ export default async function newcomer() {
   if (!agencies.length) throw new Error(`no Saskatchewan offices among IRCC's ${national} records`);
   // offices at one street address (units apart) are one building: an office placed far from two or more that agree
   // there is moved to them (IRCC's own position for it is off)
-  const street = (a) => `${(a.city ?? '').toLowerCase()}|${(a.addr ?? '').split(',')[0].replace(/\s+/g, ' ').trim().toLowerCase()}`;
+  // the street address is the first comma part that is not a recognised unit ("#2", "Unit 205", "Suite 200", a bare
+  // "215"), wherever the unit is written
+  const UNIT = /^(#\s*\w+|(units?|suites?|offices?|rooms?|bays?)\b.*|\d+[a-z]?)$/i;
+  const street = (a) => `${(a.city ?? '').toLowerCase()}|${((a.addr ?? '').split(',').map((x) => x.replace(/\s+/g, ' ').trim()).find((x) => x && !UNIT.test(x)) ?? '').toLowerCase()}`;
   let moved = 0;
   for (const a of agencies) {
     if (!a.addr) continue;
     const same = agencies.filter((b) => b !== a && street(b) === street(a));
     const agree = same.filter((b) => same.some((c) => c !== b && distKm(b.lon, b.lat, c.lon, c.lat) < 0.2));
-    if (agree.length < 2 || agree.some((b) => distKm(a.lon, a.lat, b.lon, b.lat) < 0.5)) continue;
+    // the peers must be one cluster, all close to each other: competing clusters are never averaged
+    if (agree.length < 2 || agree.some((b) => agree.some((c) => distKm(b.lon, b.lat, c.lon, c.lat) >= 0.2))) continue;
+    if (agree.some((b) => distKm(a.lon, a.lat, b.lon, b.lat) < 0.5)) continue;
     a.lon = round(agree.reduce((s, b) => s + b.lon, 0) / agree.length, 5);
     a.lat = round(agree.reduce((s, b) => s + b.lat, 0) / agree.length, 5);
     moved++;

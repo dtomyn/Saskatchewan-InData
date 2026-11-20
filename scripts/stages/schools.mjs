@@ -136,12 +136,14 @@ export default async function schools() {
     const k = KIND[a.PSETYPE] ?? 'col';
     const name = fixName(a.GOVERNANCE).replace(/^SIIT$/, 'Saskatchewan Indian Institute of Technologies (SIIT)') || (a.PSETYPE === 'University' ? 'University of Regina' : fixName(a.PSETYPE));
     const city = fixName(a.CITY).replace(/^Lloydminister AB$/, 'Lloydminster').replace(/^Moosimin$/, 'Moosomin').replace(/^Munester$/, 'Muenster') || null;
-    if (pse.some((p) => p.n === name && distKm(p.lon, p.lat, lon, lat) < 0.3)) continue;
     // a point over PSE_OFF_KM from the town the row names (Great Plains College's Maple Creek campus sat 77 km east)
-    // moves to that town's centre (`approx`)
+    // moves to that town's centre (`approx`); duplicates are found at the final position
     const town = city ? pseTowns.get(normalizeName(city)) : null;
-    if (town && distKm(town.lon, town.lat, lon, lat) > PSE_OFF_KM) { pse.push({ n: name, k, city, lon: town.lon, lat: town.lat, src: 'ae', approx: 1 }); pseMoved++; continue; }
-    pse.push({ n: name, k, city, lon: round(lon, 5), lat: round(lat, 5), src: 'ae' });
+    const moved = town && distKm(town.lon, town.lat, lon, lat) > PSE_OFF_KM;
+    const site = moved ? { n: name, k, city, lon: town.lon, lat: town.lat, src: 'ae', approx: 1 } : { n: name, k, city, lon: round(lon, 5), lat: round(lat, 5), src: 'ae' };
+    if (pse.some((p) => p.n === name && distKm(p.lon, p.lat, site.lon, site.lat) < 0.3)) continue;
+    if (moved) pseMoved++;
+    pse.push(site);
   }
   if (pseMoved) log(`  ${pseMoved} post-secondary sites moved to their town's centre (point over ${PSE_OFF_KM} km from it)`);
   const aeCount = pse.length;
@@ -179,13 +181,15 @@ export default async function schools() {
   const routed = dp_.routed && Object.values(drives).every((d) => d.routed);
   for (const [k, list] of Object.entries(sets))
     for (const [key, v] of Object.entries(routed ? drives[k].towns : straightTimes(places, list))) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
-  for (const [key, v] of Object.entries(routed ? dp_.towns : straightTimes(places, pse))) if (v[0]) towns[key].p = v[0];
+  // a trip to a campus placed at its town's centre is to that centre, not the campus (`approx`, as on the site)
+  const pseTrip = (t) => (pse[t.f].approx ? { ...t, approx: 1 } : t);
+  for (const [key, v] of Object.entries(routed ? dp_.towns : straightTimes(places, pse))) if (v[0]) towns[key].p = pseTrip(v[0]);
   // tier 2: schools in town; the nearest of each kind by straight line (min null)
   const smallP = await getSmallPlaces();
   const small = Object.fromEntries(smallP.map((p) => [p.key, { n: schools.filter((s) => open(s) && inTown(p, s)).length }]));
   for (const [k, list] of Object.entries(sets))
     for (const [key, v] of Object.entries(straightTimes(smallP, list))) if (v[0]) small[key][k] = { ...v[0], f: list[v[0].f].i };
-  for (const [key, v] of Object.entries(straightTimes(smallP, pse))) if (v[0]) small[key].p = v[0];
+  for (const [key, v] of Object.entries(straightTimes(smallP, pse))) if (v[0]) small[key].p = pseTrip(v[0]);
 
   await writeOut('schools', {
     source: 'Government of Saskatchewan, Ministry of Education, K-12 schools (SchoolsAndDivisions: public, separate, Francophone and band schools), Saskatchewan GeoHub; schools it lacks from OpenStreetMap contributors (amenity=school; ODbL), via Overpass',

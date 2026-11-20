@@ -51,12 +51,18 @@ function hailKm(r: HailRow, lon: number, lat: number) {
  * centre line) is the same storm: counted once, as the swath (its measured stone still counts for the largest hail).
  */
 const SAME_DAYS = 2 / 365.25, SAME_KM = 25;
-const sameCache = new WeakMap<HailRow[], Set<HailRow>>();
+const sameCache = new WeakMap<HailRow[], Map<HailRow, HailRow[]>>();
+/** Each research storm a swath holds, with the swaths that hold it. */
 function sameStorms(rows: HailRow[]) {
   let s = sameCache.get(rows);
   if (!s) {
     const sw = rows.filter(isSwath);
-    s = new Set(rows.filter((r) => !isSwath(r) && sw.some((w) => Math.abs(w[2] - r[2]) <= SAME_DAYS && hailKm(w, r[0], r[1]) <= SAME_KM)));
+    s = new Map();
+    for (const r of rows) {
+      if (isSwath(r)) continue;
+      const m = sw.filter((w) => Math.abs(w[2] - r[2]) <= SAME_DAYS && hailKm(w, r[0], r[1]) <= SAME_KM);
+      if (m.length) s.set(r, m);
+    }
     sameCache.set(rows, s);
   }
   return s;
@@ -72,7 +78,8 @@ export function placeHail(data: Data, m: { lon: number; lat: number }): PlaceHai
   const same = sameStorms(rows);
   for (const r of rows) {
     if (hailKm(r, m.lon, m.lat) > HAIL_REACH_KM) continue;
-    if (!same.has(r)) n++;
+    // a research storm counts unless a swath holding it is also within reach of this place (then that swath counts)
+    if (!same.get(r)?.some((w) => hailKm(w, m.lon, m.lat) <= HAIL_REACH_KM)) n++;
     if (r[3] != null && (!max || r[3] > max.mm)) max = { mm: r[3], t: r[2], name: r[5], radar: isSwath(r) };
   }
   return { n, from: Math.floor(rows[0][2]), to: Math.floor(rows.at(-1)![2]), max };
@@ -102,8 +109,8 @@ export function hailLayer(data: Data): AtlasLayer {
   const sizeless = swaths.length - sized.length;
   const sizeless0 = swaths.filter((r) => r[3] == null && Math.floor(r[2]) === radarSpan.from).length;
   const radius = (r: HailRow) => 1800 + (r[3] ?? 20) * 55;
-  // research storms a radar swath already holds: not counted twice
-  const sameTimes = [...sameStorms(rows)].map((r) => r[2]).sort((a, b) => a - b);
+  // research storms a radar swath already holds: not counted twice, from when both are on the timeline
+  const sameTimes = [...sameStorms(rows)].map(([r, ws]) => Math.max(r[2], Math.min(...ws.map((w) => w[2])))).sort((a, b) => a - b);
   const where = (r: HailRow) => {
     if (r[5]) return `near ${r[5]}`;
     const { town, km } = nearestTown(data.munis, r[0], r[1]);

@@ -74,7 +74,7 @@ export const ALL_SOURCES: Source[] = [
     },
   },
   {
-    id: 'nbac', key: 'fires', name: 'Burn outlines', color: '#c8553d', group: 'Hazards',
+    id: 'fires', key: 'fires', name: 'Burn outlines', color: '#c8553d', group: 'Hazards',
     owner: 'Natural Resources Canada · Canadian Forest Service', title: 'National Burned Area Composite (NBAC): mapped burn perimeters', url: 'https://cwfis.cfs.nrcan.gc.ca/ha/nbac',
     endpoint: 'cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs · typeName=public:nbac, WFS 1.0.0 in EPSG:4326, one Saskatchewan year at a time', licence: OGL_CA,
     gives: 'The mapped outline of each burn, from satellite imagery and agency mapping: Wildfires draws these for fires of 200 ha or more, and a circle for the rest.',
@@ -370,7 +370,7 @@ export const ALL_SOURCES: Source[] = [
     rings: (d) => (d.industry ? { [d.industry.npriYear]: { v: 0.7, label: `NPRI ${d.industry.npriYear} reporting year` }, [NOW]: { v: 1, label: `wells, pipelines and mines as licensed on ${d.industry.asOf}` } } : {}),
   },
   {
-    id: 'power', key: 'power', name: 'Power grid', color: '#b4c6ff', group: 'People & places',
+    id: 'industry', key: 'power', name: 'Power grid', color: '#b4c6ff', group: 'People & places',
     owner: 'OpenStreetMap contributors', title: 'power=line, power=substation, power=plant', url: 'https://wiki.openstreetmap.org/wiki/Power_networks',
     endpoint: 'overpass-api.de (and mirrors) · ways and outlines inside ISO3166-2 CA-SK', licence: 'OSM ODbL',
     gives: 'The high-voltage lines, substations and generating stations mappers have drawn (partial: SaskPower publishes no open grid map), and how near each place they run.',

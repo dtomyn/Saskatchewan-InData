@@ -310,7 +310,8 @@ export type Criterion = {
 };
 
 /** A drive in minutes; a trip known only as a straight line (km) is left out, never ranked as if it were minutes. */
-const mins = (t: { min: number | null } | null | undefined) => t?.min ?? null;
+/** a trip's minutes; one of 0 km is in town (0), though straight-line or unrouted trips carry no minutes */
+const mins = (t: { min: number | null; km?: number } | null | undefined) => t?.min ?? (t?.km === 0 ? 0 : null);
 
 export const CRITERIA: Criterion[] = [
   { id: 'safety', label: 'Low crime', hint: 'Lower Crime Severity Index (latest year, own police service)', value: (t) => t.csi, higherIsBetter: false, defaultWeight: 3 },

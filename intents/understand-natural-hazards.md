@@ -40,6 +40,7 @@ Turn on a history layer and press play, or set a year; click an event for its pa
 // one line at a time: a panel fills a moment after it opens, and a tour replaces one still running
 atlas.tour('hazards')    // the guided tour: rivers in 2011, tornadoes, hail, flood-prone land in Moose Jaw
 atlas.tour('province')   // once hazards has finished: wildfires played from 1959, the north in 2015, drought in July 2021
+document.querySelector('#tour-bar [data-t="exit"]')?.click()   // the tour must be over (or exited) before the next lines, or a later step replaces what they open
 // live readings: load /?film&now (plain ?film skips them)
 atlas.clearMap(); atlas.focus('rivers')   // lands on Now; flood-prone land shaded around mapped towns
 document.querySelector('.bldg-list li[data-area="Prince Albert"]').click()   // once the panel shows; flies in: buildings, the water, 1,441 tinted

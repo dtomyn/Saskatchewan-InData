@@ -29,8 +29,12 @@ import pathlib
 import re
 import time
 
-# Words the voice reads wrongly from their spelling, as replacements in its phonemes (none needed yet).
-SOUNDS = {}
+# Words the voice reads wrongly from their spelling, as replacements in its phonemes.
+SOUNDS = {
+    # Saskatchewan: suh-SKATCH-uh-wun /səˈskætʃəwən/, stress on SKATCH (Kokoro says SASS-kuh-choo-un);
+    # a substring, so "Saskatchewan's" follows. Saskatoon is phonemized differently and is untouched.
+    "sˈæskɐtʃˌuːən": "səskˈætʃəwən",
+}
 
 LIVE = True
 # The readings the film serves: the build's copy (dist/), so --no-build after a newer `npm run data now` still
@@ -427,6 +431,12 @@ def right_now(f):
     deadline = time.time() + 20
     while not f.run("() => atlas.layers.find((l) => l.id === 'fires').now.recent.first() !== null") and time.time() < deadline:
         time.sleep(0.1)
+    # the archive boundary is not a recorded day: when the record has nothing on the day clicked, go to its first day
+    if not f.run("t => atlas.layers.find((l) => l.id === 'fires').now.recent.covers(t)", day):
+        first = f.run("() => atlas.layers.find((l) => l.id === 'fires').now.recent.first()")
+        if first is not None and f.run("t => atlas.layers.find((l) => l.id === 'fires').now.recent.covers(t)", first):
+            day = first
+            f.run("t => atlas.setTime(t)", day)
     if not f.run("t => atlas.layers.find((l) => l.id === 'fires').now.recent.covers(t)", day):
         raise SystemExit("the daily record has no fire day to show: restore it into public/data/history "
                          "(git clone -b data-history <repo> public/data/history) and build before filming")

@@ -97,8 +97,8 @@ A layer with a live reading ends its timeline at **Now**, where it opens; the ye
 ### The daily record
 
 ```bash
-npm run data now history            # roll today's readings into public/data/history/
-npm run data now history-backfill   # once: reach back as far as each feed keeps
+npm run data now water history      # roll today's readings into public/data/history/ (water too: history counts only fresh files)
+npm run data now water history-backfill  # once: reach back as far as each feed keeps
 ```
 
 The hourly workflow also keeps a compact daily record of the live feeds, so the timeline runs from each archive's last year towards today and point-in-time layers gain a history: per gauge per day the lowest, highest and mean flow; every hotspot by day; each AQHI community's highest value per day; each weather alert and each drinking water advisory with the days it was in effect. One file per feed per month in `public/data/history/<feed>/`, plus `index.json`. They live on the **`data-history` branch**, not on main: `live.yml` checks it out before rolling up and its `archive` job (the only job allowed to push, and only there) appends the result. Clone it with `git clone -b data-history <repo> public/data/history` to see the record locally. To start the record, run the **Refresh live readings** workflow once by hand with **backfill** ticked. How far back it goes depends on the feed: the gauges keep about 30 days, AQHI about 3, CWFIS every season's hotspots; weather alerts and drinking water advisories start the day the record started. With `?film` the app skips the live files so the film stays repeatable; `?film&now` loads them.

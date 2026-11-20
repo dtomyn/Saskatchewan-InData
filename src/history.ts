@@ -42,7 +42,8 @@ export function ensureFeed(feed: HistoryFeed, fromT: number): Promise<FeedFiles 
     let whole = true;
     loading.set(feed, (async () => {
       const ix = (await loadHistoryIndex())?.feeds[feed];
-      if (!ix) return null;
+      // no index (none here, or it failed): ask again later; a 404 stays cached in data.ts, so that costs no request
+      if (!ix) { whole = false; return null; }
       const from = tDay(fromT).slice(0, 7);
       const months = ix.months.filter((m) => m >= from);
       const files = (await Promise.all(months.map((m) => loadHistory(feed, m)))).filter(Boolean);

@@ -129,6 +129,14 @@ export default async function doctors() {
   const routed = Object.values(drives).every((d) => d.routed);
   for (const [k, list] of Object.entries(sets))
     for (const [key, v] of Object.entries(routed ? drives[k].towns : straightTimes(places, list))) if (v[0]) towns[key][k] = { ...v[0], f: list[v[0].f].i };
+  // a site placed at its town's centre and counted in town is that place's nearest clinic, "in town" (0 km), when
+  // no clinic with its own point is there, so the count and the nearest clinic never disagree
+  const inTownApprox = (p, t) => {
+    if (sites.some((s) => s.k !== 'rx' && !s.approx && inTown(p, s))) return;
+    const j = sites.findIndex((s) => s.k !== 'rx' && s.approx && inTown(p, s));
+    if (j >= 0) t.c = { f: j, min: t === towns[p.key] && routed ? 0 : null, km: 0 };
+  };
+  for (const p of places) inTownApprox(p, towns[p.key]);
   const none = places.filter((p) => !towns[p.key].nc).map((p) => p.name);
   log(`  ${places.length - none.length} of ${places.length} places have a clinic in town${none.length ? `; none: ${none.join(', ')}` : ''}`);
   // Neither list has most private family practices, so a regional centre like Yorkton can show no clinic. INFERRED: a
@@ -143,7 +151,7 @@ export default async function doctors() {
     if (!tr) continue;
     const f = hosp.facilities[tr.f];
     // its minutes only under this file's own routed label
-    towns[p.key].h = { n: f.name, min: routed ? tr.min : null, km: tr.km, lon: f.lon, lat: f.lat };
+    towns[p.key].h = { n: f.name, min: routed ? tr.min : null, km: routed ? tr.km : round(distKm(p.lon, p.lat, f.lon, f.lat), 1), lon: f.lon, lat: f.lat };
     withHosp.push(p.name);
   }
   if (withHosp.length) log(`  no clinic mapped but a hospital in town (inferred doctors): ${withHosp.join(', ')}`);
@@ -153,6 +161,7 @@ export default async function doctors() {
   const small = Object.fromEntries(smallP.map((p) => [p.key, { nc: clinics.filter((s) => inTown(p, s)).length, np: pharmacies.filter((s) => inTown(p, s)).length }]));
   for (const [k, list] of Object.entries(sets))
     for (const [key, v] of Object.entries(straightTimes(smallP, list))) if (v[0]) small[key][k] = { ...v[0], f: list[v[0].f].i };
+  for (const p of smallP) inTownApprox(p, small[p.key]);
   for (const p of smallP) {
     if (small[p.key].nc || !hosp?.small) continue;
     const tr = (hosp.small[p.key] ?? []).find((t) => hosp.facilities[t.f]?.hospital && inTown(p, hosp.facilities[t.f]));

@@ -4,7 +4,7 @@ import GeoJSONVT from 'geojson-vt';
 import vtpbf from 'vt-pbf';
 import { arcgisAll, overpass } from '../lib/apis.mjs';
 import { OUT } from '../lib/config.mjs';
-import { cachedFile, log, readOut, writeOut, zipLines } from '../lib/io.mjs';
+import { cachedFile, log, readOut, writeAtomic, writeOut, zipLines } from '../lib/io.mjs';
 import { writePMTiles } from '../lib/pmtiles.mjs';
 
 // 3D cities with flood water (plans/wow/6-3d-cities-and-flood.md). Building footprints for the places the Water
@@ -244,7 +244,7 @@ export default async function buildings() {
   // checked before anything is written, so the archive and buildings.json are only ever replaced together
   if (pm.length > 40 * 1048576) throw new Error(`${FILE} is ${(pm.length / 1048576).toFixed(1)} MB, over the 40 MB budget`);
   await fs.mkdir(path.join(OUT, 'tiles'), { recursive: true });
-  await fs.writeFile(path.join(OUT, FILE), pm);
+  await writeAtomic(path.join(OUT, FILE), pm);
 
   const r6 = (v) => Math.round(v * 1e4) / 1e4;
   await writeOut('buildings', {

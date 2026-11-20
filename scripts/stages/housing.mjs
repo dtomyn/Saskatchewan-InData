@@ -12,12 +12,13 @@ export default async function housing() {
   const pick = (vals) => Object.fromEntries(Object.entries(vals).filter(([c]) => CHARS[c]).map(([c, v]) => [CHARS[c], v]));
   // The profile publishes some small places' owner or renter rate as 0.0 where the count of households at 30 %+ says
   // otherwise (a suppressed figure, not a zero): a 0 rate is dropped (left out, never 0) when the other tenure's
-  // households cannot make up the total, more than random rounding (counts to 5) explains.
+  // households cannot make up the total, more than random rounding (counts to 5) explains (never when the other rate is
+  // itself unknown: those households could make up the whole total).
   const SLACK = 10;
   const tenure = (o) => {
     if (o.hh30 == null || o.owners == null || o.renters == null) return;
     const own = o.own30 == null ? null : (o.owners * o.own30) / 100, rent = o.rent30 == null ? null : (o.renters * o.rent30) / 100;
-    const dropOwn = o.own30 === 0 && o.hh30 - (rent ?? 0) >= SLACK, dropRent = o.rent30 === 0 && o.hh30 - (own ?? 0) >= SLACK;
+    const dropOwn = o.own30 === 0 && rent != null && o.hh30 - rent >= SLACK, dropRent = o.rent30 === 0 && own != null && o.hh30 - own >= SLACK;
     if (dropOwn) delete o.own30;
     if (dropRent) delete o.rent30;
     return dropOwn || dropRent;

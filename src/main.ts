@@ -478,9 +478,12 @@ function restore(s: Snapshot) {
   state.timeLayer = s.timeLayer;
   setSpeed(s.speed);
   focus(s.focused);
-  if (s.mode === 'finder') openFinder();
-  else if (s.mode === 'town' && s.selected) openPlace(s.selected);
-  else if (s.mode === 'event' && s.event) openEvent(s.event);
+  const reopen = () => {
+    if (s.mode === 'finder') openFinder();
+    else if (s.mode === 'town' && s.selected) openPlace(s.selected);
+    else if (s.mode === 'event' && s.event) openEvent(s.event);
+  };
+  reopen();
   state.time = s.time;
   setPanelOpen(s.panelOpen);
   const camera = () => {
@@ -495,6 +498,9 @@ function restore(s: Snapshot) {
     replaySeason(rp.year, true, rp.id).then((ok) => {
       if (!ok || state.replay?.id !== rp.id) return;
       setPlaying(false);
+      // starting the replay put the layer panel up: the report, Finder or event the tour found comes back over it
+      // (first, so the day and camera found are what stay)
+      if (s.mode !== 'layer') { reopen(); setPanelOpen(s.panelOpen); }
       setTime(s.time);
       camera();
       if (s.playing) setPlaying(true);
@@ -549,10 +555,9 @@ function refreshLive(now: number) {
   lastLiveCheck = now;
   const sig = liveSig();
   if (sig === lastLiveSig) return;
-  const first = !lastLiveSig;
   lastLiveSig = sig;
   const p = $('panel');
-  if (first || state.mode !== 'layer' || !focusedLayer().now || !p.querySelector('.now-block')) return;
+  if (state.mode !== 'layer' || !focusedLayer().now || !p.querySelector('.now-block')) return;
   const open = new Set([...p.querySelectorAll<HTMLDetailsElement>('details[open] > summary')].map((x) => x.textContent));
   const top = p.scrollTop;
   fillLayerPanel();
@@ -833,8 +838,9 @@ function drawSpark() {
   }
   const max = Math.max(...pts.map((p) => Math.abs(p.y))) || 1;
   const diverging = pts.some((p) => p.y < 0);
-  const step = l.monthly ? 1 / 12 : 1;
-  const bw = Math.max(1, (w / ((b - a) / step)) - (l.monthly ? 0.3 : 1));
+  // a bar a month only when the spark is monthly (Drought); Hail steps by the month but its spark is yearly
+  const step = l.monthly && pts.some((p) => !Number.isInteger(p.x)) ? 1 / 12 : 1;
+  const bw = Math.max(1, (w / ((b - a) / step)) - (step < 1 ? 0.3 : 1));
   for (const p of pts) {
     const past = p.x <= state.time;
     g.fillStyle = p.color ?? l.color;
@@ -904,7 +910,8 @@ async function replaySeason(year?: number | null, force = false, id = 'fires') {
   const y = year ?? ys.at(-1);
   if (y == null || !ys.includes(y)) return false;
   // starts run one after another, so the layer's season is always the newest request's
-  const run = replayStarts.then(() => (req === replayReq ? l.replay!.start(y, force) : null));
+  // a start superseded while its season loads never enters it, so a season already running keeps the layer
+  const run = replayStarts.then(() => (req === replayReq ? l.replay!.start(y, force, () => req === replayReq) : null));
   replayStarts = run.catch(() => null);
   const r = await run;
   if (req !== replayReq) {
@@ -1123,7 +1130,7 @@ function bindControls() {
 function showSources() {
   setPlaying(false);
   setMenu(false);
-  openSources(data, { onShow: focus });
+  openSources(data, { onShow: focus, canShow: (id) => !!byId[id]?.available });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1152,6 +1159,8 @@ function onScenario(kind: ScenarioKind | null) {
 
 async function boot() {
   data = await loadAll();
+  // what the live readings say at load, so the first check already sees an alert that has expired since
+  lastLiveSig = liveSig();
   layers = buildLayers(data);
   byId = Object.fromEntries(layers.map((l) => [l.id, l]));
   events = [...layers.flatMap((l) => (l.available ? l.events() : [])), ...CURATED_EVENTS].sort((a, b) => a.t - b.t);
@@ -1175,7 +1184,8 @@ async function boot() {
     // a link out of the Town Finder (Workday Reach) leaves the Finder for the layer's own story
     if (state.mode === 'finder') { state.mode = 'layer'; state.ranked = null; $('finder-btn').classList.remove('active'); }
     // "Hotspots now" during a season replay of the same layer: back to the layer's own timeline, at Now
-    if (state.replay) { setPlaying(false); endReplay(); lastSparkYear = -1; }
+    // (a replay still loading is forgotten too, so it cannot take the map over from the layer's Now)
+    if (state.replay) { setPlaying(false); endReplay(); lastSparkYear = -1; } else cancelReplayStart();
     focus(id); if (!l.static) setTime(l.range[1]);
   });
   // a layer's link into the Town Finder (Workday Reach's "Change what matters")

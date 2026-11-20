@@ -34,7 +34,8 @@ export async function driveTimes(places, targets, tag, { pre = 6, keep = 3 } = {
         cand = near.map((c, i) => ({ f: c.j, min: tb.durations[0][i + 1] == null ? null : tb.durations[0][i + 1] / 60, km: tb.distances[0][i + 1] == null ? null : tb.distances[0][i + 1] / 1000 }))
           .filter((c) => c.min != null)
           .sort((a, b) => a.min - b.min);
-        if (!cand.length) cand = near.map((c) => ({ f: c.j, min: null, km: round(c.d, 1) }));
+        // no candidate reachable by road: the whole run falls back, so minutes are never ranked against kilometres
+        if (!cand.length) throw new Error(`no route from ${p.name ?? p.key}`);
       } catch (e) {
         log(`  OSRM unavailable (${e.message}); straight-line distances from here on`);
         routed = false;

@@ -224,7 +224,8 @@ export function campingLayer(data: Data): AtlasLayer {
     unavailable: 'The park boundary, Parks Canada or OpenStreetMap services could not be reached when this copy of the data was built. Run <code>npm run data camping</code>, then reload.',
     build({ selected, hovered, focusedId, clock }) {
       const focused = focusedId === 'camping';
-      if (!focused) igniteTicket++;
+      // losing focus cancels a pending ignite and releases its hold, so the reach shows whole when Camping is back
+      if (!focused) { igniteTicket++; if (waveStart > performance.now()) waveStart = -1e9; }
       const live = focused && !!reachKey;
       const w = live ? waveMin(clock) : 0;
       // minutes from the wave's origin to each campground, for the current reach

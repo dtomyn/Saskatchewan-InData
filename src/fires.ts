@@ -163,10 +163,10 @@ export function firesLayer(data: Data): AtlasLayer {
   let ticket = 0;
   const replay: NonNullable<AtlasLayer['replay']> = {
     seasons: (force) => fireSeasonYears(force),
-    async start(year, force) {
+    async start(year, force, current) {
       const mine = ++ticket;
       const s = await fireSeason(year, force);
-      if (!s || mine !== ticket) return null;
+      if (!s || mine !== ticket || (current && !current())) return null;
       season = s;
       spread = spreadEdges(s.points);
       seasonBurns = perimPolys.filter((p) => p.b[0] === year);
@@ -520,7 +520,7 @@ export function firesLayer(data: Data): AtlasLayer {
         return {
           t, layer: 'fires', kind: 'Satellite hotspot (recorded)', lon, lat, zoom: 9,
           title: `Heat seen from a satellite ${d < 5 ? 'at' : 'near'} ${townName(town)}`,
-          body: `A hotspot kept by the atlas’s daily record of CWFIS’s feed${d >= 5 ? `, about ${Math.round(d)} km from ${townName(town)}` : ''}. It is not a confirmed fire, and hotspots never count in the wildfire statistics.`,
+          body: `A hotspot kept by the atlas’s daily record of CWFIS’s feed${town && d >= 5 ? `, about ${Math.round(d)} km from ${townName(town)}` : ''}. It is not a confirmed fire, and hotspots never count in the wildfire statistics.`,
           stats: [{ v: dayText(tDay(t)), l: 'seen (Sask. day)' }, ...(frp != null ? [{ v: `${frp} MW`, l: 'fire radiative power' }] : [])],
           sources: [{ label: 'CWFIS satellite hotspots', url: 'https://cwfis.cfs.nrcan.gc.ca/maps/fm3' }],
         };

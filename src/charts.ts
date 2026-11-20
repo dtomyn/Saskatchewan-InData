@@ -71,7 +71,7 @@ export function barChart(
   const f = frame(el, opts.height ?? 140);
   const [x0, x1] = opts.xDomain;
   const step = opts.step ?? 1;
-  const bucket = (v: number) => Math.round(v / step);
+  const bucket = (v: number) => Math.round((v - x0) / step); // counted from the chart's x origin, so half-year data keeps its own bar
   const x = d3.scaleLinear().domain([x0, x1 + step]).range([0, f.w]);
   const ext = d3.extent(opts.data, (d) => d.y) as [number, number];
   const y = d3.scaleLinear().domain(opts.diverging ? [Math.min(0, ext[0]), Math.max(0, ext[1])] : [0, ext[1] || 1]).nice().range([f.h, 0]);
@@ -87,7 +87,7 @@ export function barChart(
   const hover = g.append('rect').attr('width', bw + 1).attr('height', f.h).attr('fill', 'rgba(255,255,255,.08)').attr('opacity', 0).style('pointer-events', 'none');
   g.append('rect').attr('width', f.w).attr('height', f.h).attr('fill', 'transparent')
     .on('mousemove', (ev: MouseEvent) => {
-      const b = Math.floor(x.invert(d3.pointer(ev)[0]) / step + 1e-9);
+      const b = Math.floor((x.invert(d3.pointer(ev)[0]) - x0) / step + 1e-9);
       const d = byX.get(b);
       if (!d) { hideTip(); hover.attr('opacity', 0); return; }
       hover.attr('x', x(d.x)).attr('opacity', 1);
@@ -101,7 +101,7 @@ export type LineSeries = { key: string; label: string; color: string; values: { 
 
 export function lineChart(
   el: HTMLElement,
-  opts: { series: LineSeries[]; xDomain: [number, number]; height?: number; yFormat?: (v: number) => string; yZero?: boolean; valueFormat?: (v: number) => string; tooltipLimit?: number },
+  opts: { series: LineSeries[]; xDomain: [number, number]; height?: number; yFormat?: (v: number) => string; yZero?: boolean; valueFormat?: (v: number) => string; tooltipLimit?: number; /** the tooltip heading for an x (default: the year, or year and month for a month-start x) */ xLabel?: (x: number) => string },
 ): ChartHandle {
   const f = frame(el, opts.height ?? 150);
   const x = d3.scaleLinear().domain(opts.xDomain).range([0, f.w]);
@@ -144,7 +144,7 @@ export function lineChart(
       const shown = rows.filter((r) => !r.s.muted).sort((a, b) => b.v.y - a.v.y).slice(0, opts.tooltipLimit ?? 6);
       dots.selectAll('circle').data(shown).join('circle').attr('r', 3.5).attr('cx', (r) => x(r.v.x)).attr('cy', (r) => y(r.v.y))
         .attr('fill', (r) => r.s.color).attr('stroke', '#0b1220').attr('stroke-width', 2);
-      const label = Number.isInteger(rows[0].v.x) ? rows[0].v.x : `${Math.floor(rows[0].v.x)} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.round((rows[0].v.x % 1) * 12) % 12]}`;
+      const label = opts.xLabel ? esc(opts.xLabel(rows[0].v.x)) : Number.isInteger(rows[0].v.x) ? rows[0].v.x : `${Math.floor(rows[0].v.x)} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Math.round((rows[0].v.x % 1) * 12) % 12]}`;
       showTip(ev, `<b>${label}</b><br>${shown.map((r) => `<span class="sw" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${r.s.color};margin-right:6px"></span>${esc(r.s.label)} <span class="tv">${vf(r.v.y)}</span>`).join('<br>')}`);
     })
     .on('mouseleave', () => { hideTip(); cross.attr('opacity', 0); dots.selectAll('*').remove(); });

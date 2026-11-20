@@ -97,8 +97,9 @@ export interface AtlasLayer {
   replay?: {
     /** the seasons on record; `force` reads the record for the film handle too */
     seasons: (force?: boolean) => Promise<number[]>;
-    /** loads a season and enters it; null when there is no record of it */
-    start: (year: number, force?: boolean) => Promise<{ range: [number, number]; ends: [string, string]; camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } } | null>;
+    /** loads a season and enters it; null when there is no record of it, or when `current` says by the time it has
+     *  loaded that the request was superseded (the season then is not entered, so the one running stays) */
+    start: (year: number, force?: boolean, current?: () => boolean) => Promise<{ range: [number, number]; ends: [string, string]; camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } } | null>;
     stop: () => void;
     build: (ctx: Ctx) => Layer[];
     days: () => { x: number; y: number | null }[];
@@ -140,7 +141,7 @@ export const filterExt = [new DataFilterExtension({ filterSize: 1 })];
 export const glowWindow = (speed: number, k = 1) => Math.max(0.25, speed * 0.9 * k);
 
 /** A fractional year (2021.49) as a date, "2021-06-28": the pipeline's `fracYear` calendar (each year its own length). */
-export const isoDate = (t: number) => { const y = Math.floor(t); return new Date(Date.UTC(y, 0, 1) + (t - y) * (Date.UTC(y + 1, 0, 1) - Date.UTC(y, 0, 1))).toISOString().slice(0, 10); };
+export const isoDate = (t: number) => { const y = Math.floor(t); return new Date(Math.round(Date.UTC(y, 0, 1) + (t - y) * (Date.UTC(y + 1, 0, 1) - Date.UTC(y, 0, 1)))).toISOString().slice(0, 10); };
 
 /** A detail chart for a map feature's panel: a heading and a bar chart, drawn once the panel has its width. */
 export function detailBars(title: string, data: { x: number; y: number; color?: string }[], color: string, yFormat: (v: number) => string, tip: (d: { x: number; y: number }) => string) {

@@ -3,7 +3,7 @@
 import * as d3 from 'd3';
 import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
-import { JusticeSite, Trip, fmt, lowerBound } from './data';
+import { JusticeSite, Trip, fmt, km, lowerBound } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
 import { ADDITIVE, AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
@@ -59,8 +59,15 @@ export function justiceLayer(data: Data): AtlasLayer {
     const t = trip ?? beyond;
     return t ? { ...t, site: sites[t.f], ...(beyond ? { beyond: true } : {}) } : null;
   };
+  // when a kind falls back to kilometres (some place had no routed trip), a routed trip's road km is set aside for the
+  // straight line from the town centre, so every place is compared on the same straight-line distance the panel names
+  const straight = <T extends Trip & { site: JusticeSite }>(key: string, k: 'court' | 'police', n: T | null): T | null => {
+    if (!n || ROUTED[k] || n.min == null) return n;
+    const m = data.munis.find((x) => x.key === key);
+    return m ? { ...n, km: km(m.lon, m.lat, n.site.lon, n.site.lat) } : n;
+  };
   const nearestNow = (key: string, k: 'court' | 'police'): (Trip & { site: JusticeSite; inferred?: boolean; beyond?: boolean }) | null =>
-    k === 'court' && scenarioOn('court') ? scCourt(key) : nearestJustice(data, key, k);
+    straight(key, k, k === 'court' && scenarioOn('court') ? scCourt(key) : nearestJustice(data, key, k));
   const tvOf = (t: Trip, k: 'court' | 'police') => (ROUTED[k] ? t.min ?? t.km : t.km);
   const val = (key: string, k = target) => { const n = nearestNow(key, k); return n ? tvOf(n, k) : null; };
   // scenario.ts gives the added trip in its own unit (minutes only when both trips were routed); when every kept site is

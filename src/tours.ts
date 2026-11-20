@@ -61,11 +61,15 @@ const range = (a: TourApi, id: string) => a.layers.find((l) => l.id === id)!.ran
 /** Picks a layer on an otherwise empty map, at a time of its record. */
 const only = (a: TourApi, id: string, t?: number) => { a.reset(); a.focus(id); if (t != null) a.setTime(t); };
 /** Clicks a panel control once the panel has been drawn (it fills a moment after a layer is focused); gives up after ~1.5 s. */
+let clickRetry = 0;
 const clickWhenShown = (sel: string, tries = 15) => {
+  clearTimeout(clickRetry);
   const b = document.querySelector<HTMLElement>(sel);
   if (b) { if (!b.classList.contains('on')) b.click(); return; }
-  if (tries > 0) setTimeout(() => clickWhenShown(sel, tries - 1), 100);
+  if (tries > 0) clickRetry = window.setTimeout(() => clickWhenShown(sel, tries - 1), 100);
 };
+/** A step change or Exit forgets a click still waiting for its panel, so it never lands on the next step's or the visitor's. */
+const cancelClick = () => clearTimeout(clickRetry);
 /** The last whole year of a layer's record (before its Now stop, if it has one). */
 const lastYear = (a: TourApi, id: string) => { const l = a.layers.find((x) => x.id === id)!; return Math.floor(l.now?.archiveEnd ?? l.range[1]); };
 const n = (v: number) => v.toLocaleString('en-CA');
@@ -342,6 +346,7 @@ export function initTours(a: TourApi): Tours {
     if (!run) return;
     const r = run;
     clearInterval(r.timer);
+    cancelClick();
     r.i = i; r.paused = false; r.done = false;
     const gen = ++r.gen;
     const s = r.tour.steps[i];
@@ -446,6 +451,7 @@ export function initTours(a: TourApi): Tours {
     if (!run) return;
     const r = run;
     clearInterval(r.timer);
+    cancelClick();
     run = null;
     a.setPlaying(false);
     a.map.stop();

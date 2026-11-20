@@ -55,7 +55,9 @@ export type PopSeries = { pop: Record<string, number> };
 /** A health facility. `hospital`: a hospital proper, not a health centre or clinic; `type` is the source's own label. */
 export type Facility = { name: string; city: string; lon: number; lat: number; hospital: boolean; ed: null; hours: null; type?: string; approx?: 1 };
 /** One place -> facility trip: facility index, drive minutes (null if straight-line only), km, road line. */
-export type Trip = { f: number; min: number | null; km: number; ferry?: boolean; line?: [number, number][] };
+/** `approx`: the target stands at its town's centre (a post-secondary campus whose listed point is far from its town), so the
+ *  trip is to that town centre, not the building. `km` 0 is in town. */
+export type Trip = { f: number; min: number | null; km: number; ferry?: boolean; line?: [number, number][]; approx?: 1 };
 
 export type CrimeSeries = { csi?: Record<string, number>; vcsi?: Record<string, number>; nvcsi?: Record<string, number>; clear?: Record<string, number> };
 export type Crime = {
@@ -741,7 +743,8 @@ const historyMemo = new Map<string, Promise<unknown>>();
 async function loadHistoryFile<T>(name: string): Promise<T | null> {
   const res = await fetch(`${base}data/${name}.json`);
   if (!res.ok) { if (res.status === 404 || res.status === 410) return null; throw new Error(`${name}: HTTP ${res.status}`); }
-  try { return (await res.json()) as T; } catch { return null; }
+  // not JSON (a SyntaxError) is "none"; a body that fails to arrive rejects like a failed request
+  try { return (await res.json()) as T; } catch (e) { if (e instanceof SyntaxError) return null; throw e; }
 }
 function memoHistory<T>(k: string): Promise<T | null> {
   if (!historyMemo.has(k)) historyMemo.set(k, loadHistoryFile<T>(`history/${k}`).catch(() => { historyMemo.delete(k); return null; }));

@@ -27,7 +27,7 @@ export function closeSources() {
   if (location.hash === '#sources') history.replaceState(null, '', location.pathname + location.search);
 }
 
-export function openSources(data: Data, opts: { onShow: (layerId: string) => void }) {
+export function openSources(data: Data, opts: { onShow: (layerId: string) => void; /** whether a layer can be drawn (its own data loaded) */ canShow: (layerId: string) => boolean }) {
   // the film never loads live readings, so their wedges stay off the round too
   const SOURCES = data.now.skipped ? ALL_SOURCES.filter((s) => s.group !== 'Right now') : ALL_SOURCES;
   if (root) return;
@@ -85,7 +85,7 @@ export function openSources(data: Data, opts: { onShow: (layerId: string) => voi
           <p>${s.gives}</p>
           ${reads[i] ? `<div class="src-read"><b data-count="${reads[i]!.n}">0</b> records · ${esc(reads[i]!.what)}${span(rings[i]) ? ` · rings ${span(rings[i])!.join('–')}` : ''}</div>` : ''}
           <code>${esc(s.endpoint)}</code>
-          <footer><span class="src-lic">${esc(s.licence)}</span>${avail[i] ? `<button class="src-go" data-id="${s.id}">See it on the map →</button>` : ''}</footer>
+          <footer><span class="src-lic">${esc(s.licence)}</span>${avail[i] && opts.canShow(s.id) ? `<button class="src-go" data-id="${s.id}">See it on the map →</button>` : ''}</footer>
         </article>`).join('')}`).join('')}
       <h3>The bark: what everything sits on</h3>
       ${BARK.map((b, i) => `

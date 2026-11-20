@@ -8,6 +8,7 @@ import { BitmapLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
 import { Data, MONTHS, fmt, lowerBound } from './data';
 import { lineChart } from './charts';
+import { msT } from './history';
 import { esc } from './html';
 import { AtlasLayer, NO_DEPTH, TimedEvent, deferChart, detailBars, heroStats, kicker, mk, rgb, sourceLine } from './layer-kit';
 
@@ -29,8 +30,9 @@ const WINDOW = 10;
 const level = (ch: string): number | null => (ch === 'n' ? null : ch >= 'b' && ch <= 'f' ? ch.charCodeAt(0) - 98 : -1);
 const catText = (v: number | null) => (v == null ? 'not analyzed' : v < 0 ? 'no drought' : `${DROUGHT_CATS[v].short} ${DROUGHT_CATS[v].label.toLowerCase()}`);
 const catColor = (v: number | null) => (v == null ? NA_COLOR : v < 0 ? NONE_COLOR : DROUGHT_CATS[v].c);
-/** "2021-07" → 2021.583 (the end of July on the timeline: each map is the monitor's for the end of its month) */
-const ymT = (ym: string) => +ym.slice(0, 4) + +ym.slice(5, 7) / 12;
+/** "2021-07" → the end of July on the timeline (the start of 1 August, on the timeline's calendar: each year its own
+ *  length): each map is the monitor's for the end of its month */
+const ymT = (ym: string) => msT(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 1));
 const ymText = (ym: string) => `${MONTHS[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)}`;
 
 /** A place's drought record: months at D2 or worse in the last ten years of maps, and the latest month's category. */
@@ -218,7 +220,8 @@ export function droughtLayer(data: Data): AtlasLayer {
       el.insertAdjacentHTML('beforeend', `<h3>Share of the province in drought</h3>`);
       const set = deferChart(el.appendChild(mk('div')), (c) => {
         const series = [1, 2, 3].map((d) => ({ key: `d${d}`, label: `${DROUGHT_CATS[d].short} or worse`, color: DROUGHT_CATS[d].c, width: d === 2 ? 2 : 1.5, values: months.map((_, i) => ({ x: ts[i], y: share[i][d] })) }));
-        return lineChart(c, { height: 130, xDomain: [a0, a1], yFormat: (v) => `${Math.round(v)}%`, valueFormat: (v) => `${v.toFixed(1)}%`, series });
+        const ymAt = new Map(ts.map((t, i) => [t, months[i]]));
+        return lineChart(c, { height: 130, xDomain: [a0, a1], yFormat: (v) => `${Math.round(v)}%`, valueFormat: (v) => `${v.toFixed(1)}%`, series, xLabel: (x) => `end of ${ymText(ymAt.get(x) ?? '')}` });
       });
       const rank = fullYears.map((y) => ({ y, v: yMean(y) })).sort((a, b) => b.v - a.v).slice(0, 5);
       el.insertAdjacentHTML('beforeend', `

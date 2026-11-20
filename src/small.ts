@@ -78,7 +78,10 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
   const row = (label: string, v: string, sub: string) => `<div class="metric"><div class="mk">${esc(label)}</div><div class="mv">${v}</div><div class="ms">${sub}</div></div>`;
   const absent = (label: string, reason: string) => row(label, why('—'), reason);
   const trip = (label: string, tr: { name: string; city?: string | null; km: number; inferred?: boolean } | null | undefined, none: string) =>
-    tr ? row(label, `~${kmText(tr.km)}`, `${esc(tr.name)}${tr.city ? `, ${esc(tr.city)}` : ''} · ${tr.inferred ? 'inferred · ' : ''}${STRAIGHT}`) : absent(label, none);
+    !tr ? absent(label, none)
+      // 0 km: in town (a clinic or centre inside its limits, or one placed at its centre)
+      : tr.km === 0 ? row(label, 'In town', `${esc(tr.name)}${tr.city ? `, ${esc(tr.city)}` : ''}${tr.inferred ? ' · inferred' : ''}`)
+      : row(label, `~${kmText(tr.km)}`, `${esc(tr.name)}${tr.city ? `, ${esc(tr.city)}` : ''} · ${tr.inferred ? 'inferred · ' : ''}${STRAIGHT}`);
   const n = (v: number, one: string, many: string) => `${v} ${v === 1 ? one : many}`;
   const big = data.munis.length;
   const nearest = [...data.munis].map((x) => ({ x, d: Math.hypot((x.lon - m.lon) * Math.cos((m.lat * Math.PI) / 180), x.lat - m.lat) * 111 })).sort((a, b) => a.d - b.d).slice(0, 3);

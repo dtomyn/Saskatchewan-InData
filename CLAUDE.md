@@ -11,7 +11,7 @@ npm run dev               # http://localhost:5173 (.claude/launch.json: "living-
 npm run build             # tsc --noEmit + vite build: the only automated check (no tests, no linter)
 npm run data [stage…]     # rebuild public/data/*.json from the original sources
 npm run data now          # the eight live stages only (public/data/now/, not committed)
-npm run data now history  # …and roll them into the daily record (public/data/history/, the data-history branch)
+npm run data now water history  # …and roll them into the daily record (public/data/history/, the data-history branch; history counts only freshly refreshed fires, alerts and water)
 .venv/Scripts/python.exe video/render.py --storyboard   # the explainer film's storyboard (README: The explainer film)
 .venv/Scripts/python.exe video/render.py --preview --only finder   # one scene at 960x540, no sound
 .venv/Scripts/python.exe video/render.py --film sky --storyboard   # the narrative film, Come for the sky (video/storyboard_sky.py)

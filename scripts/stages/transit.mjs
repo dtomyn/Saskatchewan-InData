@@ -140,7 +140,8 @@ export default async function transit() {
       out.sort((a, b) => (parseInt(a.s) || 999) - (parseInt(b.s) || 999) || String(a.s).localeCompare(String(b.s)));
       const nStops = stops.filter((s) => !s.location_type || s.location_type === '0').length;
       const endDate = end ? `${end.slice(0, 4)}-${end.slice(4, 6)}-${end.slice(6, 8)}` : null;
-      systems.push({ key: g.key, n: g.n, src: 'gtfs', url: g.url, licence: g.licence, licUrl: g.licUrl, stops: nStops, end: endDate, routes: out });
+      // a feed that gave no routes is left out, so OpenStreetMap can supply the town's buses
+      if (out.length) systems.push({ key: g.key, n: g.n, src: 'gtfs', url: g.url, licence: g.licence, licUrl: g.licUrl, stops: nStops, end: endDate, routes: out });
       log(`  ${g.n} (GTFS): ${out.length} routes, ${nStops} stops, ${byHeadway ? 'runs by headway' : !wed ? 'no Wednesday in its dates' : `${out.reduce((s, r) => s + r.trips, 0)} trips on a Wednesday`}; timetable to ${endDate}`);
     } catch (e) { log(`  ${g.n}: GTFS failed (${e.message}); left out`); }
   }
