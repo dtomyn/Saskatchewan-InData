@@ -5,7 +5,7 @@
 //
 //   node scripts/fetch-data.mjs                 # all stages
 //   node scripts/fetch-data.mjs fires crime     # selected stages
-//   node scripts/fetch-data.mjs now             # the four live stages (now-rivers, now-fires, now-air, now-alerts)
+//   node scripts/fetch-data.mjs now             # the five live stages (now-rivers, now-fires, now-air, now-alerts, now-outlooks)
 //   node scripts/fetch-data.mjs now history     # …and roll them into the daily record (public/data/history/)
 //
 // Raw downloads are cached in .cache/ so re-runs are quick. Delete it to force a refresh.

@@ -62,7 +62,7 @@ npm run data                    # every stage
 npm run data crime justice      # selected stages
 ```
 
-Stages, in run order: `province places subdivisions tracts fires tornadoes hail rivers floods climate smoke drought normals projections population crime housing jobs needs treaties justice hospitals camping schools internet community newcomer doctors childcare industry water radon light transit commute now-rivers now-fires now-air now-alerts now-outlooks`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice`, `hospitals`, `camping`, `schools`, `newcomer`, `doctors` and `childcare` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
+Stages, in run order: `province places subdivisions tracts fires tornadoes hail rivers floods climate smoke drought crops normals projections population crime housing tax jobs needs treaties justice hospitals camping schools internet community newcomer doctors childcare industry power water radon light transit commute now-rivers now-fires now-air now-alerts now-outlooks`. Raw downloads cache in `.cache/`; a failing stage keeps its old JSON and records the error in `public/data/manifest.json`, which the Data & sources view shows. `justice`, `hospitals`, `camping`, `schools`, `newcomer`, `doctors` and `childcare` call the public OSRM demo router once a second, so a cold run takes about 10 minutes.
 
 ### Right now: the live readings
 
