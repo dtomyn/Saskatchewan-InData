@@ -1,6 +1,6 @@
 # 4. Physical systems: the land and what is built on it
 
-> **Status (2026-11-13):** 4a, 4b and 4c are built. 4d is skipped (traffic counts are not open data), 4e and 4f are held back. What was found and decided is under **Outcome** at the end.
+> **Status (2026-11-13):** 4a, 4b and 4c are built. 4d is skipped (traffic counts are not open data), 4e and 4f were held back here and are built as [`wow/6`](../wow/6-3d-cities-and-flood.md) (2026-11-20). What was found and decided is under **Outcome** at the end.
 
 **Effort:** M each for fire perimeters and crops, M for the power grid, L for buildings. **Depends on:** nothing, but a decision on tiles (below) comes first for anything large.
 
@@ -75,7 +75,7 @@ Each new layer follows the usual list: `MAP-ATLAS-BLUEPRINT.md` Part 1.3, `READM
 - **4b, built.** The inventory is one image service per year (`annual_crop_inventory/2009` … `/2025`), U8 raw codes, and answers `exportImage` like the drought service. It covers the farm belt only, to about 55–56° N. A nearest-neighbour export at 2 km would give one sample per cell, not its most common class, so the stage samples at 500 m (three strips a year, ~6 MB cached) and folds 6 × 6 into each 3 km Web Mercator cell (~1.8 km on the ground). 17 years are ~1.3 MB. Eleven classes (bare or burned added to the ten). Its own intent: [See how the land is used](../../intents/see-how-the-land-is-used.md).
 - **4c, built** as a chip in Hidden neighbours: 12,700 km of line (by voltage class), 313 substations, 38 generating stations, ~100 KB. The SaskPower outage feed exists (`saskpower.com/api/sitecore/Content/GetOutageJsonFile`, by service region, planned and unplanned) but is undocumented and states no licence, so it is not a live stage.
 - **4d, skipped.** GeoHub lists the Highway Traffic Volume Map only as a PDF; with no counts as data, a second drawing of the roads adds nothing.
-- **4e and 4f, held back.** Buildings need the tiles decision and are mostly visual; nothing else built here needed tiles. 3D terrain is optional and unverified with deck.gl's layers on terrain.
+- **4e and 4f, held back, then built in [`wow/6`](../wow/6-3d-cities-and-flood.md).** Tiles: PMTiles, written by a small writer in the stage (no tippecanoe), committed under `public/data/tiles/`. Terrain does not carry deck.gl's layers, so it is raised only in close-ups.
 - `public/data/` (committed) is ~8.2 MB with these, under 10 MB.
 - The explainer film's wildfire scene now shows outlines; its storyboard needed no change (same names and selectors), but the film has not been re-rendered.
 

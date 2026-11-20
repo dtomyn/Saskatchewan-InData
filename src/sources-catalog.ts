@@ -187,6 +187,14 @@ export const ALL_SOURCES: Source[] = [
     rings: () => ({}),
   },
   {
+    id: 'rivers', key: 'buildings', name: 'Buildings', color: '#8fb3d9', group: 'Hazards',
+    owner: 'Microsoft · OpenStreetMap contributors', title: 'Canadian Building Footprints (machine-drawn from Bing imagery), with heights from OpenStreetMap where tagged', url: 'https://github.com/microsoft/CanadianBuildingFootprints',
+    endpoint: 'minedbuildings.z5.web.core.windows.net · canadian-buildings-v2/Saskatchewan.zip; Overpass (building height, building:levels)', licence: 'ODbL',
+    gives: 'The buildings that rise past zoom 12 in Regina, Saskatoon and every community with a flood map, served as one PMTiles file; River floods tints the ones touching the mapped 1:500-year extent. Most have no height and stand one nominal storey.',
+    read: (d) => d.buildings && { n: sum(d.buildings.areas.map((a) => a.n)), what: `${fmt.int(sum(d.buildings.areas.map((a) => a.n)))} footprints in ${d.buildings.areas.length} places, ${fmt.int(sum(d.buildings.areas.map((a) => a.h)))} with a height` },
+    rings: () => ({}),
+  },
+  {
     id: 'climate', key: 'climate', name: 'Climate', color: '#f25f5c', group: 'Climate',
     owner: 'Environment and Climate Change Canada', title: 'Adjusted and Homogenized Canadian Climate Data (AHCCD)', url: 'https://api.weather.gc.ca/collections/ahccd-annual',
     endpoint: 'api.weather.gc.ca/collections/ahccd-annual', licence: OGL_CA,
@@ -467,12 +475,13 @@ export const BARK: BarkSource[] = [
   { name: 'Census tracts', key: 'tracts', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census tracts, with Census Profile 2021 by census tract', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'The neighbourhood map at the top of the Regina and Saskatoon Town Reports: home value, income, renters, shelter costs, immigrants and Indigenous identity by tract.', read: (d) => (d.tracts ? `${d.tracts.tracts.filter((t) => !t.out).length} tracts inside the two cities` : 'not built') },
   { name: 'Roads', key: 'hospitals', owner: 'OpenStreetMap contributors · OSRM', title: 'OSRM demo router on OpenStreetMap roads', url: 'https://www.openstreetmap.org/copyright', licence: 'ODbL', gives: 'The road routes and free-flow drive times to the nearest hospital, courthouse, police station, campground and school.' },
   { name: 'Basemap', owner: 'CARTO · OpenStreetMap contributors', title: 'Dark Matter vector basemap', url: 'https://carto.com/attributions', licence: 'ODbL / CARTO terms', gives: 'The dark map, place names and roads under every layer.' },
-  { name: 'Terrain', owner: 'Mapzen · AWS Open Data', title: 'Terrain Tiles (terrarium)', url: 'https://registry.opendata.aws/terrain-tiles/', licence: 'Open, with attribution', gives: 'The shaded relief: the Cypress Hills, the Missouri Coteau, the river valleys and the Shield.' },
+  { name: 'Terrain', owner: 'Mapzen · AWS Open Data', title: 'Terrain Tiles (terrarium)', url: 'https://registry.opendata.aws/terrain-tiles/', licence: 'Open, with attribution', gives: 'The shaded relief: the Cypress Hills, the Missouri Coteau, the river valleys and the Shield; and the 3D terrain button, raised in close-ups past zoom 12.' },
 ];
 
 export const DERIVED = [
   ['Provincial warming', 'the climate anomaly is the average of every station’s difference from its own 1961–90 baseline.'],
   ['Climate twins', 'the Climate layer’s arcs and the Town Report’s twin row are worked out here, with nothing new downloaded: a place’s observed climate normals (borrowed from its nearest station with both numbers) plus the models’ projected change since the normals’ period, matched to the Saskatchewan station whose normals today are nearest on annual mean temperature and total precipitation, each counted by its spread across the stations. The projections are changes from 1971–2000, so the part of the change already made by the normals’ period is estimated on a straight line to the 2021–2050 median. A nearest station too far off is no twin, and a place projected warmer than every station reads “warmer than anywhere in Saskatchewan today”. Two numbers are not a climate, let alone a town: it is a model range, never a forecast.'],
+  ['Buildings in the flood extent', 'River floods’ count of buildings touching the mapped 1:500-year extent is worked out here: a machine-drawn footprint counts when any part of it meets one of the Water Security Agency’s outlines (the floodway first, then the rest of the extent, then land only behind dikes). It is not a count of buildings that will flood: floor heights, basements and defences are not in the data, and a community with no flood map is unmapped, not safe. Heights come from OpenStreetMap where tagged (a storey count taken as 3 m a storey); every other building is drawn one nominal storey high.'],
   ['Fire scars', 'are circles with the same area as each fire’s reported size, centred where it started; they are not the fire’s real shape.'],
   ['Season replay edges', 'the dashed edges in Wildfires’ season replay are worked out here from the daily record’s satellite hotspots: each hotspot is dropped on a grid of about 2 km, a cell keeps the day it first lit, and an edge is drawn around patches of six cells or more. They show where heat has been seen so far, not a mapped perimeter and not a burned area.'],
   ['Crime by place', 'uses each place’s own police service; northern villages with no municipal series use their rural RCMP detachment, which covers a wider area, and the report says so.'],

@@ -7,6 +7,7 @@ import { riversHistory, dayT, tDay, dayText } from './history';
 import { drawable, ageTag, alertList, alertsInEffect, nowBlock, NOW_T, ms, freshness, alertOutlines, tickAges, isNow, alertEvent, ago, alertTooltip } from './now';
 import { esc, safeUrl } from './html';
 import { barChart, rampCSS } from './charts';
+import { buildingsSection, wireBuildingsList } from './buildings';
 
 export function riversLayer(data: Data): AtlasLayer {
   const color = '#4cc9f0';
@@ -22,6 +23,17 @@ export function riversLayer(data: Data): AtlasLayer {
   };
   const floodPolys = (FL?.zones ?? []).flatMap((z) => z.polys.map((polygon) => ({ z, polygon })))
     .sort((a, b) => ['500', 'protected', 'fringe', 'floodway'].indexOf(a.z.kind) - ['500', 'protected', 'fringe', 'floodway'].indexOf(b.z.kind));
+  /** the middle of a community's mapped extents (River floods' buildings list flies there) */
+  const floodCentre = (place: string): [number, number] | null => {
+    const pts = (FL?.zones ?? []).filter((z) => z.place.startsWith(place)).flatMap((z) => z.polys.flatMap((p) => p[0]));
+    return pts.length ? [(d3.min(pts, (p) => p[0])! + d3.max(pts, (p) => p[0])!) / 2, (d3.min(pts, (p) => p[1])! + d3.max(pts, (p) => p[1])!) / 2] : null;
+  };
+  // past the buildings' first zoom the tiles carry the extents at full detail (the water sheet): these simplified
+  // ones stay only to be picked
+  const sheetZoom = data.buildings?.minzoom ?? Infinity;
+  // a gauge column (3.8 km wide, up to 27 km tall) swallows the camera in a town close-up: from a zoom before the
+  // buildings', only its dot is drawn
+  const colsZoom = sheetZoom - 1;
   const floodPlaces = [...new Set((FL?.zones ?? []).map((z) => z.place))].sort();
   const ratioColor = d3.scaleLinear<string>().domain([0.4, 1, 1.5, 2.5]).range(['#123a5c', '#1f78b4', '#4cc9f0', '#f1fbff']).clamp(true);
   const years = new Set<number>();
@@ -60,10 +72,11 @@ export function riversLayer(data: Data): AtlasLayer {
     first: () => { const d = rDays()[0]; return d ? dayT(d) : null; },
     covers: (t) => t >= RFROM && !!riversHistory()?.days.has(tDay(t)),
     spark: () => (rSpark ??= riversHistory() ? rDays().map((d) => { const rows = rRows(d); return { x: dayT(d), y: rows.length ? rows.filter((x) => x.r >= 1.5).length / rows.length : 0 }; }) : null) ?? [],
-    build({ time }) {
+    build({ time, view }) {
       if (time < RFROM) return [];
       return [new ColumnLayer<any>({
         id: 'rivers-hist-cols',
+        visible: view.zoom < colsZoom,
         data: rRows(tDay(time)),
         getPosition: (d) => [d.s.lon, d.s.lat],
         radius: 3800,
@@ -101,7 +114,7 @@ export function riversLayer(data: Data): AtlasLayer {
       asOf: () => ms(nowR.asOf),
       archiveEnd: y1 + 0.99,
       recent: riversRecent,
-      build() {
+      build({ view }) {
         // the file's own time rules first: a reading older than DROP_H is not drawn, an old one is grey
         if (!drawable(nowR.asOf)) return [];
         const rows = nowRows.filter((d) => drawable(d.row[1]));
@@ -109,6 +122,7 @@ export function riversLayer(data: Data): AtlasLayer {
         return [
           new ColumnLayer<any>({
             id: 'rivers-now-cols',
+            visible: view.zoom < colsZoom,
             data: rows.filter((d) => d.row[4] != null),
             getPosition: (d) => [d.s.lon, d.s.lat],
             radius: 3800,
@@ -148,8 +162,9 @@ export function riversLayer(data: Data): AtlasLayer {
         ];
       },
     } : undefined,
-    build({ time, speed }) {
+    build({ time, speed, view }) {
       const y = Math.floor(time);
+      const tiled = view.zoom >= sheetZoom;
       const W = glowWindow(speed, 1.2);
       const live = stations.map((s) => ({ s, r: interpYearly(Object.fromEntries(Object.entries(s.peaks).map(([k, v]) => [k, v / s.median])), time) }));
       const ripples = stations
@@ -160,8 +175,9 @@ export function riversLayer(data: Data): AtlasLayer {
           id: 'rivers-flood-base',
           data: floodPolys,
           getPolygon: (d) => d.polygon,
-          getFillColor: (d) => FLOOD_KIND[d.z.kind].fill,
-          getLineColor: (d) => FLOOD_KIND[d.z.kind].line,
+          getFillColor: (d) => (tiled ? [0, 0, 0, 0] : FLOOD_KIND[d.z.kind].fill),
+          getLineColor: (d) => (tiled ? [0, 0, 0, 0] : FLOOD_KIND[d.z.kind].line),
+          updateTriggers: { getFillColor: tiled, getLineColor: tiled },
           lineWidthMinPixels: 1,
           stroked: true,
           extruded: false,
@@ -174,12 +190,14 @@ export function riversLayer(data: Data): AtlasLayer {
           getPosition: (s) => [s.lon, s.lat],
           getRadius: 2000,
           radiusMinPixels: 2,
+          radiusMaxPixels: 9,
           getFillColor: [76, 201, 240, 60],
           pickable: true,
           parameters: NO_DEPTH,
         }),
         new ColumnLayer<any>({
           id: 'rivers-cols',
+            visible: view.zoom < colsZoom,
           data: live.filter((d) => d.r != null),
           getPosition: (d) => [d.s.lon, d.s.lat],
           radius: 3800,
@@ -193,6 +211,7 @@ export function riversLayer(data: Data): AtlasLayer {
         }),
         new ScatterplotLayer<any>({
           id: 'rivers-ripples',
+          visible: !tiled,
           data: ripples,
           getPosition: (d) => [d.s.lon, d.s.lat],
           getRadius: (d) => 4500 + ((time - d.t) / W) * 27000 * Math.min(d.r, 4),
@@ -241,8 +260,10 @@ export function riversLayer(data: Data): AtlasLayer {
         <p class="note" style="margin-top:0">Shaded on the map in ${floodPlaces.length} communities the Water Security Agency has studied: the land a <b>1:${FL.returnPeriod}-year flood</b> (a 0.2% chance in any year) would cover, as the agency modelled it, not as this atlas computes it. Where the Flood Damage Reduction Program mapped it, the darker floodway is where water runs deepest and fastest; the flood fringe is the rest. It is not a forecast, and it says nothing about this year’s river levels. Most of the province has no published flood map: no shading does not mean no risk.</p>
         <div class="legend">${(['500', 'fringe', 'floodway', 'protected'] as const).map((k) => `<span><i class="sw" style="background:rgba(${FLOOD_KIND[k].fill.slice(0, 3).join(',')},${Math.max(0.35, FLOOD_KIND[k].fill[3] / 255)});box-shadow:0 0 0 1px rgba(${FLOOD_KIND[k].line.slice(0, 3).join(',')},.9)"></i>${FLOOD_KIND[k].label}</span>`).join('')}</div>
         <p class="note">${floodPlaces.map(esc).join(' · ')}</p>
-        ${sourceLine(`${FL.source}, read ${FL.asOf}. ${FL.licence}`)}` : ''}
+        ${sourceLine(`${FL.source}, read ${FL.asOf}. ${FL.licence}`)}
+        ${buildingsSection(data.buildings, FL.returnPeriod)}` : ''}
         ${sourceLine(data.rivers?.source ?? '')}`);
+      wireBuildingsList(el, data.buildings, floodCentre);
       return {
         update({ time }) {
           tickAges(el);
