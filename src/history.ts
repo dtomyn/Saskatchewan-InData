@@ -108,6 +108,48 @@ export function firesHistory() {
   return firesView;
 }
 
+/**
+ * One fire season of the daily record, for the Wildfires replay (plans/wow/3): 1 April to 31 October, or to the last
+ * day on record while the season is still running. Loaded on its own, apart from the recent span, so a season can be
+ * replayed after the archive has published its year; it is still hotspots (heat, not fires) and still provisional.
+ * `days` lists every calendar day: `n` is null on a day no run covered (a gap, never a zero).
+ */
+export type FireSeason = { year: number; a: number; b: number; points: HistHotspot[]; days: { day: string; t: number; n: number | null }[]; total: number; covered: number };
+const SEASON = ['04', '10'];
+const seasonMemo = new Map<number, FireSeason>();
+/** The years with a fire season month on record. `force` reads the record for the film too. */
+export async function fireSeasonYears(force = false): Promise<number[]> {
+  const ix = (await loadHistoryIndex(force))?.feeds.fires;
+  return [...new Set((ix?.months ?? []).filter((m) => m.slice(5) >= SEASON[0] && m.slice(5) <= SEASON[1]).map((m) => +m.slice(0, 4)))].sort();
+}
+export async function fireSeason(year: number, force = false): Promise<FireSeason | null> {
+  if (seasonMemo.has(year)) return seasonMemo.get(year)!;
+  const ix = (await loadHistoryIndex(force))?.feeds.fires;
+  const months = (ix?.months ?? []).filter((m) => m >= `${year}-${SEASON[0]}` && m <= `${year}-${SEASON[1]}`);
+  const fs = (await Promise.all(months.map((m) => loadHistory<FiresHistory>('fires', m, force)))).filter(Boolean) as FiresHistory[];
+  const ran = runDays(fs);
+  const points: HistHotspot[] = [];
+  const perDay = new Map<string, number>();
+  for (const f of fs) for (const [dd, rows] of Object.entries(f.days)) {
+    const k = day(f.month, dd), t0 = dayT(k);
+    if (!ran.has(k)) continue;
+    perDay.set(k, rows.length);
+    for (const [lon, lat, frp, min] of rows) points.push([lon, lat, t0 + (min / 1440) * DAY_T, frp]);
+  }
+  const last = [...ran.keys()].sort().at(-1);
+  if (!last) return null;
+  points.sort((a, b) => a[2] - b[2]);
+  const days: FireSeason['days'] = [];
+  for (let ms = Date.parse(`${year}-${SEASON[0]}-01T12:00:00Z`); ; ms += 864e5) {
+    const k = new Date(ms).toISOString().slice(0, 10);
+    if (k > last) break;
+    days.push({ day: k, t: dayT(k), n: ran.has(k) ? perDay.get(k) ?? 0 : null });
+  }
+  const s: FireSeason = { year, a: days[0].t, b: days.at(-1)!.t + DAY_T, points, days, total: points.length, covered: days.filter((d) => d.n != null).length };
+  seasonMemo.set(year, s);
+  return s;
+}
+
 export type WaterRow = WaterHistory['advisories'][number];
 let waterView: { rows: WaterRow[]; covered: Map<string, number>; sorted: string[] } | null = null;
 export function waterHistory() {

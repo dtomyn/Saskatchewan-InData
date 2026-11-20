@@ -9,7 +9,7 @@ import type { Layer, PickingInfo } from '@deck.gl/core';
 import * as d3 from 'd3';
 import { Data, MONTHS, clamp, loadAll } from './data';
 import { isNow } from './now';
-import { ensureFeed, onHistory, tDay } from './history';
+import { DAY_T, ensureFeed, onHistory, tDay } from './history';
 import { AtlasEvent, AtlasLayer, Ctx, PanelHandle, TimedEvent } from './layer-kit';
 import { CURATED_EVENTS } from './curated-events';
 import { buildLayers } from './layers';
@@ -62,6 +62,8 @@ const state = {
   beacons: [] as { ev: TimedEvent; born: number }[],
   // the event open in the side panel (mode 'event')
   event: null as AtlasEvent | null,
+  // a season replay (AtlasLayer.replay): the timeline is the season's while it runs; `speed` is what to put back
+  replay: null as { id: string; year: number; range: [number, number]; ends: [string, string]; speed: number } | null,
 };
 
 let data: Data;
@@ -80,6 +82,8 @@ const mapView = (): Ctx['view'] => { const b = map.getBounds(); return { zoom: m
 const ctx = (): Ctx => ({ time: state.time, speed: state.speed, data, selected: state.selected, hovered: state.hovered, focusedId: state.focused, clock: performance.now(), view: mapView() });
 const focusedLayer = () => byId[state.focused];
 const timeLayer = () => byId[state.timeLayer];
+/** what the timeline spans: the time layer's range, or the season being replayed */
+const timeRange = (): [number, number] => state.replay?.range ?? timeLayer().range;
 
 // ---------------------------------------------------------------------------------------------
 // map
@@ -173,10 +177,11 @@ function render() {
     // at the timeline's Now stop, a layer with a live reading draws it over its archive; between the archive and Now,
     // its daily record (fetched the first time the timeline enters that span)
     const rec = l.now?.recent;
-    const inSpan = !!rec && state.time >= rec.from && !isNow(state.time, l.range[1]);
+    const inSpan = !!rec && !state.replay && state.time >= rec.from && !isNow(state.time, l.range[1]);
     if (inSpan) ensureFeed(rec!.feed, rec!.from);
     const live = l.now && isNow(state.time, l.range[1]) ? l.now.build(c) : inSpan ? rec!.build(c) : [];
-    for (const dl of [...l.build(c), ...live]) {
+    // a season replay draws by itself, in place of the layer's archive and live reading
+    for (const dl of state.replay?.id === l.id ? l.replay!.build(c) : [...l.build(c), ...live]) {
       // flat layers go under the basemap labels; 3D columns stay on top
       const flat = /scars|embers|base|stems|-csd$/.test(dl.id);
       out.push(flat && firstLabelLayer ? dl.clone({ beforeId: firstLabelLayer } as any) : dl);
@@ -449,6 +454,7 @@ function snapshot(): Snapshot {
 }
 function restore(s: Snapshot) {
   setPlaying(false);
+  endReplay();
   leaveModes();
   state.visible = new Set(s.visible);
   state.focused = s.focused;
@@ -585,6 +591,8 @@ function setPanelOpen(open: boolean) {
 /** Make a layer the active one (switching it on if it was off); other layers on the map stay on. 'province': no active layer. */
 function focus(id: string, keepPanel = false) {
   const l = byId[id];
+  // a replay belongs to its layer: picking another one (or clearing the map) leaves it
+  if (state.replay && state.replay.id !== id) endReplay();
   const changed = state.focused !== id;
   state.focused = id;
   if (id !== 'province') state.visible.add(id);
@@ -647,14 +655,18 @@ function setupTimeline() {
     note.innerHTML = f.id === 'province' && !others.length ? `<div>No history layer on the map</div><span>Open <b>Layer</b> and pick one, like Crime severity or Wildfires, to travel through time</span>`
       : f.id === 'province' ? `<div>No layer picked</div><span>Click ${others.length > 1 ? 'one of the layers on the map' : `<b>${others[0]}</b>`} in the panel or the <b>Layer</b> menu for its timeline</span>` : `<div><b>${f.name}</b> doesn’t change over time</div><span>${others.length ? `${others.join(', ')} shown at <i id="static-year">${Math.floor(state.time)}</i> · Space to play` : 'Pick a timeline layer to travel through history'}</span>`;
   }
-  const [a, b] = l.range;
+  const [a, b] = timeRange();
   const s = scrub();
+  const rp = state.replay;
   s.min = String(a);
   s.max = String(b);
-  s.step = l.monthly ? String(1 / 12) : '0.01';
-  $('t-min').textContent = String(Math.floor(a));
-  $('t-max').textContent = l.now ? 'Now' : String(Math.floor(b));
-  $('t-label').textContent = l.name;
+  s.step = rp ? 'any' : l.monthly ? String(1 / 12) : '0.01';
+  $('t-min').textContent = rp ? rp.ends[0] : String(Math.floor(a));
+  $('t-max').textContent = rp ? rp.ends[1] : l.now ? 'Now' : String(Math.floor(b));
+  $('t-label').textContent = rp ? `${l.name} · ${rp.year} season` : l.name;
+  // a replay sets its own pace (the whole season in about 40 seconds)
+  $<HTMLSelectElement>('speed-sel').disabled = !!rp;
+  $<HTMLSelectElement>('speed-sel').title = rp ? 'The replay plays the whole season in about 40 seconds' : '';
   drawSpark();
   drawEvents();
 }
@@ -670,6 +682,23 @@ function drawSpark() {
   g.scale(dpr, dpr);
   g.clearRect(0, 0, w, h);
   if (!l.available) return;
+  if (state.replay) {
+    // a season replay: a bar a day; a day with no record is hatched grey at the foot, never an empty (zero) day
+    const [a, b] = state.replay.range;
+    const days = byId[state.replay.id].replay!.days();
+    const max = Math.max(1, ...days.map((d) => d.y ?? 0));
+    const bw = w / Math.max(1, days.length);
+    days.forEach((d) => {
+      const x0 = ((d.x - a) / (b - a)) * w;
+      if (d.y == null) { g.fillStyle = 'rgba(160,165,180,0.4)'; g.fillRect(x0, h - 4, Math.max(1, bw), 4); return; }
+      const hh = (d.y / max) * (h - 4);
+      g.fillStyle = l.color;
+      g.globalAlpha = d.x <= state.time ? 0.95 : 0.3;
+      g.fillRect(x0, h - hh, Math.max(1, bw - 0.4), Math.max(d.y > 0 ? 1 : 0, hh));
+    });
+    g.globalAlpha = 1;
+    return;
+  }
   const pts = l.spark();
   if (!pts.length) return;
   const [a, b] = l.range;
@@ -757,7 +786,7 @@ function drawSpark() {
 
 function drawEvents() {
   const l = timeLayer();
-  const [a, b] = l.range;
+  const [a, b] = timeRange();
   const el = $('events');
   el.innerHTML = '';
   for (const ev of events) {
@@ -773,8 +802,60 @@ function drawEvents() {
 }
 
 function setTime(t: number) {
-  const [a, b] = timeLayer().range;
+  const [a, b] = timeRange();
   state.time = clamp(t, a, b);
+}
+
+/** Leaves a season replay without redrawing anything: the layer's own timeline and speed come back. */
+function endReplay() {
+  const rp = state.replay;
+  if (!rp) return;
+  byId[rp.id].replay!.stop();
+  state.replay = null;
+  setSpeed(rp.speed);
+  state.time = byId[rp.id].range[1];
+}
+
+/**
+ * Replays a season of a layer's daily record (Wildfires): the map pulls back, the timeline becomes the season and plays
+ * it through in about 40 seconds. `year` defaults to the latest season on record; `force` is the film handle's, which
+ * may read the record although the film loads no live data. False when there is no such season.
+ */
+async function replaySeason(year?: number | null, force = false, id = 'fires') {
+  const l = byId[id];
+  if (!l?.available || !l.replay) return false;
+  const ys = await l.replay.seasons(force);
+  const y = year ?? ys.at(-1);
+  if (y == null || !ys.includes(y)) return false;
+  const r = await l.replay.start(y, force);
+  if (!r) return false;
+  setPlaying(false);
+  if (state.mode !== 'layer') leaveModes();
+  const speed = state.replay?.speed ?? state.speed;
+  state.replay = null;
+  focus(id, true);
+  state.timeLayer = id;
+  state.replay = { id, year: y, range: r.range, ends: r.ends, speed };
+  state.speed = (r.range[1] - r.range[0]) / 40;
+  state.time = r.range[0];
+  lastSparkYear = -1;
+  setupTimeline();
+  showLayerPanel();
+  map.stop();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(r.camera);
+  else map.flyTo({ ...r.camera, duration: 1600, essential: true });
+  setPlaying(true);
+  return true;
+}
+
+/** Back from a replay to the layer's own story, at the end of its timeline. */
+function leaveReplay() {
+  if (!state.replay) return;
+  setPlaying(false);
+  endReplay();
+  lastSparkYear = -1;
+  setupTimeline();
+  if (state.mode === 'layer') showLayerPanel();
 }
 
 function setPlaying(p: boolean) {
@@ -782,18 +863,29 @@ function setPlaying(p: boolean) {
   $('play').classList.toggle('playing', p);
   $('play').setAttribute('aria-label', p ? 'Pause' : 'Play');
   if (p) {
-    const [a, b] = timeLayer().range;
-    if (state.time >= b - 0.01) state.time = a;
+    const [a, b] = timeRange();
+    if (state.time >= b - (state.replay ? DAY_T / 10 : 0.01)) state.time = a;
   }
 }
 
 let lastSparkYear = -1;
 function syncTimelineUI() {
   const l = timeLayer();
-  const [a, b] = l.range;
+  const [a, b] = timeRange();
   const s = scrub();
   if (document.activeElement !== s || state.playing) s.value = String(state.time);
   s.style.setProperty('--p', `${((state.time - a) / (b - a)) * 100}%`);
+  if (state.replay) {
+    // a replay reads like the daily record it is drawn from: the day, provisional, or a gap
+    const at = l.replay!.at(state.time);
+    $('year').textContent = String(state.replay.year);
+    $('month').classList.remove('proj');
+    $('month').classList.toggle('prov', at.covered);
+    $('month').textContent = at.covered ? `${at.day.slice(5)} · provisional` : 'no reading';
+    const dayNo = -2 - Math.floor((state.time - a) / DAY_T);
+    if (dayNo !== lastSparkYear) { lastSparkYear = dayNo; drawSpark(); }
+    return;
+  }
   const atNow = !!l.now && isNow(state.time, b);
   const gap = !!l.now && !atNow && state.time > l.now.archiveEnd;
   const rec = gap ? l.now!.recent : undefined;
@@ -898,7 +990,7 @@ function frame(now: number) {
   lastFrame = now;
   if (state.playing) {
     const prev = state.time;
-    const [, b] = timeLayer().range;
+    const [, b] = timeRange();
     state.time = Math.min(b, state.time + dt * state.speed);
     fireCrossedEvents(prev, state.time);
     if (state.time >= b) setPlaying(false);
@@ -928,6 +1020,8 @@ function bindControls() {
     if (tours?.key(e)) return;
     if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
     const step = timeLayer().monthly ? 1 / 12 : 1;
+    // in a season replay the arrows step a day
+    if (state.replay && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { setPlaying(false); setTime(state.time + (e.key === 'ArrowRight' ? DAY_T : -DAY_T)); return; }
     if (e.key === 'ArrowRight') { setPlaying(false); setTime(Math.floor(state.time / step + 1e-6) * step + step); }
     if (e.key === 'ArrowLeft') { setPlaying(false); setTime(Math.ceil(state.time / step - 1e-6) * step - step); }
     if (e.key === 'Escape') { if (menuOpen()) { setMenu(false); $('layers-btn').focus(); } else $('modal').hidden = true; }
@@ -1006,11 +1100,13 @@ async function boot() {
   });
   window.addEventListener('atlas:scenario', (e) => onScenario((e as CustomEvent).detail as ScenarioKind | null));
   window.addEventListener('atlas:town', (e) => openPlace((e as CustomEvent).detail));
+  // a layer's Replay the season button (Wildfires), and its Leave the replay
+  window.addEventListener('atlas:replay', (e) => { const d = (e as CustomEvent).detail; if (d?.year == null) leaveReplay(); else replaySeason(d.year, false, d.layer); });
   if (location.hash === '#sources') showSources();
   for (const id of ['crime', 'justice', 'treaties', 'fires', 'tornadoes', 'camping', 'commute']) if (location.hash === `#${id}`) map.once('load', () => setTimeout(() => focus(id), 600));
   // The explainer video (video/render.py) drives the atlas through this handle; only set with ?film.
   if (new URLSearchParams(location.search).has('film'))
-    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openSmall, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario, tour: tours.start, tours: TOURS };
+    (window as any).atlas = { map, state, data, layers, focus, clearMap, openTown, openSmall, openFinder, setPlaying, setTime, setPanelOpen, setMenu, showSources, HOME, setClosed, clearScenario, tour: tours.start, tours: TOURS, replaySeason: (year?: number) => replaySeason(year, true), leaveReplay };
 }
 
 boot();

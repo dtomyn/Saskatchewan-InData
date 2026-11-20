@@ -88,6 +88,23 @@ export interface AtlasLayer {
    * never as a line.
    */
   projection?: { from: number; bands: () => { color: string; pts: { x: number; lo: number; hi: number }[] }[] };
+  /**
+   * A replay of one season of the daily record (Wildfires; plans/wow/3). While one runs, main.ts gives the timeline to
+   * `range` (played in about 40 seconds), draws `build` in place of the layer's own, and draws `days` as the sparkline:
+   * `y` null is a day with no record, hatched, never a zero. The layer's panel asks for it with an `atlas:replay`
+   * event (`{ layer, year }`; a null year leaves it).
+   */
+  replay?: {
+    /** the seasons on record; `force` reads the record for the film handle too */
+    seasons: (force?: boolean) => Promise<number[]>;
+    /** loads a season and enters it; null when there is no record of it */
+    start: (year: number, force?: boolean) => Promise<{ range: [number, number]; ends: [string, string]; camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } } | null>;
+    stop: () => void;
+    build: (ctx: Ctx) => Layer[];
+    days: () => { x: number; y: number | null }[];
+    /** the day holding `t`, and whether the record covers it */
+    at: (t: number) => { day: string; covered: boolean };
+  };
 }
 
 /**

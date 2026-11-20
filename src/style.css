@@ -581,3 +581,10 @@ body.touring .event-ticker { display: none; }
   .tour-caption { font-size: 13.5px; min-height: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .tour-bar { animation: none; } .tour-dot::after { transition: none; } }
+
+/* the fire season replay (src/fires.ts) */
+.rp-host .rp-go { margin-top: 4px; }
+.rp-host .note { margin: 4px 0 10px; }
+.rp-bars { display: block; width: 100%; height: 110px; margin: 6px 0 4px; }
+.rp-btns { display: flex; gap: 6px; margin: 10px 0 4px; }
+.sw.rp-gap { background: rgba(160, 165, 180, .45); }
