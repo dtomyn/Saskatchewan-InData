@@ -479,6 +479,7 @@ export type Data = {
   projections: Projections | null;
   twins: Twins | null;
   floods: Floods | null;
+  buildings: Buildings | null;
   population: { munis: Record<string, PopSeries>; source: string } | null;
   crime: Crime | null;
   hospitals: { facilities: Facility[]; towns: Record<string, Trip[]>; small?: Record<string, Trip[]>; source: string; routing: string; routingSource: string | null } | null;
@@ -512,6 +513,10 @@ export type Data = {
  * `protected`: land behind dikes. Polygons are rings of [lon, lat].
  */
 export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; place: string; water?: string | null; year?: number | null; program?: string | null; pdf?: string | null; polys: [number, number][][][] };
+/** 3D cities (plans/wow/6; the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
+ *  count touching the WSA's mapped 1:500-year extent (`way` the floodway, `ext` the rest, `prot` only behind dikes) and with a height (`h`). */
+export type BuildingArea = { name: string; box: [number, number, number, number]; n: number; way: number; ext: number; prot: number; h: number };
+export type Buildings = { source: string; sourceUrl: string; licence: string; heights: string; flood: string; asOf: string; file: string; bytes: number; minzoom: number; maxzoom: number; storey: number; z12Min: number; bounds: [number, number, number, number]; areas: BuildingArea[] };
 export type Floods = { source: string; sourceUrl: string; licence: string; returnPeriod: number; asOf: string; zones: FloodZone[] };
 
 /** A projection's variable and scenario keys (ECCC CanDCS-U6): mean temperature, daily high, daily low, precipitation. */
@@ -558,7 +563,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -566,6 +571,7 @@ export async function loadAll(): Promise<Data> {
     load<Data['hail']>('hail'),
     load<Data['rivers']>('rivers'),
     load<Floods>('floods'),
+    load<Buildings>('buildings'),
     load<Data['climate']>('climate'),
     load<Smoke>('smoke'),
     load<Drought>('drought'),
@@ -623,6 +629,7 @@ export async function loadAll(): Promise<Data> {
     projections: projections && Object.keys(projections.towns ?? {}).length ? projections : null,
     twins: twins?.stations?.length && Object.keys(twins.towns ?? {}).length ? twins : null,
     floods: floods?.zones?.length ? floods : null,
+    buildings: buildings?.areas?.length ? buildings : null,
     population: population && Object.keys(population.munis ?? {}).length ? population : null,
     // crime is only useful if at least one place matched
     crime: crime && Object.keys(crime.munis ?? {}).length ? crime : null,

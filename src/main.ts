@@ -4,6 +4,7 @@ import * as maplibregl from 'maplibre-gl';
 // MapLibre 6 loads its worker from a separate module file; let Vite emit it and tell MapLibre where it is.
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { MapboxOverlay } from '@deck.gl/mapbox';
+import { initBuildings, syncBuildings, addTerrainControl } from './buildings';
 import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import * as d3 from 'd3';
@@ -142,6 +143,9 @@ function initMap() {
       map.addLayer({ id: 'coast-glow', type: 'line', source: 'outline', paint: { 'line-color': '#4cc9f0', 'line-width': 10, 'line-blur': 10, 'line-opacity': 0.16 } }, firstLabelLayer);
       map.addLayer({ id: 'coast-line', type: 'line', source: 'outline', paint: { 'line-color': '#8fdcff', 'line-width': 0.8, 'line-opacity': 0.5 } }, firstLabelLayer);
     }
+    // 3D cities: building footprints past zoom 12 (tinted where they touch the mapped flood extent), and terrain
+    initBuildings(map, data, firstLabelLayer);
+    addTerrainControl(map);
     try {
       (map as any).setSky?.({ 'sky-color': '#060a12', 'horizon-color': '#12233d', 'fog-color': '#060a12', 'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.85 });
     } catch { /* older renderers */ }
@@ -170,6 +174,7 @@ function initMap() {
 
 function render() {
   if (!overlay) return;
+  syncBuildings(map, state.visible.has('rivers') && !!byId.rivers?.available);
   const c = ctx();
   const out: Layer[] = [];
   for (const l of layers) {
@@ -1094,11 +1099,14 @@ async function boot() {
   window.addEventListener('atlas:finder', () => { if (state.mode !== 'finder') openFinder(); });
   // a layer's own list opening one of its features (Floodplains' study list)
   window.addEventListener('atlas:event', (e) => { const ev = (e as CustomEvent).detail as AtlasEvent; if (ev?.title) openEvent(ev); });
-  // a layer asking the camera to frame something (Weekend Reach framing the campgrounds a place can reach)
+  // a layer asking the camera to frame something (Weekend Reach framing the campgrounds a place can reach), or to fly close to a point
   window.addEventListener('atlas:fly', (e) => {
-    const b = (e as CustomEvent).detail?.bounds as [[number, number], [number, number]] | undefined;
-    if (!b) return;
+    const d = (e as CustomEvent).detail;
+    const b = d?.bounds as [[number, number], [number, number]] | undefined;
     const right = $('panel').classList.contains('collapsed') ? 60 : Math.min(440, $('panel').offsetWidth + 40);
+    // a close-up (River floods' buildings list): a centre and a zoom
+    if (d?.center) { map.flyTo({ center: d.center, zoom: d.zoom ?? 14, pitch: 60, bearing: map.getBearing(), padding: { top: 0, bottom: 0, left: 0, right: right - 60 }, duration: 2400, essential: true }); return; }
+    if (!b) return;
     map.fitBounds(b, { padding: { top: 90, bottom: 150, left: 60, right }, maxZoom: 9, pitch: 50, bearing: map.getBearing(), duration: 1800, essential: true });
   });
   window.addEventListener('atlas:scenario', (e) => onScenario((e as CustomEvent).detail as ScenarioKind | null));

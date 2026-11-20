@@ -1,6 +1,6 @@
 # 6. 3D cities with flood water
 
-**Effort:** L. **Depends on:** the tiles decision in [`digital-twin/4-physical-systems.md`](../digital-twin/4-physical-systems.md) (4e buildings, 4f terrain, both held back there) and the flood-prone land (3d, built). **Status:** not started.
+**Effort:** L. **Depends on:** the tiles decision in [`digital-twin/4-physical-systems.md`](../digital-twin/4-physical-systems.md) (4e buildings, 4f terrain, both held back there) and the flood-prone land (3d, built). **Status:** ✅ built (2026-11-20). What was found and decided is under **Outcome** at the end.
 
 ## Goal
 
@@ -53,3 +53,15 @@ Zoom into Regina or Saskatoon and see a city: buildings standing on real terrain
 - PMTiles as the tile format (recommended in plan 4), and where the file lives (committed, or a release asset).
 - Footprints from ODB only (official, fewer places) or Microsoft's too (everywhere, machine-drawn).
 - Whether terrain is worth it at all once tried: it may only earn its place in two or three valleys.
+
+## Outcome
+
+- **Footprints: Microsoft's only.** Its Saskatchewan file (681,553 footprints, 22 MB zipped, ODbL) is one feature a line, so the stage streams it. Statistics Canada's ODB pages and downloads now sit behind a browser check that refuses scripted requests, so which Saskatchewan cities it holds, and whether any carry heights, is still *(verify)*; it would replace Microsoft's in the cities if it can be fetched.
+- **Kept:** footprints whose centre falls in a box around each of the 22 flood-mapped communities' extents and town limits, Regina and Saskatoon among them (1 km padding; "Saskatoon South" joins Saskatoon, Battleford and North Battleford are "Battlefords"): 234,307 buildings.
+- **Heights:** OpenStreetMap ways and relations with `height` or `building:levels` (3 m a storey), matched to the footprint under their centre: 4,176, mostly in Regina. Everything else stands one nominal storey (3.5 m), and the panel says so.
+- **The flag** is worked out on the WSA's unsimplified outlines: 1 the footprint touches the floodway, 2 the rest of the 1:500-year extent, 3 only land protected by dikes (Lumsden). 219, 5,277 and 425 buildings. The same outlines ride in the tiles as the water sheet, so the tint and the water agree; River floods' own simplified polygons go transparent past zoom 12 (still clickable).
+- **Tiles:** one PMTiles file, not one per city (fewer requests, one header). Zoom 12–15; at 12 only footprints of 250 m² or more. A small PMTiles v3 writer in `scripts/lib/pmtiles.mjs` (tiles cut with `geojson-vt`, encoded with `vt-pbf`), so the stage runs locally with npm packages only. **13.6 MB**, committed under `public/data/tiles/` (well under the 40 MB budget and Git's 100 MB). The stage throws over 40 MB.
+- **Range requests:** served by Vite's dev server and `vite preview`; GitHub Pages serves them too (the PMTiles docs use it). The source lists tile URLs rather than a TileJSON, and the PMTiles reader is imported with the first tile, so the first load fetches no tile and gains under 2 KB gzipped of code (plus `buildings.json`, 3 KB).
+- **App:** MapLibre `fill-extrusion` (step 1's simple option: the flag is a tile attribute, so the style expresses the tint). Gauge columns are hidden from zoom 11: in a city close-up the camera sits inside one.
+- **Terrain (step 4 taken):** deck.gl's interleaved layers are drawn flat and slide off MapLibre's terrain (Fort Qu'Appelle's flood polygons moved off the valley at zoom 11.6), so the terrain button raises the land only from zoom 12, where the water and buildings are MapLibre's own and sit on it; turned on further out, it zooms in. Province-wide layers stay flat. It earns its place in the river valleys of the cities and the Qu'Appelle; the Cypress Hills show only in close-up.
+- **Checks:** the counts decoded from every zoom-15 tile equal the stage's (234,307; 219 / 5,277 / 425). Saskatoon at zoom 14, pitched, held the browser pane's 30 fps cap with buildings and water on (the pane was hidden, which caps it, so the true ceiling was not measured). The production build loads the tiles under its CSP.
