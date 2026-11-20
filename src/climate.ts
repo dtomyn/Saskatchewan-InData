@@ -9,6 +9,7 @@ import { provinceAnomalies, slope } from './metrics';
 import { provinceBand, projAt, windowText, SCEN_COLOR, rangeText, PROJ_BADGE, SCEN_SHORT, provinceMedian } from './projections';
 import { stripes, bandChart, barChart, rampCSS } from './charts';
 import { esc } from './html';
+import { twinClick, twinLayers, twinOn, twinPanel, twinTooltip } from './twins';
 
 export function climateLayer(data: Data): AtlasLayer {
   const color = '#f25f5c';
@@ -59,7 +60,10 @@ export function climateLayer(data: Data): AtlasLayer {
     range: [y0, P ? 2100.99 : y1 + 0.99],
     available: !!data.climate,
     projection: P ? { from: PFROM, bands: () => bands().map((b, i) => ({ color: SCEN_COLOR[SCENS[i]], pts: b })) } : undefined,
-    build({ time, focusedId }) {
+    build(ctx) {
+      const { time, focusedId } = ctx;
+      // the Climate twin chip (src/twins.ts) takes the map: arcs from places to their twins, whatever the timeline shows
+      if (twinOn(data)) return twinLayers(data, ctx);
       if (P && time >= PFROM) {
         // a projection: a wire frame for the high-emissions median around a solid core for the low one, so every place
         // shows a range, and nothing on the map looks like a measured column
@@ -134,6 +138,7 @@ export function climateLayer(data: Data): AtlasLayer {
         <h2>A warming prairie</h2>
         <p class="lede">Annual mean temperature at ${stations.length} long-running weather stations, shown as the difference from each station’s 1961–1990 average. Columns grow and redden as years run warm; blue means cooler than normal.${P ? ` Past ${y1} the timeline runs on to 2100, hatched: there it shows <b>published model projections</b>, not a record, as a range between a low- and a high-emissions future.` : ''}</p>
         <div class="proj-now" hidden>${PROJ_BADGE}</div>`;
+      const twin = twinPanel(el, data, color);
       const hero = heroStats(el, 4);
       el.insertAdjacentHTML('beforeend', `<h3>Saskatchewan warming stripes (${y0}–${y1})</h3>`);
       const setA = deferChart(el.appendChild(mk('div')), (c) =>
@@ -191,9 +196,11 @@ export function climateLayer(data: Data): AtlasLayer {
             hero(3, trend != null ? `${fmt.signed(trend * 10, 2)}°` : '–', 'per decade since 1950');
           }
           setA(time); setB(time);
+          twin.update();
         },
       };
     },
+    click: (info) => twinClick(data, info),
     describe(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('climate')) return null;
@@ -226,6 +233,7 @@ export function climateLayer(data: Data): AtlasLayer {
     tooltip(info) {
       const o: any = info.object;
       if (!o || !info.layer?.id.startsWith('climate')) return null;
+      if (info.layer.id.startsWith('climate-twin')) return twinTooltip(data, info);
       if (info.layer.id.startsWith('climate-proj')) {
         const c = o as ProjCol;
         return `<b>${esc(c.m.name)}</b> <span class="proj-badge">projection</span><br><span class="tk">${windowOf(c.t)}</span> <span class="tv">${rangeText(c.lo, c.hi)} °C vs 1961–90</span><br><span class="tk">low to high emissions (model medians); ${P!.percentiles[0]}th–${P!.percentiles[1]}th percentile ${rangeText(c.spreadLo, c.spreadHi)} °C</span>`;

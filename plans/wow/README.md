@@ -8,7 +8,7 @@ The atlas answers careful questions well. These six plans add moments that make 
 | 2 | ✅ [Wind and smoke in motion](2-wind-and-smoke.md) | Particles streaming with the wind; the smoke forecast drifting over 72 hours | M | A particle layer |
 | 3 | ✅ [Replay a fire season](3-fire-season-replay.md) | A season's hotspots igniting day by day, burn outlines filling in behind | S–M | The daily record |
 | 4 | ✅ [Guided fly-throughs](4-guided-tours.md) | "Take the tour": the camera flies, layers switch, captions explain | M | — |
-| 5 | [A town's future climate twin](5-climate-twin.md) | An arc from a town to the place whose climate today is the town's in 2060 | M | — |
+| 5 | ✅ [A town's future climate twin](5-climate-twin.md) | An arc from a town to the place whose climate today is the town's in 2060 | M | — |
 | 6 | [3D cities with flood water](6-3d-cities-and-flood.md) | Regina and Saskatoon as buildings on terrain, the 1-in-500-year flood against them | L | A decision on tiles |
 
 Why this order: plan 1 is the smallest and rides on the hourly run that already exists. Plans 3 and 4 need no new source. Plan 2 is the biggest spectacle but needs a new kind of layer. Plan 6 is the largest and waits on the tiles decision in [`digital-twin/4-physical-systems.md`](../digital-twin/4-physical-systems.md).

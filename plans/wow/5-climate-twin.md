@@ -1,6 +1,6 @@
 # 5. A town's future climate twin
 
-**Effort:** M. **Depends on:** climate projections (digital-twin plan 3b) and Climate normals, both built. **Status:** not started.
+**Effort:** M. **Depends on:** climate projections (digital-twin plan 3b) and Climate normals, both built. **Status:** built with option (a): twins inside Saskatchewan only, matched on annual mean temperature and precipitation (`scripts/stages/twins.mjs`, `src/twins.ts`). Option (b) and seasonal means are still open (`ROADMAP.md`).
 
 ## Goal
 
@@ -44,6 +44,14 @@ Build (a) first; (b) is what makes the southern towns interesting.
 - A town's twin for the median lies between its 10th and 90th percentile twins in temperature.
 - `atlas.focus('climate')`, the chip, then a click on Prince Albert draws one arc and names the twin, the period and the scenario; the Town Report row agrees.
 - A southern town reads "warmer than anywhere in Saskatchewan today" under option (a).
+
+## As built
+
+- The normals in the open API are 1981–2010, not 1991–2020, and the projections are changes from 1971–2000. The change the models had already made by the normals' period is estimated on a straight line from 1971–2000 (zero) to the 2021–2050 median, averaged over the two scenarios, and taken off: 20 % of that first change.
+- A twin is a **station** (73 have both numbers). It takes a place's name only when it is that place's own station within 30 km; otherwise it keeps its own name and says which place is nearest.
+- Threshold: 0.6 of the stations' spread (about 1 °C or 35 mm). Beyond it there is no twin: “warmer than anywhere in Saskatchewan today” when the target is above the warmest station, “like nowhere in Saskatchewan today” when it is not (warm and wet together have no station).
+- The 10th and 90th percentile twins pair each variable's own percentile, and are looked for among stations no warmer / no cooler than the median's twin, so the range never reads backwards.
+- Both scenarios draw at once (chips switch each off), as everywhere else projections show.
 
 ## To confirm before building
 

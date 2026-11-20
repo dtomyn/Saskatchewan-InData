@@ -477,6 +477,7 @@ export type Data = {
   power: Power | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;
   projections: Projections | null;
+  twins: Twins | null;
   floods: Floods | null;
   population: { munis: Record<string, PopSeries>; source: string } | null;
   crime: Crime | null;
@@ -518,6 +519,23 @@ export type ProjVar = 'tg' | 'tx' | 'tn' | 'pr';
 export type ProjScen = 'ssp126' | 'ssp585';
 /** One 30-year window's change from 1971–2000: [window start, median, 10th, 90th percentile of the models]. */
 export type ProjWindow = [number, number, number, number];
+/**
+ * One twin: the station (index into `stations`) whose normals today are nearest a place's projected climate, or −1
+ * (warmer than any Saskatchewan station today) or −2 (no station close on both numbers); then the projected mean
+ * temperature (°C), precipitation (mm) and the scaled distance to the nearest station.
+ */
+export type TwinMatch = [number, number, number, number];
+/** A station that can be a twin. `k`: the place it stands for (its own station, close by); `near`: its nearest place. */
+export type TwinStation = { id: string; name: string; lon: number; lat: number; t: number; p: number; yrs: number; near: string; km: number; k?: string };
+/** Climate twins (plans/wow/5; the `twins` stage): worked out from projections and normals, model output, never a record. */
+export type Twins = {
+  source: string; asOf: string; normalsPeriod: string; baseline: string; baseShare: number; maxD: number;
+  spread: { t: number; p: number }; maxT: number; windows: number[]; windowYears: number;
+  scenarios: Record<ProjScen, string>;
+  stations: TwinStation[];
+  /** per place: its own station (`s`, `km` away) and, per scenario and window, the twins for the median, 10th and 90th percentile */
+  towns: Record<string, { s: number; km: number; base: [number, number]; tw: Record<ProjScen, [TwinMatch, TwinMatch, TwinMatch][]> }>;
+};
 /** Climate projections per place (plan 3b): model output, never a record. Per variable and scenario, each window's change. */
 export type Projections = {
   source: string; sourceUrl: string; licence: string; asOf: string; baseline: string; windowYears: number; percentiles: [number, number];
@@ -540,7 +558,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -553,6 +571,7 @@ export async function loadAll(): Promise<Data> {
     load<Drought>('drought'),
     load<Data['normals']>('normals'),
     load<Projections>('projections'),
+    load<Twins>('twins'),
     load<Data['population']>('population'),
     load<Crime>('crime'),
     load<Data['hospitals']>('hospitals'),
@@ -602,6 +621,7 @@ export async function loadAll(): Promise<Data> {
     drought: drought?.months?.length && drought.maps?.length === drought.months.length ? drought : null,
     normals: normals?.stations?.length ? normals : null,
     projections: projections && Object.keys(projections.towns ?? {}).length ? projections : null,
+    twins: twins?.stations?.length && Object.keys(twins.towns ?? {}).length ? twins : null,
     floods: floods?.zones?.length ? floods : null,
     population: population && Object.keys(population.munis ?? {}).length ? population : null,
     // crime is only useful if at least one place matched

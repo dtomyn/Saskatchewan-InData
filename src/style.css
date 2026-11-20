@@ -519,6 +519,18 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius
 .proj-row .pr-v { font-size: 15px; margin: 6px 0 4px; }
 .proj-row .pr-v b { font-family: var(--display); font-size: 18px; }
 .proj-row .pr-s { font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+/* Climate twins (src/twins.ts): the Climate layer's chip and the Town Report's row */
+.twin-box { margin: 2px 0 12px; }
+.twin-ui { margin-top: 8px; padding: 10px 12px 4px; border-radius: 10px; border: 1px dashed rgba(224, 49, 43, .6); background: repeating-linear-gradient(135deg, rgba(224, 49, 43, .07) 0 6px, transparent 6px 12px); }
+.twin-ui[hidden] { display: none; }
+.twin-ui h3 { margin-top: 0; }
+.twin-ui .rd, .twin-line .rd { font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+.twin-ui .legend { margin: 8px 0 2px; }
+.twin-when { font-family: var(--mono); font-size: 12px; }
+.twin-head { font-family: var(--display); font-size: 15px; margin: 4px 0 6px; }
+.twin-line { display: flex; gap: 8px; align-items: baseline; margin: 5px 0; font-size: 13px; line-height: 1.4; }
+.twin-line .sw { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.twin-line .tk { color: var(--ink-2); }
 .proj-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
 .proj-table th, .proj-table td { padding: 5px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
 .proj-table th:first-child, .proj-table td:first-child { text-align: left; white-space: normal; color: var(--ink-2); }
