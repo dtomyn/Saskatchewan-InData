@@ -18,6 +18,7 @@ Use these when deciding whether a feature earns its place (it should serve at le
 | [Check around the property](check-around-the-property.md) | What's under, beside and in the water near a home? |
 | [See how the land is used](see-how-the-land-is-used.md) | What grows around here, and how has it changed? |
 | [Know the climate and the light](know-the-climate-and-the-light.md) | How cold, sunny, snowy and dark is it here? |
+| [Get a feel for the province](get-a-feel-for-the-province.md) | What is Saskatchewan like, and what should I know before I stayed? |
 | [Get outdoors](get-outdoors.md) | Where can we camp this weekend, and where is the sky dark? |
 | [Learn the land's history](learn-the-lands-history.md) | Whose treaty land is this, and what happened here? |
 | [Check where the data comes from](check-where-the-data-comes-from.md) | Can I trust this number, and how old is it? |

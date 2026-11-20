@@ -55,7 +55,7 @@ NAME = "living-skies-atlas-explainer"
 # The storyboard page, script and YouTube text get this prefix; the main film keeps plain names.
 PREFIX = ""
 # --film picks a storyboard module: video/storyboard.py, or video/storyboard_<film>.py
-FILMS = {"main": "storyboard"}
+FILMS = {"main": "storyboard", "sky": "storyboard_sky"}
 # The live site (GitHub Pages), linked from the YouTube descriptions unless --url gives another address.
 SITE = "https://dtomyn.github.io/Saskatchewan-InData/"
 LAYOUT = (1920, 1080)
@@ -85,6 +85,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if clean.startswith("/stage/"):
             return str(STAGE / clean[len("/stage/"):])
         return str(DIST / clean.lstrip("/")) if clean != "/" else str(DIST / "index.html")
+
+    def send_head(self):
+        """Answers a byte range with 206 (the 3D buildings' PMTiles file is read in ranges; a whole-file answer breaks it)."""
+        rng = self.headers.get("Range")
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng.strip()) if rng else None
+        path = pathlib.Path(self.translate_path(self.path))
+        if not m or not path.is_file():
+            return super().send_head()
+        size = path.stat().st_size
+        start = int(m.group(1)) if m.group(1) else max(0, size - int(m.group(2) or 0))
+        end = min(size - 1, int(m.group(2))) if m.group(1) and m.group(2) else size - 1
+        if start > end:
+            self.send_error(416)
+            return None
+        f = open(path, "rb")
+        f.seek(start)
+        self.send_response(206)
+        self.send_header("Content-Type", self.guess_type(str(path)))
+        self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Accept-Ranges", "bytes")
+        self.end_headers()
+        self._range_left = end - start + 1
+        return f
+
+    def copyfile(self, source, outputfile):
+        left = getattr(self, "_range_left", None)
+        if left is None:
+            return super().copyfile(source, outputfile)
+        while left > 0:
+            buf = source.read(min(65536, left))
+            if not buf:
+                break
+            outputfile.write(buf)
+            left -= len(buf)
+        self._range_left = None
 
     def log_message(self, *args):
         pass

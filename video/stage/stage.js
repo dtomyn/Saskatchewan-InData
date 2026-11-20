@@ -131,7 +131,7 @@
     a.onfinish = () => el.remove();
   };
   const IN = 'cubic-bezier(.16,1,.3,1)';
-  let titleEl = null, chapterEl = null, chipEl = null, statsEl = null, endEl = null;
+  let titleEl = null, chapterEl = null, chipEl = null, statsEl = null, endEl = null, beatEl = null;
 
   /** Words rise out of a blur one after another; words in `hl` get the warm gradient. */
   function words(text, hl = []) {
@@ -243,6 +243,24 @@
       chapterEl.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(-40px)' }], { duration: 600, delay: 4200, easing: 'ease-in', fill: 'forwards' });
     },
     hideChapter(ms = 500) { const el = chapterEl; chapterEl = null; outAndRemove(el, [{ opacity: 0, transform: 'translateX(-40px)' }], ms); },
+
+    /** A story beat for the narrative films: a small kicker ("Day one") over a serif line, top left, on a soft scrim.
+     *  It leaves on its own after `hold` ms (0 keeps it until hideBeat). */
+    beat(kicker, line, c = '#ffd166', hold = 5200) {
+      this.hideBeat(200);
+      const el = beatEl = add(hud, `<div class="k">${kicker}</div><div class="t">${words(line)}</div>`, 'beat');
+      el.style.setProperty('--c', c);
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 700, easing: 'ease-out', fill: 'both' });
+      el.querySelector('.k').animate([{ opacity: 0, letterSpacing: '10px' }, { opacity: 1, letterSpacing: '4px' }], { duration: 1100, easing: IN, fill: 'both' });
+      revealWords(el.querySelector('.t'), 250, 110);
+      if (hold) el.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(-16px)' }], { duration: 800, delay: hold, easing: 'ease-in', fill: 'forwards' });
+    },
+    hideBeat(ms = 500) { const el = beatEl; beatEl = null; outAndRemove(el, [{ opacity: 0, transform: 'translateY(-16px)' }], ms); },
+
+    /** Cinema bars over the top and bottom of the frame (on for the opening and the close of the narrative films). */
+    letterbox(on, ms = 1200) {
+      for (const id of ['lb-top', 'lb-bottom']) $(id).animate([{ height: on ? '96px' : '0px' }], { duration: ms, easing: 'cubic-bezier(.6,0,.2,1)', fill: 'forwards' });
+    },
 
     chip(ic, h, b, c = '#ffb35c', side = 'left') {
       this.hideChip(250);
