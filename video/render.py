@@ -18,7 +18,7 @@ Setup (once):
 
   A supplemental film goes in video/storyboard_<film>.py, listed in FILMS, and renders with --film <film>.
 
-Options: --url puts an address on the end card and in youtube.txt. --no-build skips `npm run build`.
+Options: --url puts an address on the end card and in youtube.txt. --no-build skips `npm run build`. --no-1080p skips the 1080p copy.
 Narration is made once per line with Kokoro and cached in video/out/vo; a line is remade only when its text changes.
 To use a real voice, save video/out/vo/recorded/<id>.wav (ids are in script.md); the picture retimes to fit.
 Another film keeps its voice in video/out/vo/<its NAME>/ (recorded/ inside it), since films can share a line id.
@@ -730,7 +730,7 @@ def film_pass(browser, page, errors, args, mode, fps):
         mux(ffmpeg, silent, wav, final)
         silent.unlink()
         print("wrote", final, round(final.stat().st_size / 1e6, 1), "MB", flush=True)
-        if not args.preview and not args.start:
+        if not args.preview and not args.start and not args.no_1080p:
             share = OUT / f"{NAME}-1080p.mp4"
             subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(final), "-vf", "scale=1920:1080:flags=lanczos", "-c:v", "libx264",
                             "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(share)], check=True)
@@ -749,6 +749,7 @@ def main():
     parser.add_argument("--start", help="skip the scenes before this one (quick checks only; times and state differ from the real film)")
     parser.add_argument("--stills", help="comma-separated seconds to save as JPEGs")
     parser.add_argument("--no-build", action="store_true", help="use the existing dist/")
+    parser.add_argument("--no-1080p", action="store_true", help="skip the 1080p copy of the master")
     parser.add_argument("--video-only", action="store_true", help="skip the storyboard pass (when storyboard.html is already up to date)")
     parser.add_argument("--check", action="store_true", help="fill in every narration line and label from the app's data, without filming (quick)")
     parser.add_argument("--film", default="main",
