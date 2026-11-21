@@ -1,7 +1,7 @@
 import { AIR_GRID, airGrid, layerTimes } from '../lib/geomet.mjs';
 import { log, pool, writeNow } from '../lib/io.mjs';
 
-// The wildfire smoke forecast (plans/wow/2-wind-and-smoke.md): ECCC's RAQDPS with FireWork, surface PM2.5 from wildfire
+// The wildfire smoke forecast: ECCC's RAQDPS with FireWork, surface PM2.5 from wildfire
 // plumes only, every third hour from now to the end of the newest run (72 hours from its start), on the air grid. Each
 // frame is one byte a cell, q = round(10·√(µg/m³)) (so 1 µg/m³ is 10 and the top, 255, is 650), with runs of zeros
 // packed as [0, length], then base64. A frame that cannot be read is left out, never a blank one.

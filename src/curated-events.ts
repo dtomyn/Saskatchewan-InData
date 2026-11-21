@@ -37,7 +37,7 @@ export const CURATED_EVENTS: TimedEvent[] = [
     layers: ['population'],
   },
   {
-    t: 1912.5, layer: '*', kind: 'Tornado', title: '1912 — The Regina Cyclone',
+    t: 1912.495, layer: '*', kind: 'Tornado', title: '1912 — The Regina Cyclone',
     body: 'On 30 June 1912 a tornado cut through downtown Regina, killing 28 people: still the deadliest tornado in Canadian history.',
     lon: -104.61, lat: 50.45, zoom: 10,
     sections: [{ title: 'Before the record begins', text: 'The national tornado database on this map starts in 1980, so the Regina Cyclone is not one of its tracks. Turn on Tornadoes to see how often they touch down across the south.' }],

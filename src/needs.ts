@@ -52,9 +52,12 @@ export function needsLayer(data: Data): AtlasLayer {
   const metRamp = d3.scaleLinear<string>().domain([1, 4.5, 8]).range(['#ff5d5d', '#ffd166', color]).interpolate(d3.interpolateRgb).clamp(true);
   const countRamp = (id: NeedId) => d3.scaleLinear<string>().domain([0, 1, 6]).range(['#5a2030', NEEDS.find((n) => n.id === id)!.color, '#ffffff']).interpolate(d3.interpolateRgb).clamp(true);
   const ring = (rings: [number, number][][][]) => rings.flatMap((p) => p.map((r) => r));
-  // which place a site counts for: the one whose limits it is inside, else (a site just outside them) the nearest centre
+  // which place a site counts for: the one whose limits it is inside, or a place counted by radius whose centre is
+  // within that radius. A site in the slack just outside some limits (or counted only for a small community) is not
+  // named: the file does not say which place took it, and the nearest centre can be the wrong one
   const countsFor = (s: NeedSite) => data.munis.find((m) => (N?.areas[m.key] ?? []).some((p) => inRing(s[0], s[1], p[0])))
-    ?? d3.least(data.munis, (m) => km(m.lon, m.lat, s[0], s[1]));
+    ?? data.munis.find((m) => N?.towns[m.key]?.how === 'radius' && km(m.lon, m.lat, s[0], s[1]) <= (N.towns[m.key].r ?? N.fallbackKm))
+    ?? null;
 
   const l: AtlasLayer = {
     id: 'needs',

@@ -37,12 +37,21 @@ export default async function treaties() {
   const reserves = [];
   for (const f of fs2) {
     if (!f.geometry) continue;
-    const ps = polys(f.geometry, 0.0015);
+    // the survey's rings are not reliably ordered or wound (a hole can come first), so each ring's role comes from its
+    // geometry: a ring inside an odd number of larger rings is a hole of the smallest of them, any other an outer ring
+    const rings = polys(f.geometry, 0.0015).flat().map((r) => ({ r, a: Math.abs(ringArea(r)) })).sort((a, b) => b.a - a.a);
+    const ps = [], outer = [];
+    rings.forEach((x, i) => {
+      const inside = rings.slice(0, i).filter((y) => booleanPointInPolygon(x.r[0], { type: 'Polygon', coordinates: [y.r] }));
+      if (inside.length % 2 === 0) { outer.push(x); ps.push([x.r]); return; }
+      const host = inside.reverse().find((y) => outer.includes(y));
+      if (host) ps[outer.indexOf(host)].push(x.r);
+    });
     if (!ps.length) continue;
     const ring = ps[0][0];
     const c = [ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length];
     if (!inSask(c[0], c[1], 0.01)) continue;
-    const areaKm2 = ps.reduce((a, p) => a + Math.abs(ringArea(p[0])) * 111.32 * 111.32 * Math.cos((c[1] * Math.PI) / 180), 0);
+    const areaKm2 = ps.reduce((a, p) => a + Math.max(0, p.reduce((s, r, i) => s + (i ? -1 : 1) * Math.abs(ringArea(r)), 0)) * 111.32 * 111.32 * Math.cos((c[1] * Math.PI) / 180), 0);
     // the survey lists names in capitals: title-case them, keeping "I.R." and "No."
     const name = (f.properties.adminAreaNameEng ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
       .replace(/\b[a-z]/g, (c) => c.toUpperCase()).replace(/\bI\.r\./g, 'I.R.').replace(/\bIr\b/g, 'IR');

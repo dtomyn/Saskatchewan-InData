@@ -18,9 +18,10 @@ Setup (once):
 
   A supplemental film goes in video/storyboard_<film>.py, listed in FILMS, and renders with --film <film>.
 
-Options: --url puts an address on the end card and in youtube.txt. --no-build skips `npm run build`.
+Options: --url puts an address on the end card and in youtube.txt. --no-build skips `npm run build`. --no-1080p skips the 1080p copy.
 Narration is made once per line with Kokoro and cached in video/out/vo; a line is remade only when its text changes.
 To use a real voice, save video/out/vo/recorded/<id>.wav (ids are in script.md); the picture retimes to fit.
+Another film keeps its voice in video/out/vo/<its NAME>/ (recorded/ inside it), since films can share a line id.
 """
 import argparse
 import base64
@@ -83,8 +84,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         clean = path.split("?", 1)[0].split("#", 1)[0]
         if clean.startswith("/stage/"):
-            return str(STAGE / clean[len("/stage/"):])
-        return str(DIST / clean.lstrip("/")) if clean != "/" else str(DIST / "index.html")
+            root, rel = STAGE, clean[len("/stage/"):]
+        else:
+            root, rel = DIST, (clean.lstrip("/") if clean != "/" else "index.html")
+        # Never a file outside the stage or the build (a "/../" request answers 404).
+        target = (root / rel).resolve()
+        if target != root.resolve() and root.resolve() not in target.parents:
+            return str(root / "__outside__")
+        return str(target)
 
     def send_head(self):
         """Answers a byte range with 206 (the 3D buildings' PMTiles file is read in ranges; a whole-file answer breaks it)."""
@@ -135,18 +142,24 @@ def serve():
 # ---------------------------------------------------------------------------------------------------
 # narration
 
+def voice_dir():
+    """The main film's voice folder is video/out/vo; another film's is its own inside it (line ids can repeat)."""
+    return VOICE_DIR if not PREFIX else VOICE_DIR / NAME
+
+
 def make_voice(lines):
     """Makes each new or changed line with Kokoro; returns {id: length ms} and sets line['path']."""
-    VOICE_DIR.mkdir(parents=True, exist_ok=True)
-    (VOICE_DIR / "recorded").mkdir(exist_ok=True)
-    book = VOICE_DIR / "made.json"
+    folder = voice_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "recorded").mkdir(exist_ok=True)
+    book = folder / "made.json"
     made = json.loads(book.read_text(encoding="utf-8")) if book.exists() else {}
     engine = None
     lengths = {}
     for line in lines:
-        path = VOICE_DIR / "recorded" / f"{line['id']}.wav"
+        path = folder / "recorded" / f"{line['id']}.wav"
         if not path.exists():
-            path = VOICE_DIR / f"{line['id']}.wav"
+            path = folder / f"{line['id']}.wav"
             key = hashlib.sha1(f"{VOICE}|{VOICE_SPEED}|{storyboard.SOUNDS}|{line['said']}".encode()).hexdigest()
             if made.get(line["id"]) != key or not path.exists():
                 if engine is None:
@@ -439,6 +452,7 @@ def place(track, clip, at_s, gain=1.0):
 
 def write_audio(film, path):
     """Narration, sound effects and the music bed; the music ducks under the voice."""
+    sfx.reseed()
     rate = sfx.RATE
     total = film.marks["total"] + 0.5
     n = int(total * rate)
@@ -530,7 +544,7 @@ def write_captions(film):
 def write_script(film, found):
     total = film.marks["total"] * 1000
     parts = [f"# {getattr(storyboard, 'SCRIPT_TITLE', 'Living Skies Atlas explainer: narration script')}\n\n{clock_label(total)} in all. Written by `video/render.py` from `video/storyboard.py`, "
-             f"with numbers from the data extract of {found['extract']}. To replace a line with a real recording, save it as `video/out/vo/recorded/<id>.wav`.\n"]
+             f"with numbers from the data extract of {found['extract']}. To replace a line with a real recording, save it as `{voice_dir().relative_to(ROOT).as_posix()}/recorded/<id>.wav`.\n"]
     for c in film.chapters:
         parts.append(f"\n## {clock_label(c['at'])} {c['title']}\n\n**Shows:** {c['shows']}\n\n**Camera:** {c['camera']}\n\n**Motion:** {c['motion']}\n\n**Sound:** {c['sound']}\n")
         parts.extend(f"\n`{clock_label(s['at'])}` `{s['id']}` {s['text']}\n" for s in film.voiced if s["scene"] == c["id"])
@@ -663,7 +677,9 @@ def film_pass(browser, page, errors, args, mode, fps):
     page.evaluate("u => Stage.url(u)", (args.url or "living-skies-atlas").replace("https://", ""))
     writer = None
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    silent = OUT / f"{NAME}{'-preview' if args.preview else ''}{'-' + args.only if args.only else ''}-silent.mp4"
+    # --start skips scenes, so its output never takes the full film's names
+    tag = f"{'-preview' if args.preview else ''}{'-' + args.only if args.only else ''}{'-from-' + args.start if args.start else ''}"
+    silent = OUT / f"{NAME}{tag}-silent.mp4"
     if mode == "video":
         writer = subprocess.Popen(
             [ffmpeg, "-y", "-loglevel", "error", "-f", "image2pipe", "-c:v", "mjpeg", "-r", str(fps), "-i", "-",
@@ -676,31 +692,45 @@ def film_pass(browser, page, errors, args, mode, fps):
                 stills=[float(s) for s in args.stills.split(",")] if args.stills else None, writer=writer)
     film.url = args.url
     film.facts = found
-    film.play(storyboard.SCENES, args.start)
+    try:
+        film.play(storyboard.SCENES, args.start)
+    except BaseException:
+        # a scene that fails must not leave the encoder running behind the next film
+        if writer:
+            try:
+                writer.stdin.close()
+            except Exception:
+                pass
+            writer.kill()
+            writer.wait()
+        raise
     errors += film.errors
     browser.close()
     print(f"film {clock_label(film.marks['total'] * 1000)}, page errors: {errors or 'none'}", flush=True)
-    if mode == "board":
+    if mode == "board" and not args.start:
         write_storyboard(film, found)
     # Narration times are the same in both passes (the clock is virtual), so a master rendered with --video-only
     # still gets its captions, script and YouTube text; only the storyboard page needs the board pass.
-    if mode == "board" or (mode == "video" and not args.preview and not args.only):
+    if not args.start and (mode == "board" or (mode == "video" and not args.preview and not args.only)):
         write_captions(film)
         write_script(film, found)
         write_youtube(film, found, args.url)
     if writer:
         writer.stdin.close()
-        writer.wait()
+        if writer.wait() != 0:
+            raise SystemExit(f"ffmpeg failed writing {silent}")
         if args.only:
+            if errors:
+                raise SystemExit("the page reported errors")
             print("wrote", silent, "(no sound)", flush=True)
             return
-        wav = OUT / f"{NAME}.wav"
+        wav = OUT / f"{NAME}{tag}.wav"
         write_audio(film, wav)
-        final = OUT / f"{NAME}{'-preview' if args.preview else ''}.mp4"
+        final = OUT / f"{NAME}{tag}.mp4"
         mux(ffmpeg, silent, wav, final)
         silent.unlink()
         print("wrote", final, round(final.stat().st_size / 1e6, 1), "MB", flush=True)
-        if not args.preview:
+        if not args.preview and not args.start and not args.no_1080p:
             share = OUT / f"{NAME}-1080p.mp4"
             subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(final), "-vf", "scale=1920:1080:flags=lanczos", "-c:v", "libx264",
                             "-preset", "slow", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(share)], check=True)
@@ -719,6 +749,7 @@ def main():
     parser.add_argument("--start", help="skip the scenes before this one (quick checks only; times and state differ from the real film)")
     parser.add_argument("--stills", help="comma-separated seconds to save as JPEGs")
     parser.add_argument("--no-build", action="store_true", help="use the existing dist/")
+    parser.add_argument("--no-1080p", action="store_true", help="skip the 1080p copy of the master")
     parser.add_argument("--video-only", action="store_true", help="skip the storyboard pass (when storyboard.html is already up to date)")
     parser.add_argument("--check", action="store_true", help="fill in every narration line and label from the app's data, without filming (quick)")
     parser.add_argument("--film", default="main",

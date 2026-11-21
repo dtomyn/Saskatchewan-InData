@@ -41,10 +41,13 @@ export default async function needs() {
     const k = KINDS.findIndex((x) => x.test(t));
     if (k < 0) continue;
     const name = (t.name ?? t.brand ?? '').trim();
-    // the same place mapped twice (a point inside its building outline): same kind, close, same name or one unnamed
-    const dup = all.find((s) => s.k === k && distKm(s.lon, s.lat, lon, lat) < 0.15 && (!s.name || !name || normalizeName(s.name) === normalizeName(name)));
+    // the same place mapped twice (a point inside its building outline): same kind, close, and the same name, or one
+    // unnamed where one is a point and the other an outline (two unnamed points, say fuel on two corners, stay apart)
+    const node = e.type === 'node';
+    const dup = all.find((s) => s.k === k && distKm(s.lon, s.lat, lon, lat) < 0.15
+      && (s.name && name ? normalizeName(s.name) === normalizeName(name) : s.node !== node));
     if (dup) { if (!dup.name && name) dup.name = name; continue; }
-    all.push({ lon, lat, k, name, osm: `${e.type[0]}${e.id}` });
+    all.push({ lon, lat, k, name, node, osm: `${e.type[0]}${e.id}` });
   }
 
   const towns = {}, areas = {}, used = new Set(), small = {};

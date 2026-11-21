@@ -1,8 +1,14 @@
 // Small text parsers: CSV, fractional years, and the province's advisory PDFs.
 
-import { unzlibSync } from 'fflate';
+import { constants, inflateSync } from 'node:zlib';
 
-export const parseCSVLine = (l) => (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) ?? []).map((c) => c.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"')).slice(0, -1);
+const STREAM_MAX = 64e6; // bytes a page stream may inflate to: a report's pages are tens of KB
+
+export const parseCSVLine = (l) => {
+  const m = l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) ?? [];
+  // the last match is an empty one at the end, except after a trailing comma, where it is the real (empty) last field
+  return (l.endsWith(',') ? m : m.slice(0, -1)).map((c) => c.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"'));
+};
 export const parseCSV = (text) => {
   const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(Boolean);
   const h = parseCSVLine(lines[0]).map((x) => x.trim());
@@ -27,7 +33,12 @@ export function pdfText(buf) {
   while ((m = re.exec(s))) {
     const start = m.index + m[0].length, end = s.indexOf('endstream', start);
     let out;
-    try { out = Buffer.from(unzlibSync(buf.subarray(start, end))).toString('latin1'); } catch { continue; }
+    // a stream that is not Flate (an image, a font) is skipped; one that inflates past the bound fails the parse, so a
+    // malformed file is never read as a report with no rows
+    try { out = inflateSync(buf.subarray(start, end), { maxOutputLength: STREAM_MAX, finishFlush: constants.Z_SYNC_FLUSH }).toString('latin1'); } catch (e) {
+      if (e.code === 'ERR_BUFFER_TOO_LARGE') throw new Error(`PDF stream inflates past ${STREAM_MAX / 1e6} MB`);
+      continue;
+    }
     if (!/\bBT\b/.test(out)) continue;
     page++;
     let x = 0, y = 0, t;

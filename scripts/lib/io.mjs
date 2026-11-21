@@ -12,21 +12,37 @@ export const log = (...a) => console.log('·', ...a);
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const round = (v, d = 4) => (v == null || Number.isNaN(v) ? null : Math.round(v * 10 ** d) / 10 ** d);
 
-export async function cached(name, producer) {
-  const file = path.join(CACHE, name);
+/** Writes through a `.part` file and a rename, so a run stopped mid-write never leaves a truncated file behind. */
+export async function writeAtomic(file, data) {
+  await fs.writeFile(`${file}.part`, data);
+  await fs.rename(`${file}.part`, file);
+}
+
+/** A cache file's path; a name (some come from a server: a download's file name) never reaches outside .cache/. */
+function cachePath(name) {
+  const file = path.resolve(CACHE, name);
+  if (!file.startsWith(path.resolve(CACHE) + path.sep)) throw new Error(`cache name outside .cache/: ${name}`);
+  return file;
+}
+
+export async function cached(name, producer, valid) {
+  const file = cachePath(name);
   try {
-    return await fs.readFile(file);
+    const buf = await fs.readFile(file);
+    // a file cached before a check existed (or by an older run) that fails it is fetched again
+    if (valid && !valid(buf)) throw new Error('cached file failed its check');
+    return buf;
   } catch {
     const buf = await producer();
     await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, buf);
+    await writeAtomic(file, buf);
     return buf;
   }
 }
 
 /** A large download streamed straight to a file in the cache (not held in memory); returns its path. */
 export async function cachedFile(name, url, { timeout = 1_800_000 } = {}) {
-  const file = path.join(CACHE, name);
+  const file = cachePath(name);
   try { await fs.access(file); return file; } catch { /* not cached yet */ }
   await fs.mkdir(path.dirname(file), { recursive: true });
   log(`  downloading ${url} …`);
@@ -66,14 +82,21 @@ export function zipLines(file, want, onLine) {
   });
 }
 
-export async function fetchBuf(url, { retries = 3, timeout = 180_000, method, body, headers } = {}) {
+/** `maxBytes` bounds the answer (read as it arrives): a larger one fails at once, without a retry. */
+export async function fetchBuf(url, { retries = 3, timeout = 180_000, method, body, headers, maxBytes } = {}) {
+  const tooBig = () => Object.assign(new Error(`more than ${maxBytes} bytes from ${url.slice(0, 140)}`), { final: true });
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await fetch(url, { method, body, headers: { ...UA, ...(headers ?? {}) }, signal: AbortSignal.timeout(timeout) });
       if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status} for ${url.slice(0, 140)}`), { status: res.status });
-      return Buffer.from(await res.arrayBuffer());
+      if (!maxBytes) return Buffer.from(await res.arrayBuffer());
+      if (+res.headers.get('content-length') > maxBytes) throw tooBig();
+      const parts = [];
+      let n = 0;
+      for await (const c of res.body) { n += c.length; if (n > maxBytes) throw tooBig(); parts.push(c); }
+      return Buffer.concat(parts);
     } catch (e) {
-      if (attempt >= retries) throw e;
+      if (e.final || attempt >= retries) throw e;
       await sleep((e.status === 429 ? 10000 : 1500) * attempt);
     }
   }
@@ -85,12 +108,13 @@ export const asJSON = (buf, what) => {
   if (/^\s*</.test(s)) throw new Error(`${what}: got HTML, not JSON`);
   return JSON.parse(s);
 };
-export const cachedJSON = async (name, url, opts) => asJSON(await cached(name, async () => { const b = await fetchBuf(url, opts); asJSON(b, name); return b; }), name);
+/** `check(json)` may throw to refuse an answer (an error in a 200, say) before it is cached. */
+export const cachedJSON = async (name, url, { check, ...opts } = {}) => asJSON(await cached(name, async () => { const b = await fetchBuf(url, opts); check?.(asJSON(b, name)); return b; }), name);
 
 export async function writeOut(name, data) {
   await fs.mkdir(OUT, { recursive: true });
   const text = JSON.stringify(data);
-  await fs.writeFile(path.join(OUT, `${name}.json`), text);
+  await writeAtomic(path.join(OUT, `${name}.json`), text);
   log(`wrote ${name}.json (${(text.length / 1024).toFixed(0)} KB)`);
 }
 export const readOut = async (name) => JSON.parse(await fs.readFile(path.join(OUT, `${name}.json`), 'utf8'));
@@ -107,6 +131,6 @@ export async function pool(items, size, fn) {
 export async function writeNow(name, data) {
   await fs.mkdir(path.join(OUT, 'now'), { recursive: true });
   const text = JSON.stringify(data);
-  await fs.writeFile(path.join(OUT, 'now', `${name}.json`), text);
+  await writeAtomic(path.join(OUT, 'now', `${name}.json`), text);
   log(`wrote now/${name}.json (${(text.length / 1024).toFixed(0)} KB)`);
 }

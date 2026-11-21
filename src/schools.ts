@@ -42,7 +42,8 @@ export const frenchText = (s: School) => (s.fr ? 'French-language school (Fransa
 const isOpen = (s: School) => !s.col && s.s !== 'fn' && s.s !== 'ind';
 
 /** A trip from a place to a school or campus, in the shape the Town Report and Finder use for every trip. */
-export type SchoolTrip = { name: string; city: string | null; min: number | null; km: number; note: string; line?: [number, number][]; lon: number; lat: number };
+/** `approx`: a campus placed at its town's centre (its listed point is far from its town): the trip is to that town centre. */
+export type SchoolTrip = { name: string; city: string | null; min: number | null; km: number; note: string; line?: [number, number][]; lon: number; lat: number; approx?: boolean };
 export type PlaceSchools = { n: number; e: SchoolTrip | null; h: SchoolTrip | null; f: SchoolTrip | null; p: SchoolTrip | null };
 
 export function placeSchools(data: Data, key: string): PlaceSchools | null {
@@ -57,7 +58,8 @@ export function placeSchools(data: Data, key: string): PlaceSchools | null {
   const ps = (tr?: Trip): SchoolTrip | null => {
     if (!tr) return null;
     const p = S.pse[tr.f];
-    return { name: p.n, city: p.city, min: tr.min, km: tr.km, line: tr.line, lon: p.lon, lat: p.lat, note: `${PSE_KINDS[p.k].label}${p.campus ? ` · ${p.campus}` : ''}` };
+    const approx = !!(tr.approx || p.approx);
+    return { name: p.n, city: p.city, min: tr.min, km: tr.km, line: tr.line, lon: p.lon, lat: p.lat, approx, note: `${PSE_KINDS[p.k].label}${p.campus ? ` · ${p.campus}` : ''}${approx ? ' · placed at the town centre (its listed point is far from its town), so the trip is to the town centre, not the campus' : ''}` };
   };
   return { n: t.n, e: sch(t.e), h: sch(t.h), f: sch(t.f), p: ps(t.p) };
 }
@@ -75,7 +77,7 @@ export function schoolsLayer(data: Data): AtlasLayer {
   const val = (key: string) => { const t = tripOf(key, target); return t ? t.min ?? t.km : null; };
   const ramp = d3.scaleLinear<string>().domain([2, 30, 120]).range(['#fff3c4', color, '#e0457b']).interpolate(d3.interpolateRgb).clamp(true);
   const height = (v: number) => 2600 + Math.min(v, 240) * 650;
-  const tripText = (t: SchoolTrip) => (t.min != null ? `${t.min} min` : `${Math.round(t.km)} km`);
+  const tripText = (t: SchoolTrip) => (t.approx && t.km === 0 ? 'In town (approx.)' : `${t.min != null ? `${t.min} min` : `${Math.round(t.km)} km`}${t.approx ? ' to the town centre (approx.)' : ''}`);
 
   type Row = { k: TargetId; t: SchoolTrip; path: [number, number][] };
   let memoKey: string | null = null;
@@ -166,7 +168,7 @@ export function schoolsLayer(data: Data): AtlasLayer {
         hero(3, `${rows.filter((r) => r.v <= near).length} of ${rows.length}`, `places within ${near} ${unit}`);
         const max = d3.max(rows, (r) => r.v) ?? 1;
         body.innerHTML = `<h3>${routed ? 'Drive' : 'Distance'} to the nearest ${g.label.toLowerCase()}${target === 'f' ? ' school' : ''}</h3>
-          <ol class="rank-list">${rows.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${esc(r.t.name)}${r.t.city ? `, ${esc(r.t.city)}` : ''} · ${Math.round(r.t.km)} km</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
+          <ol class="rank-list">${rows.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${esc(r.t.name)}${r.t.city ? `, ${esc(r.t.city)}` : ''} · ${r.t.approx ? (r.t.km === 0 ? 'in town (placed at the town centre)' : `${Math.round(r.t.km)} km to the town centre (campus placed there, approximate)`) : `${Math.round(r.t.km)} km`}</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
           <div class="ramp" style="background:${rampCSS((t) => ramp(2 + t * 118))}"></div>
           <div class="ramp-labels"><span>2 ${unit}</span><span>30</span><span>120+ ${unit}</span></div>`;
       };
@@ -195,7 +197,7 @@ export function schoolsLayer(data: Data): AtlasLayer {
       }
       if (id === 'schools-pse') {
         const p = info.object as PostSec;
-        return `<b>${esc(p.n)}</b><br><span class="tk">${PSE_KINDS[p.k].label}${p.city ? ` · ${esc(p.city)}` : ''}</span>${p.campus ? `<br><span class="tk">${esc(p.campus)}</span>` : ''}`;
+        return `<b>${esc(p.n)}</b><br><span class="tk">${PSE_KINDS[p.k].label}${p.city ? ` · ${esc(p.city)}` : ''}</span>${p.campus ? `<br><span class="tk">${esc(p.campus)}</span>` : ''}${p.approx ? '<br><span class="tk">Placed at the town centre: its listed point is far from its town</span>' : ''}`;
       }
       const o: any = info.object;
       if (!o.m) return null;
@@ -235,8 +237,8 @@ export function schoolsLayer(data: Data): AtlasLayer {
 /** Schools & learning: the drive to the nearest elementary, high, French and post-secondary option, and schools in town. */
 export function schoolsRows(t: TownMetrics) {
   const s = t.schools!;
-  const v = (x: SchoolTrip | null) => (x ? (x.min != null ? `${x.min} min` : `${Math.round(x.km)} km`) : na);
-  const sub = (x: SchoolTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  const v = (x: SchoolTrip | null) => (x ? (x.approx && x.km === 0 ? 'In town' : `${x.min != null ? `${x.min} min` : `${Math.round(x.km)} km`}${x.approx ? ' (approx.)' : ''}`) : na);
+  const sub = (x: SchoolTrip | null) => (x ? `${x.approx ? `${x.km === 0 ? 'in town' : `${x.min != null ? 'drive' : 'straight line'} to the centre of ${esc(x.city ?? 'its town')}`}, where it is placed (approximate): ` : `${x.min != null ? 'drive' : 'straight line'} to `}${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
   return `<h3>Schools &amp; learning</h3>
     <div class="metric-grid">
       ${metric('Elementary', '#9ad8ff', v(s.e), sub(s.e))}

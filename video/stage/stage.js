@@ -291,7 +291,8 @@
     },
 
     end(tagline, url, fine) {
-      endEl = add(hud, `<div class="mark"></div><h1>${words('Living Skies Atlas')}</h1><p>${words(tagline)}</p>${url ? `<div><span class="url">${url}</span></div>` : ''}<div class="fine">${fine}</div>`, 'end');
+      endEl = add(hud, `<div class="mark"></div><h1>${words('Living Skies Atlas')}</h1><p>${words(tagline)}</p>${url ? '<div><span class="url"></span></div>' : ''}<div class="fine">${fine}</div>`, 'end');
+      if (url) endEl.querySelector('.url').textContent = url;  // an address is text, never markup
       endEl.querySelector('.mark').animate([{ opacity: 0, transform: 'scale(.4) rotate(-120deg)' }, { opacity: 1, transform: 'none' }], { duration: 1400, easing: IN, fill: 'both' });
       endEl.querySelector('.mark').animate([{ rotate: '0deg' }, { rotate: '360deg' }], { duration: 18000, iterations: Infinity });
       revealWords(endEl.querySelector('h1'), 300, 120);

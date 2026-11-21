@@ -12,16 +12,16 @@ import { SKY_WORD, auroraAt, auroraLive, skyState, sunAlt, sunAt } from './sky';
 
 export const STALE_H = 3;
 export const DROP_H = 24;
-const YEAR_MS = 365.25 * 864e5;
 
-/** Today as a fractional year (the same calendar as `isoDate` in layers.ts), fixed when the page loads. */
+/** Today as a fractional year (the same calendar as `isoDate` in layer-kit.ts and `msT` in history.ts), fixed when the page loads. */
 export const NOW_T = (() => {
   const d = new Date();
   const y = d.getUTCFullYear();
-  return y + (d.getTime() - Date.UTC(y, 0, 1)) / YEAR_MS;
+  return y + (d.getTime() - Date.UTC(y, 0, 1)) / (Date.UTC(y + 1, 0, 1) - Date.UTC(y, 0, 1));
 })();
-/** The Now stop counts from here: the timeline's last ~2 days. */
-export const isNow = (t: number, end: number) => t >= end - 0.005;
+/** The Now stop: the timeline's last ~2 days up to the layer's end, never past it (another layer's later timeline,
+ *  Climate's projections, is not Now). */
+export const isNow = (t: number, end: number) => t >= end - 0.005 && t <= end + 1e-6;
 
 export const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
 export const ageH = (iso: string | null | undefined) => (Date.now() - ms(iso)) / 36e5;
@@ -98,7 +98,7 @@ export function alertsInEffect(data: Data, layerId?: string) {
   const all = data.now.alerts && drawable(data.now.alerts.asOf) ? data.now.alerts.alerts : [];
   const re = layerId ? ALERTS_FOR[layerId] : null;
   const now = Date.now();
-  return all.filter((a) => (!re || re.test(`${a.name} ${a.short ?? ''}`)) && !(ms(a.expires) < now));
+  return all.filter((a) => (!re || re.test(`${a.name} ${a.short ?? ''}`)) && !(ms(a.expires) < now) && !(ms(a.ends) < now));
 }
 
 const dash = [new PathStyleExtension({ dash: true })];
@@ -180,12 +180,16 @@ export function placeOutlooks(data: Data, key: string): OutlookRow[] {
   const pick = nw.air?.towns[key];
   const c = pick ? nw.air!.communities[pick[0]] : null;
   if (c?.fv != null && c.ft && future(c.fto ?? c.ft))
-    rows.push({ k: 'Air quality forecast', c: '#e8a87c', v: `AQHI up to ${c.fv}`, sub: `${times(c.pub, `to ${esc(skTime(c.fto ?? c.ft))}`)} · highest at ${esc(skTime(c.ft))} · ${pick![1] < 15 ? 'for' : 'borrowed from'} ${esc(c.name)}` });
+    // once the forecast's highest hour has passed, its number is the issued period's peak, not what is still to come
+    rows.push({ k: 'Air quality forecast', c: '#e8a87c', v: future(c.ft) ? `AQHI up to ${c.fv}` : `AQHI peaked at ${c.fv}`, sub: `${times(c.pub, `to ${esc(skTime(c.fto ?? c.ft))}`)} · highest at ${esc(skTime(c.ft))} · ${pick![1] < 15 ? 'for' : 'borrowed from'} ${esc(c.name)}` });
   if (o?.thunder) {
-    const its = o.thunder.items.filter((it) => it.places.includes(key) && future(it.expires ?? it.valid));
+    const mine = o.thunder.items.filter((it) => it.places.includes(key));
+    const its = mine.filter((it) => future(it.expires ?? it.valid));
     for (const it of its)
       rows.push({ k: 'Thunderstorm outlook', c: '#ffd166', v: esc(it.severity ?? it.thunder ?? it.risk ?? 'in an outlook area'), sub: `${[it.tornado ? 'tornado risk' : '', it.hail ? `hail ${esc(it.hail)}` : '', it.gust ? `gusts ${esc(it.gust)}` : ''].filter(Boolean).join(' · ')}${it.tornado || it.hail || it.gust ? ' · ' : ''}${times(it.issued, `from ${esc(skTime(it.valid))}${it.expires ? ` to ${esc(skTime(it.expires))}` : ''}`)}` });
-    if (!its.length) rows.push({ k: 'Thunderstorm outlook', c: '#ffd166', v: 'None', sub: '<span class="tk">no outlook area covers this place (outlooks are issued May to October)</span>' });
+    // "None" only from a current read that covers no area here: an expired outlook or an old read says nothing about now
+    if (!its.length && (mine.length || !drawable(o.asOf))) rows.push({ k: 'Thunderstorm outlook', c: '#ffd166', v: 'No current outlook', sub: `<span class="tk">${mine.length ? 'the last outlook covering this place has expired · outlooks read' : 'outlooks last read'}</span> ${ageTag(o.asOf)}` });
+    else if (!its.length) rows.push({ k: 'Thunderstorm outlook', c: '#ffd166', v: 'None', sub: '<span class="tk">no outlook area covers this place (outlooks are issued May to October)</span>' });
   }
   if (o?.fire && o.fire.valid >= skToday()) {
     const cl = o.fire.towns[key];
@@ -217,7 +221,7 @@ export function provinceOutlook(data: Data, kind: 'fire' | 'smoke') {
   if (kind === 'smoke' && o?.smoke && future(o.smoke.valid)) {
     const v = Object.entries(o.smoke.towns).sort((a, b) => b[1] - a[1]);
     const name = (k: string) => esc(data.munis.find((m) => m.key === k)?.name ?? k);
-    return `<div class="ol-line"><span class="tk">Outlook · wildfire smoke to ${esc(skTime(o.smoke.valid))}, RAQDPS run ${esc(skTime(o.smoke.issued))}</span><br>${v.length && v[0][1] >= 1 ? `highest fire-smoke PM2.5 ${v[0][1].toFixed(0)} µg/m³ at ${name(v[0][0])}` : 'no place above 1 µg/m³ of fire smoke'}</div>`;
+    return `<div class="ol-line"><span class="tk">Outlook · wildfire smoke to ${esc(skTime(o.smoke.valid))}, RAQDPS run ${esc(skTime(o.smoke.issued))}</span><br>${!v.length ? 'no place’s forecast could be read' : v[0][1] >= 1 ? `highest fire-smoke PM2.5 ${v[0][1].toFixed(0)} µg/m³ at ${name(v[0][0])}` : 'no place above 1 µg/m³ of fire smoke'}</div>`;
   }
   return '';
 }
@@ -256,8 +260,8 @@ export function rightNow(data: Data, m: Muni) {
       if (d <= 100 && (!best || d < best.d)) best = { s, row, d };
     }
     const r = best?.row;
-    cells.push(metric('Nearest river gauge', '#4cc9f0', r ? (r[4] != null ? `${r[4] >= 0.095 ? r[4].toFixed(r[4] >= 1 ? 1 : 2) : '<0.1'}×` : `${r[2]} m`) : na,
-      best && r ? `${r[4] != null ? 'flow against its normal annual peak' : 'water level'}${r[5] ? ` (${r[5] === 'ice' ? 'ice-affected' : r[5] === 'est' ? 'estimated' : 'flagged'})` : ''} · ${esc(best.s.name)} (${Math.round(best.d)} km) · ${ageTag(r[1])}` : `no gauge within 100 km has reported in the past day`));
+    cells.push(metric('Nearest river gauge', '#4cc9f0', r ? (r[4] != null ? `${r[4] >= 0.095 ? r[4].toFixed(r[4] >= 1 ? 1 : 2) : '<0.1'}×` : r[2] != null ? `${r[2]} m` : na) : na,
+      best && r ? `${r[4] != null ? 'flow against its normal annual peak' : r[2] != null ? 'water level' : 'no flow or level in its latest reading'}${r[5] ? ` (${r[5] === 'ice' ? 'ice-affected' : r[5] === 'est' ? 'estimated' : 'flagged'})` : ''} · ${esc(best.s.name)} (${Math.round(best.d)} km) · ${ageTag(r[1])}` : `no gauge within 100 km has reported in the past day`));
   }
   if (nw.fires) {
     const ok = drawable(nw.fires.asOf);

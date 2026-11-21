@@ -1,4 +1,4 @@
-// Accumulated state (plans/digital-twin/2-accumulated-state.md): a compact daily record of the live feeds, so the
+// Accumulated state: a compact daily record of the live feeds, so the
 // timeline runs from each archive's last year up to today and point-in-time layers gain a history.
 //
 //   npm run data history            # roll today's readings into public/data/history/<feed>/<YYYY-MM>.json
@@ -25,9 +25,10 @@ const addDays = (day, n) => skDay(dayStart(day) + n * 864e5 + 1);
 function daysBetween(a, b) { const out = []; for (let d = a; d <= b; d = addDays(d, 1)) out.push(d); return out; }
 const FEW_RUNS = 12;
 const ALERT_GAP_H = 6;
+const readManifest = async (file) => { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return {}; } };
 
 export async function history(h, { backfill = false } = {}) {
-  const { log, fetchBuf, asJSON, OGC, BBOX, OUT, readOut, inSask, getProvince, round } = h;
+  const { log, fetchBuf, asJSON, OGC, BBOX, OUT, readOut, inSask, getProvince, round, ran = {} } = h;
   const DIR = path.join(OUT, 'history');
   const now = Date.now();
   const today = skDay(now);
@@ -70,6 +71,14 @@ export async function history(h, { backfill = false } = {}) {
   const OGL = { licence: 'Open Government Licence – Canada', licenceUrl: 'https://open.canada.ca/en/open-government-licence-canada' };
   const failures = [];
   const step = async (name, fn) => { try { await fn(); } catch (e) { failures.push(`${name}: ${e.message}`); log(`  ✖ ${name}: ${e.message}`); } };
+  /** Whether a stage's file is a new reading: a failed stage keeps its old file, and counting that again would stamp a
+   * day nobody looked at (or keep an ended alert open). `ran` is this process's stage results; otherwise the manifest. */
+  async function fresh(stage) {
+    if (stage in ran) return ran[stage];
+    const m = (await readManifest(stage.startsWith('now-') ? path.join(OUT, 'now', 'manifest.json') : path.join(OUT, 'manifest.json')))[stage];
+    return !!m?.ok && !(m.lastAttempt > m.updated) && now - Date.parse(m.updated) < 3 * 36e5;
+  }
+  const notFresh = (stage) => new Error(`${stage} did not refresh its file (failed, or not run in the last 3 hours): not counted`);
 
   // ---- rivers: daily min, max and mean discharge per gauge, recomputed for whole days from the real-time feed
   await step('rivers', async () => {
@@ -105,12 +114,15 @@ export async function history(h, { backfill = false } = {}) {
     for (const day of days) {
       const j = await month('rivers', day.slice(0, 7), () => ({ source: 'Environment and Climate Change Canada, real-time hydrometric data (provisional), daily roll-up', ...OGL, unit: 'm³/s', row: '[day, min, max, mean, readings, flag]', stations: {} }));
       const dd = +day.slice(8);
-      // the whole day is redone: drop its old rows, then add what the feed holds now (a gauge with none is a gap)
-      for (const id of Object.keys(j.stations)) j.stations[id] = j.stations[id].filter((row) => row[0] !== dd);
+      // the whole day is redone from what the feed holds now (a gauge with none is a gap), but a row is never replaced
+      // by one with fewer readings: an empty answer, or a day partly gone from the feed's window, keeps the old row
       for (const id of want) {
         const a = acc.get(`${id}|${day}`);
         if (!a) continue;
-        (j.stations[id] ??= []).push([dd, r(a.min), r(a.max), r(a.sum / a.n), a.n, a.flag]);
+        const rows = (j.stations[id] ??= []), old = rows.find((row) => row[0] === dd);
+        if (old && old[4] > a.n) continue;
+        j.stations[id] = rows.filter((row) => row[0] !== dd);
+        j.stations[id].push([dd, r(a.min), r(a.max), r(a.sum / a.n), a.n, a.flag]);
         j.stations[id].sort((x, y) => x[0] - y[0]);
       }
       for (const id of Object.keys(j.stations)) if (!j.stations[id].length) delete j.stations[id];
@@ -149,11 +161,14 @@ export async function history(h, { backfill = false } = {}) {
       const j = await month('air', day.slice(0, 7), () => ({ source: 'Environment and Climate Change Canada, Air Quality Health Index observations, daily roll-up', ...OGL, row: '[day, highest AQHI, hours reported]', communities: {}, days: {} }));
       Object.assign(j.communities, meta);
       const dd = +day.slice(8);
-      for (const id of Object.keys(j.days)) j.days[id] = j.days[id].filter((row) => row[0] !== dd);
+      // as for rivers: a row is never replaced by one with fewer hours reported
       for (const id of Object.keys(meta)) {
         const a = acc.get(`${id}|${day}`);
         if (!a) continue;
-        (j.days[id] ??= []).push([dd, round(a.max, 1), a.hours.size]);
+        const rows = (j.days[id] ??= []), old = rows.find((row) => row[0] === dd);
+        if (old && old[2] > a.hours.size) continue;
+        j.days[id] = rows.filter((row) => row[0] !== dd);
+        j.days[id].push([dd, round(a.max, 1), a.hours.size]);
         j.days[id].sort((x, y) => x[0] - y[0]);
       }
       for (const id of Object.keys(j.days)) if (!j.days[id].length) delete j.days[id];
@@ -195,15 +210,14 @@ export async function history(h, { backfill = false } = {}) {
         for (const f of page.features ?? []) {
           const [lon, lat] = f.geometry?.coordinates ?? [];
           if (!Number.isFinite(lon) || !inSask(lon, lat, 0.01)) continue;
-          const j = await add(lon, lat, f.properties.rep_date, f.properties.frp);
-          const dd = skDay(f.properties.rep_date).slice(8);
-          if (skDay(f.properties.rep_date) < yesterday) markBackfill(j, dd);
+          await add(lon, lat, f.properties.rep_date, f.properties.frp);
           n++;
         }
         log(`    hotspots ${start + (page.features ?? []).length} of ${page.numberMatched ?? '?'} read`);
         if ((page.features ?? []).length < PAGE) break;
       }
-      // a backfilled day with no hotspot is a day the archive covered, not a gap
+      // marked only once every page is read (a page that fails leaves its rows unmarked, to be read again); a backfilled
+      // day with no hotspot is a day the archive covered, not a gap
       for (const day of daysBetween(since, yesterday)) { const j = await month('fires', day.slice(0, 7), init); j.days[day.slice(8)] ??= []; markBackfill(j, day.slice(8)); }
       log(`  fires: ${n} hotspots in Saskatchewan since ${since}`);
     }
@@ -211,6 +225,7 @@ export async function history(h, { backfill = false } = {}) {
     let live = null;
     try { live = JSON.parse(await fs.readFile(path.join(OUT, 'now', 'fires.json'), 'utf8')); } catch { /* no live file */ }
     if (!live) throw new Error('no public/data/now/fires.json: run npm run data now-fires first');
+    if (!(await fresh('now-fires'))) throw notFresh('now-fires');
     for (const [lon, lat, iso, frp] of live.hotspots) await add(lon, lat, iso, frp);
     // the run covers the day it was read (and the day before, for its first hours); stamp today, and make sure today has a list
     const j = await month('fires', today.slice(0, 7), init);
@@ -224,11 +239,13 @@ export async function history(h, { backfill = false } = {}) {
     let live = null;
     try { live = JSON.parse(await fs.readFile(path.join(OUT, 'now', 'alerts.json'), 'utf8')); } catch { /* none */ }
     if (!live) throw new Error('no public/data/now/alerts.json: run npm run data now-alerts first');
+    if (!(await fresh('now-alerts'))) throw notFresh('now-alerts');
     const init = () => ({ source: 'Environment and Climate Change Canada, public weather alerts, as seen by each run', ...OGL, alerts: [] });
     const thisM = await month('alerts', today.slice(0, 7), init);
     const prevM = await month('alerts', addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7), init);
     for (const a of live.alerts) {
-      const key = `${a.code}|${a.type}|${[...a.places].sort().join(',')}|${a.areas.length}`;
+      // the regions themselves, not their count: two alerts of a kind over different regions are different alerts
+      const key = `${a.code}|${a.type}|${[...a.places].sort().join(',')}|${[...a.areas].sort().join(',')}`;
       // the same alert continuing: same key, seen within the last few hours
       const open = [...thisM.alerts, ...prevM.alerts].find((x) => x.key === key && now - Date.parse(x.seen) <= ALERT_GAP_H * 36e5 + 6e4);
       if (open) {
@@ -246,6 +263,7 @@ export async function history(h, { backfill = false } = {}) {
 
   // ---- drinking water: one row per advisory per month, with the first and last day it was seen listed
   await step('water', async () => {
+    if (!(await fresh('water'))) throw notFresh('water');
     const w = await readOut('water');
     const j = await month('water', today.slice(0, 7), () => ({ source: 'Water Security Agency, Saskatchewan Health Authority and Indigenous Services Canada advisory lists, as seen each day', licence: 'Crown copyright (Sask.), non-commercial; Government of Canada terms, non-commercial', advisories: [] }));
     const all = [...w.sites.map((s) => ({ ...s, placed: true })), ...w.unplaced.map((s) => ({ ...s, placed: false }))];

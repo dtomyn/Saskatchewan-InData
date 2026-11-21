@@ -79,9 +79,9 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.jobs ? jobsIncome(t) : ''}
     <h3>Hazards &amp; climate</h3>
     <div class="metric-grid">
-      ${metric('Wildfires nearby', '#ff8a3d', fmt.int(t.fires25km), `started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km)} burned within 50 km`)}
+      ${metric('Wildfires nearby', '#ff8a3d', t.fires25km != null ? fmt.int(t.fires25km) : na, t.fires25km != null ? `started within 25 km since 1990 · ${fmt.ha(t.burnedHa50km ?? 0)} burned within 50 km` : 'the fire archive is not available')}
       ${data.smoke ? metric('Smoke days', '#e8a87c', t.smoke ? t.smoke.avg.toFixed(0) : na, t.smoke ? `a year, ${t.smoke.from}–${t.smoke.to} (${t.smoke.worst.days} in ${t.smoke.worst.y}) · ${t.smoke.dist < 15 ? 'at' : 'borrowed from'} ${esc(t.smoke.name)}${t.smoke.dist < 15 ? '' : ` (${Math.round(t.smoke.dist)} km)`}` : `no air station within 150 km`) : ''}
-      ${metric('Tornadoes', '#9ad8ff', fmt.int(t.tornadoes50km), 'on record within 50 km, 1980–2009 and 2017 on')}
+      ${metric('Tornadoes', '#9ad8ff', t.tornadoes50km != null ? fmt.int(t.tornadoes50km) : na, t.tornadoes50km != null ? 'on record within 50 km, 1980–2009 and 2017 on' : 'the tornado record is not available')}
       ${data.hail && t.hail ? metric('Hail', '#c3b5ff', fmt.int(t.hail.n), `storms within 50 km, ${t.hail.from}–${t.hail.to}${t.hail.max ? ` · largest ${t.hail.max.mm} mm${t.hail.max.radar ? ' (radar estimate)' : ''}, ${Math.floor(t.hail.max.t)}` : ''}`) : ''}
       ${data.drought ? metric('Drought', '#e0a43a', t.drought ? String(t.drought.d2) : na, t.drought ? `months at D2+ (severe or worse) of ${t.drought.n}, ${t.drought.from.slice(0, 4)}–${t.drought.to.slice(0, 4)} · ${droughtNow(t.drought)}` : '') : ''}
       ${metric('Climate', '#f25f5c', t.climate ? `${t.climate.meanTemp.toFixed(1)} °C` : na, t.climate ? `mean since 1991${t.climate.precip ? ` · ${Math.round(t.climate.precip)} mm/yr` : ''} · ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)` : '')}
@@ -104,8 +104,12 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
   el.querySelector('.tr-twin')?.addEventListener('click', () => openTwin(key));
   el.querySelectorAll<HTMLElement>('[data-layer]').forEach((b) => b.addEventListener('click', () => window.dispatchEvent(new CustomEvent('atlas:layer', { detail: b.dataset.layer }))));
 
+  // the charts and the tract map draw next frame, into this report only: another report rendered into the panel
+  // before then has its own
+  const ctBox = el.querySelector('.tr-ct-map'), first = el.firstElementChild;
   requestAnimationFrame(() => {
-    drawCityTracts(el, data, key);
+    if (el.firstElementChild !== first) return;
+    if (ctBox?.isConnected) drawCityTracts(el, data, key);
     const p = data.population?.munis[key];
     if (p && el.querySelector('#tr-pop')) {
       const all = Object.entries(p.pop).map(([y, v]) => ({ x: +y, y: v }));
@@ -142,7 +146,7 @@ export function renderFinder(
     <div class="kicker" style="--c:#a99bff">Town Finder</div>
     <h2>Where should we live?</h2>
     <p class="lede">Tell the atlas what matters to you. Every place is ranked on each factor from the open data, then blended using your weights. Columns on the map show the overall score.</p>
-    ${data.commute ? `<div class="work-row"><label>I work in… <select class="work-sel" aria-label="I work in"><option value="">nowhere set</option>${[...data.munis].sort((a, b) => a.name.localeCompare(b.name)).map((m) => `<option value="${m.key}">${esc(m.name)}</option>`).join('')}</select></label><button class="tr-fall tr-commute work-go" type="button">🚗 Workday Reach ›</button></div>` : ''}
+    ${data.commute ? `<div class="work-row"><label>I work in… <select class="work-sel" aria-label="I work in"><option value="">nowhere set</option>${[...data.munis].sort((a, b) => a.name.localeCompare(b.name)).map((m) => `<option value="${esc(m.key)}">${esc(m.name)}</option>`).join('')}</select></label><button class="tr-fall tr-commute work-go" type="button">🚗 Workday Reach ›</button></div>` : ''}
     <div class="weights"></div>
     <div class="chips" style="margin:6px 0 4px">
       <button class="chip" data-preset="balanced">Balanced</button>
@@ -162,7 +166,7 @@ export function renderFinder(
     const row = document.createElement('label');
     row.className = 'weight';
     row.title = c.hint;
-    row.innerHTML = `<span>${c.label}<br><span style="color:var(--ink-3);font-size:11px">${c.hint}</span></span><input type="range" min="0" max="5" step="1" value="${weights[c.id]}" data-id="${c.id}"><span class="wv">${weights[c.id]}</span>`;
+    row.innerHTML = `<span>${c.label}<br><span style="color:var(--ink-3);font-size:11px">${c.hint}</span></span><input type="range" min="0" max="5" step="1" value="${weights[c.id] ?? c.defaultWeight}" data-id="${c.id}"><span class="wv">${weights[c.id] ?? c.defaultWeight}</span>`;
     wEl.appendChild(row);
   }
   // "I work in…": switches the Short commute criterion on, and is shared with Workday Reach
@@ -201,7 +205,7 @@ export function renderFinder(
     const weighted = CRITERIA.filter((c) => (weights[c.id] ?? 0) > 0);
     const cover = (r: (typeof ranked)[number]) => { const n = weighted.filter((c) => r.parts[c.id] != null).length; return n < weighted.length ? ` · scored on ${n} of ${weighted.length}` : ''; };
     list.innerHTML = ranked
-      .map((r, i) => `<li data-key="${r.t.muni.key}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.t.muni.name)}</span><br><span class="rd">${r.t.muni.tier === 2 ? `${esc(r.t.muni.kind.toLowerCase())} · ` : ''}${r.t.pop ? fmt.int(r.t.pop) + ' people' : ''}${r.t.csi != null ? ` · CSI ${r.t.csi.toFixed(0)}` : ''}${to(r.t.muni.key)}${cover(r)}</span></span><span><div class="bar"><i style="width:${Math.round(r.score * 100)}%"></i></div><div class="bar-v">${Math.round(r.score * 100)}</div></span></li>`)
+      .map((r, i) => `<li data-key="${esc(r.t.muni.key)}"><span class="rk">${i + 1}</span><span><button type="button" class="nm rank-pick">${esc(r.t.muni.name)}</button><br><span class="rd">${r.t.muni.tier === 2 ? `${esc(r.t.muni.kind.toLowerCase())} · ` : ''}${r.t.pop ? fmt.int(r.t.pop) + ' people' : ''}${r.t.csi != null ? ` · CSI ${r.t.csi.toFixed(0)}` : ''}${to(r.t.muni.key)}${cover(r)}</span></span><span><div class="bar"><i style="width:${Math.round(r.score * 100)}%"></i></div><div class="bar-v">${Math.round(r.score * 100)}</div></span></li>`)
       .join('');
     opts.onChange(ranked);
   };

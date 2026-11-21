@@ -9,6 +9,8 @@ export default async function crime() {
   const lines = csv.split(/\r?\n/).filter(Boolean);
   const header = parseCSVLine(lines[0]).map((h) => h.replace(/^﻿/, ''));
   const iDate = header.indexOf('REF_DATE'), iGeo = header.indexOf('GEO'), iStat = header.indexOf('Statistics'), iVal = header.indexOf('VALUE');
+  const lost = Object.entries({ REF_DATE: iDate, GEO: iGeo, Statistics: iStat, VALUE: iVal }).filter(([, i]) => i < 0).map(([k]) => k);
+  if (lost.length) throw new Error(`table 35-10-0061 has no ${lost.join(', ')} column: layout changed`);
   const STATS = { 'Crime severity index': 'csi', 'Violent crime severity index': 'vcsi', 'Non-violent crime severity index': 'nvcsi', 'Weighted clearance rate': 'clear' };
   const byGeo = {};
   const prov = {};
@@ -17,7 +19,7 @@ export default async function crime() {
     const c = parseCSVLine(line);
     const stat = STATS[c[iStat]];
     // A service lists years before it existed (or after it stopped reporting) as 0: no real service has an index of 0.
-    if (!stat || c[iVal] === '' || Number(c[iVal]) === 0) continue;
+    if (!stat || c[iVal] === '' || !Number.isFinite(Number(c[iVal])) || Number(c[iVal]) === 0) continue;
     const geo = c[iGeo], year = c[iDate].slice(0, 4);
     if (/^Saskatchewan/.test(geo)) { (prov[stat] ??= {})[year] = Number(c[iVal]); continue; }
     services.add(geo);
@@ -56,5 +58,6 @@ export default async function crime() {
   const missing = PLACES_LIST.filter((p) => !munis[normalizeName(p.name)]).map((p) => p.name);
   log(`  ${services.size} police services in the table; ${Object.keys(munis).length} places matched`);
   if (missing.length) log('  crime: no own police series for', missing.join(', '));
+  if (!Object.keys(munis).length) throw new Error('no place matched a police service in table 35-10-0061');
   await writeOut('crime', { source: 'Statistics Canada, Table 35-10-0061-01 (Crime severity index and weighted clearance rates, police services in Saskatchewan)', prov, munis, service, services: services.size });
 }

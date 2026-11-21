@@ -1,4 +1,4 @@
-// Climate projections (plans/digital-twin/3-forecasts-and-what-ifs.md, 3b): Environment and Climate Change Canada's
+// Climate projections: Environment and Climate Change Canada's
 // CMIP6 downscaled projections (CanDCS-U6) per place, from the `projections` stage. Model output, never a record:
 // everything drawn from here is hatched, dashed or wire-framed, carries a "projection, not a record" badge, and shows a
 // range (two scenarios, each with the models' 10th–90th percentile spread), never a single number. Projections never

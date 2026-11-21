@@ -3,7 +3,7 @@
 import * as d3 from 'd3';
 import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer } from '@deck.gl/core';
-import { JusticeSite, Trip, fmt, lowerBound } from './data';
+import { JusticeSite, Trip, fmt, km, lowerBound } from './data';
 import { esc, safeUrl } from './html';
 import { rampCSS } from './charts';
 import { ADDITIVE, AtlasLayer, NO_DEPTH, dashExt, heroStats, kicker, mk, rgb, sourceLine, townColumns } from './layer-kit';
@@ -44,8 +44,12 @@ export function justiceLayer(data: Data): AtlasLayer {
   const color = '#ffd166';
   const J = data.justice;
   const sites: JusticeSite[] = J?.sites ?? [];
-  const routed = !!J && J.routing !== 'straight-line';
-  const unit = routed ? 'min' : 'km';
+  // each kind is checked against its own trips: the stage records the courts' routing only, and a router that failed
+  // part-way leaves minutes on only the places done before it, so a kind compares in minutes only when every trip has them
+  const allMin = (k: 'court' | 'police') => !!J && J.routing !== 'straight-line' && Object.values(J.towns).every((t) => (t[k] ?? []).every((x) => x.min != null));
+  const ROUTED = { court: allMin('court'), police: allMin('police') };
+  const routed = ROUTED.court && ROUTED.police;
+  const unitOf = (k: 'court' | 'police') => (ROUTED[k] ? 'min' : 'km');
   let target: 'court' | 'police' = 'court';
   const courtTrips = (key: string) => J?.towns[key]?.court;
   // under a closure scenario (src/scenario.ts) a place's courthouse is the nearest open one the stage kept; `beyond` when
@@ -55,11 +59,20 @@ export function justiceLayer(data: Data): AtlasLayer {
     const t = trip ?? beyond;
     return t ? { ...t, site: sites[t.f], ...(beyond ? { beyond: true } : {}) } : null;
   };
+  // when a kind falls back to kilometres (some place had no routed trip), a routed trip's road km is set aside for the
+  // straight line from the town centre, so every place is compared on the same straight-line distance the panel names
+  const straight = <T extends Trip & { site: JusticeSite }>(key: string, k: 'court' | 'police', n: T | null): T | null => {
+    if (!n || ROUTED[k] || n.min == null) return n;
+    const m = data.munis.find((x) => x.key === key);
+    return m ? { ...n, km: km(m.lon, m.lat, n.site.lon, n.site.lat) } : n;
+  };
   const nearestNow = (key: string, k: 'court' | 'police'): (Trip & { site: JusticeSite; inferred?: boolean; beyond?: boolean }) | null =>
-    k === 'court' && scenarioOn('court') ? scCourt(key) : nearestJustice(data, key, k);
-  const val = (key: string, k = target) => { const n = nearestNow(key, k); return n ? n.min ?? n.km : null; };
-  const tv = (t: Trip) => t.min ?? t.km;
-  const addText = (a: Affected) => (a.added == null ? `more than +${Math.round(tv(a.beyond!) - tv(a.before))} ${unit}` : `+${Math.round(a.added)} ${unit}`);
+    straight(key, k, k === 'court' && scenarioOn('court') ? scCourt(key) : nearestJustice(data, key, k));
+  const tvOf = (t: Trip, k: 'court' | 'police') => (ROUTED[k] ? t.min ?? t.km : t.km);
+  const val = (key: string, k = target) => { const n = nearestNow(key, k); return n ? tvOf(n, k) : null; };
+  // scenario.ts gives the added trip in its own unit (minutes only when both trips were routed); when every kept site is
+  // closed there is no next one to measure, so no number is given
+  const addText = (a: Affected) => (a.added == null ? 'longer: every one kept for it is closed' : `+${Math.round(a.added)} ${a.unit ?? 'km'}`);
   const ramp = d3.scaleLinear<string>().domain([5, 45, 150]).range(['#fff6d6', color, '#e0457b']).interpolate(d3.interpolateRgb).clamp(true);
   const height = (v: number) => 3600 + Math.min(v, 300) * 600;
   const count = (k: Kind) => sites.filter((s) => s.kind === k).length;
@@ -187,9 +200,10 @@ export function justiceLayer(data: Data): AtlasLayer {
         el.querySelectorAll<HTMLButtonElement>('[data-k]').forEach((b) => b.classList.toggle('on', b.dataset.k === target));
         const rows = data.munis.flatMap((m) => { const v = val(m.key), n = nearestNow(m.key, target); return v != null && n ? [{ m, v, n }] : []; }).sort((a, b) => a.v - b.v);
         const sc = target === 'court' && scenarioOn('court');
-        hero(3, `${Math.round(d3.median(rows, (r) => r.v) ?? 0)} ${unit}`, `median drive to ${target === 'court' ? 'a courthouse' : 'police'}`);
+        const unit = unitOf(target);
+        hero(3, `${Math.round(d3.median(rows, (r) => r.v) ?? 0)} ${unit}`, `median ${ROUTED[target] ? 'drive' : 'distance'} to ${target === 'court' ? 'a courthouse' : 'police'}`);
         const max = d3.max(rows, (r) => r.v) ?? 1;
-        body.innerHTML = `<h3>${routed ? 'Drive' : 'Distance'} to the nearest ${target === 'court' ? 'courthouse' : 'police station'}${sc ? ' <span class="sc-tag">scenario</span>' : ''}</h3>
+        body.innerHTML = `<h3>${ROUTED[target] ? 'Drive' : 'Distance'} to the nearest ${target === 'court' ? 'courthouse' : 'police station'}${sc ? ' <span class="sc-tag">scenario</span>' : ''}</h3>
           <ol class="rank-list">${rows.map((r, i) => `<li data-key="${r.m.key}"><span class="rk">${i + 1}</span><span><span class="nm">${r.m.name}</span><br><span class="rd">${esc(r.n.site.name)}${r.n.inferred ? ' · based in town (Statistics Canada police-service list)' : `${r.n.site.city ? ` · ${esc(r.n.site.city)}` : ''} · ${Math.round(r.n.km)} km`}${r.n.beyond ? ' · <b class="sc-closed">every courthouse kept for it is closed</b>' : ''}</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${r.n.beyond ? CLOSED_COLOR : ramp(r.v)}"></i></div><div class="bar-v">${r.n.beyond ? '>' : ''}${Math.round(r.v)}</div></span></li>`).join('')}</ol>
           <div class="ramp" style="background:${rampCSS((t) => ramp(5 + t * 145))}"></div>
           <div class="ramp-labels"><span>5 ${unit}</span><span>45</span><span>150+ ${unit}</span></div>`;
@@ -232,14 +246,15 @@ export function justiceLayer(data: Data): AtlasLayer {
       if (info.layer?.id !== 'justice-sites') return null;
       const s = info.object as JusticeSite;
       const i = info.index;
-      const near = data.munis.map((m) => ({ m, n: nearestJustice(data, m.key, s.kind === 'court' ? 'court' : 'police') })).filter((r) => r.n && r.n.site === s);
+      const k = s.kind === 'court' ? 'court' : 'police';
+      const near = data.munis.map((m) => ({ m, n: nearestJustice(data, m.key, k) })).filter((r) => r.n && r.n.site === s);
       const shut = isClosed('court', i);
       const web = s.web ? safeUrl(s.web) : null;
       return {
         layer: 'justice', kind: JUSTICE_KINDS[s.kind].label, lon: s.lon, lat: s.lat, zoom: 10,
         title: s.name,
         body: `${JUSTICE_KINDS[s.kind].label}${s.city ? ` in ${s.city}` : ''}${s.op ? `, run by ${s.op}` : ''}.${s.kind !== 'corrections' ? ` It is the nearest ${s.kind === 'court' ? 'courthouse' : 'police station'} by road for ${near.length} of the atlas’s places${near.length ? `: ${near.map((r) => r.m.name).join(', ')}` : ''}.` : ''}`,
-        stats: near.length ? [{ v: String(near.length), l: 'places it is nearest to' }, { v: `${Math.round(d3.max(near, (r) => r.n!.min ?? r.n!.km) ?? 0)} ${unit}`, l: 'longest of those drives' }] : [],
+        stats: near.length ? [{ v: String(near.length), l: 'places it is nearest to' }, { v: `${Math.round(d3.max(near, (r) => tvOf(r.n!, k)) ?? 0)} ${unitOf(k)}`, l: `longest of those ${ROUTED[k] ? 'drives' : 'distances'}` }] : [],
         sources: [{ label: 'OpenStreetMap', url: `https://www.openstreetmap.org/${s.osm}` }, ...(web ? [{ label: 'Website', url: web }] : [])],
         detail: s.kind === 'court' ? (el) => {
           el.insertAdjacentHTML('beforeend', `<button class="sc-btn" style="--c:${CLOSED_COLOR}">${shut ? '↺ Reopen it' : scenarioOn('court') ? '✕ Close this one too' : '✕ What if this closed?'}</button><p class="note">${esc(SCENARIO_CAVEAT)}</p>`);

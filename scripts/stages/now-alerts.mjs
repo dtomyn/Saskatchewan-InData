@@ -25,6 +25,8 @@ export default async function nowAlerts() {
     groups.set(key, g);
     if (p.publication_datetime > g.issued) g.issued = p.publication_datetime;
     if (p.event_end_datetime && (!g.ends || p.event_end_datetime > g.ends)) g.ends = p.event_end_datetime;
+    // the latest expiry, as for `ends`: an area expiring first must not take the group's other areas with it
+    if (p.expiration_datetime && (!g.expires || p.expiration_datetime > g.expires)) g.expires = p.expiration_datetime;
     if (!g.areas.includes(p.feature_name_en)) g.areas.push(p.feature_name_en);
     for (const pl of places) if (booleanPointInPolygon([pl.lon, pl.lat], f)) g.places.add(pl.key);
     g.polys.push(...polys(f.geometry, 0.01, 3));

@@ -3,7 +3,7 @@ import { cachedJSON, log, writeOut } from '../lib/io.mjs';
 import { getPlaces } from '../lib/places.mjs';
 
 // Statistics Canada Table 17-10-0155-01: population estimates, 1 July, by census subdivision (2021 boundaries).
-// Climate projections (plans/digital-twin/3-forecasts-and-what-ifs.md, 3b): Environment and Climate Change Canada's
+// Climate projections: Environment and Climate Change Canada's
 // CMIP6 statistically downscaled projections (CanDCS-U6, 26 models, BCCAQv2, ~10 km grid), as 30-year averages of the
 // change from 1971–2000, from MSC GeoMet's OGC API coverage. One request per window, scenario and percentile over the
 // province (18, cached in .cache/projections/); each place takes its grid cell. Kept as published, never recomputed:

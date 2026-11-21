@@ -26,7 +26,9 @@ Town Finder → Growing family; or turn on the layers and read a Town Report's S
 ## Check it
 
 ```js
+// one line at a time: a panel fills a moment after it opens, and a tour replaces one still running
 atlas.clearMap(); atlas.focus('schools')
 atlas.clearMap(); atlas.focus('childcare')
-atlas.openFinder(); document.querySelector('[data-preset="family"]').click()
+atlas.openFinder()
+await new Promise((r) => setTimeout(r, 300)); document.querySelector('[data-preset="family"]').click()
 ```

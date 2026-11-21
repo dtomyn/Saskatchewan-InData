@@ -29,6 +29,7 @@ Turn on Climate or Light & dark and switch chips; open a Town Report.
 ## Check it
 
 ```js
+// one line at a time: a panel fills a moment after it opens, and a tour replaces one still running
 atlas.clearMap(); atlas.focus('climate'); atlas.setTime(2060)   // projection
 document.querySelector('#panel [data-twin="on"]').click()     // Climate twin: then click Prince Albert, or
 { const s = document.querySelector('#panel .twin-town'); s.value = 'prince albert'; s.dispatchEvent(new Event('change')) }

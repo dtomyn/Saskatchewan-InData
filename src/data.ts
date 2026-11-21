@@ -53,9 +53,11 @@ export type NormalsStation = {
 };
 export type PopSeries = { pop: Record<string, number> };
 /** A health facility. `hospital`: a hospital proper, not a health centre or clinic; `type` is the source's own label. */
-export type Facility = { name: string; city: string; lon: number; lat: number; hospital: boolean; ed: null; hours: null; type?: string };
+export type Facility = { name: string; city: string; lon: number; lat: number; hospital: boolean; ed: null; hours: null; type?: string; approx?: 1 };
 /** One place -> facility trip: facility index, drive minutes (null if straight-line only), km, road line. */
-export type Trip = { f: number; min: number | null; km: number; ferry?: boolean; line?: [number, number][] };
+/** `approx`: the target stands at its town's centre (a post-secondary campus whose listed point is far from its town), so the
+ *  trip is to that town centre, not the building. `km` 0 is in town. */
+export type Trip = { f: number; min: number | null; km: number; ferry?: boolean; line?: [number, number][]; approx?: 1 };
 
 export type CrimeSeries = { csi?: Record<string, number>; vcsi?: Record<string, number>; nvcsi?: Record<string, number>; clear?: Record<string, number> };
 export type Crime = {
@@ -163,7 +165,7 @@ export type School = {
   osm?: string;
 };
 /** A post-secondary site: a university or college ('uni'), polytechnic or technical institute ('poly') or regional college ('col'). */
-export type PostSec = { n: string; k: 'uni' | 'poly' | 'col'; city: string | null; campus?: string | null; lon: number; lat: number; src: 'ae' | 'osm'; osm?: string };
+export type PostSec = { n: string; k: 'uni' | 'poly' | 'col'; city: string | null; campus?: string | null; lon: number; lat: number; src: 'ae' | 'osm'; osm?: string; approx?: 1 };
 export type Schools = {
   source: string; pseSource: string; routing: string; routingSource: string | null; asOf: string; inferKm: number;
   schools: School[]; pse: PostSec[];
@@ -513,7 +515,7 @@ export type Data = {
  * `protected`: land behind dikes. Polygons are rings of [lon, lat].
  */
 export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; place: string; water?: string | null; year?: number | null; program?: string | null; pdf?: string | null; polys: [number, number][][][] };
-/** 3D cities (plans/wow/6; the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
+/** 3D cities (the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
  *  count touching the WSA's mapped 1:500-year extent (`way` the floodway, `ext` the rest, `prot` only behind dikes) and with a height (`h`). */
 export type BuildingArea = { name: string; box: [number, number, number, number]; n: number; way: number; ext: number; prot: number; h: number };
 export type Buildings = { source: string; sourceUrl: string; licence: string; heights: string; flood: string; asOf: string; file: string; bytes: number; minzoom: number; maxzoom: number; storey: number; z12Min: number; bounds: [number, number, number, number]; areas: BuildingArea[] };
@@ -532,7 +534,7 @@ export type ProjWindow = [number, number, number, number];
 export type TwinMatch = [number, number, number, number];
 /** A station that can be a twin. `k`: the place it stands for (its own station, close by); `near`: its nearest place. */
 export type TwinStation = { id: string; name: string; lon: number; lat: number; t: number; p: number; yrs: number; near: string; km: number; k?: string };
-/** Climate twins (plans/wow/5; the `twins` stage): worked out from projections and normals, model output, never a record. */
+/** Climate twins (the `twins` stage): worked out from projections and normals, model output, never a record. */
 export type Twins = {
   source: string; asOf: string; normalsPeriod: string; baseline: string; baseShare: number; maxD: number;
   spread: { t: number; p: number }; maxT: number; windows: number[]; windowYears: number;
@@ -736,18 +738,27 @@ export type HistoryIndex = {
 };
 
 const historyMemo = new Map<string, Promise<unknown>>();
+/** A history file, or null when this copy has none (404, or not JSON). A failed request (network, server error)
+ *  rejects, so `memoHistory` forgets it and the next call asks again. */
+async function loadHistoryFile<T>(name: string): Promise<T | null> {
+  const res = await fetch(`${base}data/${name}.json`);
+  if (!res.ok) { if (res.status === 404 || res.status === 410) return null; throw new Error(`${name}: HTTP ${res.status}`); }
+  // not JSON (a SyntaxError) is "none"; a body that fails to arrive rejects like a failed request
+  try { return (await res.json()) as T; } catch (e) { if (e instanceof SyntaxError) return null; throw e; }
+}
+function memoHistory<T>(k: string): Promise<T | null> {
+  if (!historyMemo.has(k)) historyMemo.set(k, loadHistoryFile<T>(`history/${k}`).catch(() => { historyMemo.delete(k); return null; }));
+  return historyMemo.get(k) as Promise<T | null>;
+}
 const liveAllowed = () => { const q = new URLSearchParams(location.search); return !q.has('film') || q.has('now'); };
 /** The history index, or null (no history in this copy, or the film). `force` reads it for the film too: the season
  *  replay, which the film handle asks for by name. */
 export function loadHistoryIndex(force = false): Promise<HistoryIndex | null> {
   if (!force && !liveAllowed()) return Promise.resolve(null);
-  if (!historyMemo.has('index')) historyMemo.set('index', load<HistoryIndex>('history/index'));
-  return historyMemo.get('index') as Promise<HistoryIndex | null>;
+  return memoHistory<HistoryIndex>('index');
 }
-/** One feed's month file ('YYYY-MM'), or null. Each is fetched once. */
+/** One feed's month file ('YYYY-MM'), or null. Each is fetched once (a failed request is asked again next time). */
 export function loadHistory<T>(feed: HistoryFeed, month: string, force = false): Promise<T | null> {
   if (!force && !liveAllowed()) return Promise.resolve(null);
-  const k = `${feed}/${month}`;
-  if (!historyMemo.has(k)) historyMemo.set(k, load<T>(`history/${k}`));
-  return historyMemo.get(k) as Promise<T | null>;
+  return memoHistory<T>(`${feed}/${month}`);
 }

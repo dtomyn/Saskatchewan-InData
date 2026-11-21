@@ -1,4 +1,4 @@
-// Guided tours (plans/wow/4-guided-tours.md): the app drives itself through a short story and hands back control at
+// Guided tours: the app drives itself through a short story and hands back control at
 // any moment. Nothing is pre-rendered: a tour only calls what a visitor could click, with today's data.
 //
 // A tour is a list of steps. Each has a caption and, optionally, a camera view, something to `do` through the same
@@ -60,6 +60,16 @@ export interface Tour { id: string; title: string; blurb: string; steps: TourSte
 const range = (a: TourApi, id: string) => a.layers.find((l) => l.id === id)!.range;
 /** Picks a layer on an otherwise empty map, at a time of its record. */
 const only = (a: TourApi, id: string, t?: number) => { a.reset(); a.focus(id); if (t != null) a.setTime(t); };
+/** Clicks a panel control once the panel has been drawn (it fills a moment after a layer is focused); gives up after ~1.5 s. */
+let clickRetry = 0;
+const clickWhenShown = (sel: string, tries = 15) => {
+  clearTimeout(clickRetry);
+  const b = document.querySelector<HTMLElement>(sel);
+  if (b) { if (!b.classList.contains('on')) b.click(); return; }
+  if (tries > 0) clickRetry = window.setTimeout(() => clickWhenShown(sel, tries - 1), 100);
+};
+/** A step change or Exit forgets a click still waiting for its panel, so it never lands on the next step's or the visitor's. */
+const cancelClick = () => clearTimeout(clickRetry);
 /** The last whole year of a layer's record (before its Now stop, if it has one). */
 const lastYear = (a: TourApi, id: string) => { const l = a.layers.find((x) => x.id === id)!; return Math.floor(l.now?.archiveEnd ?? l.range[1]); };
 const n = (v: number) => v.toLocaleString('en-CA');
@@ -109,7 +119,8 @@ export const TOURS: Tour[] = [
       },
       {
         caption: 'And the light. On the shortest day of the year the north gets less daylight than the south. This is worked out from latitude, not measured.',
-        do: (a) => only(a, 'light'),
+        // the layer keeps the chip a visitor last picked: the caption is about the shortest day, so pick it
+        do: (a) => { only(a, 'light'); clickWhenShown('#panel [data-m="dec"]'); },
         camera: WIDE,
       },
       {
@@ -335,6 +346,7 @@ export function initTours(a: TourApi): Tours {
     if (!run) return;
     const r = run;
     clearInterval(r.timer);
+    cancelClick();
     r.i = i; r.paused = false; r.done = false;
     const gen = ++r.gen;
     const s = r.tour.steps[i];
@@ -439,6 +451,7 @@ export function initTours(a: TourApi): Tours {
     if (!run) return;
     const r = run;
     clearInterval(r.timer);
+    cancelClick();
     run = null;
     a.setPlaying(false);
     a.map.stop();

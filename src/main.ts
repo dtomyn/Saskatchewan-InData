@@ -9,8 +9,8 @@ import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import * as d3 from 'd3';
 import { Data, MONTHS, clamp, loadAll } from './data';
-import { isNow } from './now';
-import { DAY_T, ensureFeed, onHistory, tDay } from './history';
+import { alertsInEffect, drawable, isNow } from './now';
+import { DAY_T, dayT, ensureFeed, onHistory, shiftDay, tDay } from './history';
 import { AtlasEvent, AtlasLayer, Ctx, PanelHandle, TimedEvent } from './layer-kit';
 import { CURATED_EVENTS } from './curated-events';
 import { buildLayers } from './layers';
@@ -172,6 +172,8 @@ function initMap() {
 // ---------------------------------------------------------------------------------------------
 // deck layers per frame
 
+let finderRk: { of: Ranked[] | null; rk: (Ranked & { i: number })[] } = { of: null, rk: [] };
+
 function render() {
   if (!overlay) return;
   syncBuildings(map, state.visible.has('rivers') && !!byId.rivers?.available);
@@ -182,7 +184,7 @@ function render() {
     // at the timeline's Now stop, a layer with a live reading draws it over its archive; between the archive and Now,
     // its daily record (fetched the first time the timeline enters that span)
     const rec = l.now?.recent;
-    const inSpan = !!rec && !state.replay && state.time >= rec.from && !isNow(state.time, l.range[1]);
+    const inSpan = !!rec && !state.replay && state.time >= rec.from && state.time <= l.range[1] && !isNow(state.time, l.range[1]);
     if (inSpan) ensureFeed(rec!.feed, rec!.from);
     const live = l.now && isNow(state.time, l.range[1]) ? l.now.build(c) : inSpan ? rec!.build(c) : [];
     // a season replay draws by itself, in place of the layer's archive and live reading
@@ -196,7 +198,9 @@ function render() {
   const anyMuni = [...state.visible].some((id) => (MUNI_LAYERS.has(id) || (MUNI_WHEN_FOCUSED.has(id) && id === state.focused)) && byId[id]?.available);
   if (state.mode === 'finder' && state.ranked) {
     const ramp = d3.scaleSequential(d3.interpolateRgb('#2b1f6b', '#7dffc4')).domain([0.2, 0.85]).clamp(true);
-    const rk = state.ranked.map((r, i) => ({ ...r, i }));
+    // the same array for as long as the ranking stands, so deck.gl does not rebuild (and re-animate) the columns each frame
+    if (finderRk.of !== state.ranked) finderRk = { of: state.ranked, rk: state.ranked.map((r, i) => ({ ...r, i })) };
+    const rk = finderRk.rk;
     out.push(
       new ColumnLayer<any>({
         id: 'finder-cols',
@@ -323,11 +327,11 @@ function onHover(info: PickingInfo) {
   const id = info.layer.id;
   if (id.startsWith('finder')) {
     const r = info.object as Ranked & { i: number };
-    html = `<b>#${r.i + 1} ${r.t.muni.name}</b><br><span class="tk">Score</span> <span class="tv">${Math.round(r.score * 100)}</span><br><span class="tk">Click for town report</span>`;
+    html = `<b>#${r.i + 1} ${esc(r.t.muni.name)}</b><br><span class="tk">Score</span> <span class="tv">${Math.round(r.score * 100)}</span><br><span class="tk">Click for town report</span>`;
   } else if (id === 'towns-small') {
     html = `<b>${esc(info.object.name)}</b><br><span class="tk">${esc(info.object.kind)} · small community</span><br><span class="tk">Click for its report</span>`;
   } else if (id.startsWith('towns')) {
-    html = `<b>${info.object.name}</b><br><span class="tk">Click for town report</span>`;
+    html = `<b>${esc(info.object.name)}</b><br><span class="tk">Click for town report</span>`;
   } else {
     const owner = layers.find((l) => id.startsWith(l.id));
     html = owner?.tooltip(info) ?? null;
@@ -374,6 +378,7 @@ function openPlace(key: string) {
 }
 
 function openSmall(key: string) {
+  if (!state.replay) cancelReplayStart();
   const m = data.small.find((x) => x.key === key);
   if (!m) return;
   state.selected = key;
@@ -391,6 +396,7 @@ function openSmall(key: string) {
 }
 
 function openTown(key: string) {
+  if (!state.replay) cancelReplayStart();
   state.selected = key;
   const m = data.munis.find((x) => x.key === key)!;
   const prevMode = state.mode === 'town' ? 'layer' : state.mode;
@@ -412,6 +418,7 @@ function openTown(key: string) {
 }
 
 function openFinder() {
+  if (!state.replay) cancelReplayStart();
   state.mode = 'finder';
   $('finder-btn').classList.add('active');
   const weights = loadWeights();
@@ -451,11 +458,13 @@ function setSpeed(v: number) {
 }
 
 // What a guided tour (src/tours.ts) can change, so that leaving one puts the app back as it was.
-type Snapshot = { visible: string[]; focused: string; timeLayer: string; time: number; speed: number; mode: Mode; selected: string | null; event: AtlasEvent | null; panelOpen: boolean; camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } };
+type Snapshot = { visible: string[]; focused: string; timeLayer: string; time: number; speed: number; playing: boolean; replay: { id: string; year: number } | null; mode: Mode; selected: string | null; event: AtlasEvent | null; panelOpen: boolean; camera: { center: [number, number]; zoom: number; pitch: number; bearing: number } };
 function snapshot(): Snapshot {
   const c = map.getCenter();
   return {
-    visible: [...state.visible], focused: state.focused, timeLayer: state.timeLayer, time: state.time, speed: state.speed,
+    visible: [...state.visible], focused: state.focused, timeLayer: state.timeLayer, time: state.time,
+    // in a replay the speed to put back is the layer's own (the replay sets its own pace)
+    speed: state.replay?.speed ?? state.speed, playing: state.playing, replay: state.replay ? { id: state.replay.id, year: state.replay.year } : null,
     mode: state.mode, selected: state.selected, event: state.event, panelOpen: !$('panel').classList.contains('collapsed'),
     camera: { center: [c.lng, c.lat], zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() },
   };
@@ -469,14 +478,34 @@ function restore(s: Snapshot) {
   state.timeLayer = s.timeLayer;
   setSpeed(s.speed);
   focus(s.focused);
-  if (s.mode === 'finder') openFinder();
-  else if (s.mode === 'town' && s.selected) openPlace(s.selected);
-  else if (s.mode === 'event' && s.event) openEvent(s.event);
+  const reopen = () => {
+    if (s.mode === 'finder') openFinder();
+    else if (s.mode === 'town' && s.selected) openPlace(s.selected);
+    else if (s.mode === 'event' && s.event) openEvent(s.event);
+  };
+  reopen();
   state.time = s.time;
   setPanelOpen(s.panelOpen);
-  map.stop();
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(s.camera);
-  else map.flyTo({ ...s.camera, duration: 1400, essential: true });
+  const camera = () => {
+    map.stop();
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) map.jumpTo(s.camera);
+    else map.flyTo({ ...s.camera, duration: 1400, essential: true });
+  };
+  camera();
+  // a season replay the tour found comes back at the day it was on (its season is already loaded), playing if it was
+  if (s.replay) {
+    const rp = s.replay;
+    replaySeason(rp.year, true, rp.id).then((ok) => {
+      if (!ok || state.replay?.id !== rp.id) return;
+      setPlaying(false);
+      // starting the replay put the layer panel up: the report, Finder or event the tour found comes back over it
+      // (first, so the day and camera found are what stay)
+      if (s.mode !== 'layer') { reopen(); setPanelOpen(s.panelOpen); }
+      setTime(s.time);
+      camera();
+      if (s.playing) setPlaying(true);
+    });
+  } else if (s.playing) setPlaying(true);
 }
 
 function swapPanel(fill: () => void) {
@@ -493,8 +522,12 @@ function swapPanel(fill: () => void) {
 function showLayerPanel() {
   state.mode = state.mode === 'finder' ? 'finder' : 'layer';
   if (state.mode === 'finder') return;
+  swapPanel(fillLayerPanel);
+}
+
+function fillLayerPanel() {
   const l = focusedLayer();
-  swapPanel(() => {
+  {
     const p = $('panel');
     p.style.setProperty('--c', l.color);
     const on = layers.filter((x) => x.id !== 'province' && x.available && state.visible.has(x.id));
@@ -508,7 +541,28 @@ function showLayerPanel() {
       const src = p.querySelector(':scope > .source');
       if (src) p.insertBefore(box, src); else p.appendChild(box);
     }
-  });
+  }
+}
+
+/** What the live readings say is in effect: alerts not yet expired, and which live files are still drawable. */
+const liveSig = () => !data.now.skipped ? `${alertsInEffect(data).map((a) => `${a.name}|${a.issued}`).join(';')}#${[data.now.rivers, data.now.fires, data.now.air, data.now.alerts].map((x) => (x ? +drawable(x.asOf) : '-')).join('')}` : '';
+let lastLiveSig = '';
+let lastLiveCheck = 0;
+/** An open layer panel with a Right now block is redrawn when an alert expires or a reading passes its age limit
+ *  (the age tags tick by themselves; the list does not): the scroll position and open alert texts are kept. */
+function refreshLive(now: number) {
+  if (now - lastLiveCheck < 30000) return;
+  lastLiveCheck = now;
+  const sig = liveSig();
+  if (sig === lastLiveSig) return;
+  lastLiveSig = sig;
+  const p = $('panel');
+  if (state.mode !== 'layer' || !focusedLayer().now || !p.querySelector('.now-block')) return;
+  const open = new Set([...p.querySelectorAll<HTMLDetailsElement>('details[open] > summary')].map((x) => x.textContent));
+  const top = p.scrollTop;
+  fillLayerPanel();
+  p.querySelectorAll<HTMLDetailsElement>('details').forEach((d) => { const sm = d.querySelector(':scope > summary'); if (sm && open.has(sm.textContent)) d.open = true; });
+  p.scrollTop = top;
 }
 
 /** No active layer but some on the map: list them, each a click away from its story and timeline. */
@@ -569,12 +623,21 @@ function renderLayerMenu() {
       if (l.id !== 'province') row.title = l.id === state.focused ? 'Showing its story and timeline' : `Show its story${l.static ? '' : ' and timeline'}${isOn ? '' : ' (switches it on)'}`;
       row.innerHTML = `<div class="ic">${l.icon}</div><div><div class="nm">${clear ? 'Clear the map' : l.name}</div><div class="rg">${clear ? 'back to just the province' : !l.available ? 'data unavailable' : l.static ? l.period ?? 'no timeline' : `${Math.floor(a)}–${Math.floor(b)}`}</div></div>${l.id === 'province' ? '' : `<button class="eye${isOn ? ' on' : ''}" role="switch" aria-checked="${isOn}" aria-label="${l.name} on the map" title="${isOn ? 'Take it off the map' : 'Put it on the map'}"></button>`}`;
       const pick = () => { if (l.id === 'province') clearMap(); else focus(l.id); };
+      row.dataset.id = l.id;
       row.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).classList.contains('eye')) { setLayerOn(l.id, !state.visible.has(l.id)); return; }
+        const t = e.target as HTMLElement;
+        if (t.classList.contains('eye')) {
+          const had = document.activeElement === t;
+          setLayerOn(l.id, !state.visible.has(l.id));
+          // the menu was rebuilt: keep a keyboard user on the same switch
+          if (had) menuEl().querySelector<HTMLElement>(`.layer-row[data-id="${l.id}"] .eye`)?.focus({ preventScroll: true });
+          return;
+        }
         pick();
         setMenu(false);
       });
-      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === row) { pick(); setMenu(false); $('layers-btn').focus(); } });
+      // Enter or Space on the row (a role="button") picks it
+      row.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === row) { e.preventDefault(); pick(); setMenu(false); $('layers-btn').focus(); } });
       sec.appendChild(row);
     }
     menu.appendChild(sec);
@@ -599,8 +662,9 @@ function setPanelOpen(open: boolean) {
 /** Make a layer the active one (switching it on if it was off); other layers on the map stay on. 'province': no active layer. */
 function focus(id: string, keepPanel = false) {
   const l = byId[id];
-  // a replay belongs to its layer: picking another one (or clearing the map) leaves it
+  // a replay belongs to its layer: picking another one (or clearing the map) leaves it, or forgets one still loading
   if (state.replay && state.replay.id !== id) endReplay();
+  else if (!state.replay && id !== state.focused) cancelReplayStart();
   const changed = state.focused !== id;
   state.focused = id;
   if (id !== 'province') state.visible.add(id);
@@ -774,8 +838,9 @@ function drawSpark() {
   }
   const max = Math.max(...pts.map((p) => Math.abs(p.y))) || 1;
   const diverging = pts.some((p) => p.y < 0);
-  const step = l.monthly ? 1 / 12 : 1;
-  const bw = Math.max(1, (w / ((b - a) / step)) - (l.monthly ? 0.3 : 1));
+  // a bar a month only when the spark is monthly (Drought); Hail steps by the month but its spark is yearly
+  const step = l.monthly && pts.some((p) => !Number.isInteger(p.x)) ? 1 / 12 : 1;
+  const bw = Math.max(1, (w / ((b - a) / step)) - (step < 1 ? 0.3 : 1));
   for (const p of pts) {
     const past = p.x <= state.time;
     g.fillStyle = p.color ?? l.color;
@@ -814,8 +879,14 @@ function setTime(t: number) {
   state.time = clamp(t, a, b);
 }
 
+let replayReq = 0;
+let replayStarts: Promise<unknown> = Promise.resolve();
+/** Forgets a replay still loading, so it does not take the map over once it arrives. */
+const cancelReplayStart = () => { replayReq++; };
+
 /** Leaves a season replay without redrawing anything: the layer's own timeline and speed come back. */
 function endReplay() {
+  cancelReplayStart();
   const rp = state.replay;
   if (!rp) return;
   byId[rp.id].replay!.stop();
@@ -832,10 +903,22 @@ function endReplay() {
 async function replaySeason(year?: number | null, force = false, id = 'fires') {
   const l = byId[id];
   if (!l?.available || !l.replay) return false;
+  // a request is current until a newer one, or the visitor going elsewhere (cancelReplayStart), replaces it
+  const req = ++replayReq;
   const ys = await l.replay.seasons(force);
+  if (req !== replayReq) return false;
   const y = year ?? ys.at(-1);
   if (y == null || !ys.includes(y)) return false;
-  const r = await l.replay.start(y, force);
+  // starts run one after another, so the layer's season is always the newest request's
+  // a start superseded while its season loads never enters it, so a season already running keeps the layer
+  const run = replayStarts.then(() => (req === replayReq ? l.replay!.start(y, force, () => req === replayReq) : null));
+  replayStarts = run.catch(() => null);
+  const r = await run;
+  if (req !== replayReq) {
+    // superseded or left while loading: the layer keeps no stale season (a newer start puts its own back after this)
+    if (r && state.replay?.id !== id) l.replay.stop();
+    return false;
+  }
   if (!r) return false;
   setPlaying(false);
   if (state.mode !== 'layer') leaveModes();
@@ -942,7 +1025,7 @@ function openEvent(ev: AtlasEvent) {
   // remember where we came from the first time, so Back skips over events visited on the way
   if (state.mode !== 'event') {
     const from = state.mode, key = state.selected;
-    eventReturn = from === 'town' && key ? { label: data.munis.find((m) => m.key === key)?.name ?? 'Town report', go: () => openTown(key) }
+    eventReturn = from === 'town' && key ? { label: (data.munis.find((m) => m.key === key) ?? data.small.find((m) => m.key === key))?.name ?? 'Town report', go: () => openPlace(key) }
       : from === 'finder' ? { label: 'Town Finder', go: () => openFinder() }
       : { label: state.focused === 'province' ? 'Back to the map' : focusedLayer().name, go: () => showLayerPanel() };
   }
@@ -1006,6 +1089,7 @@ function frame(now: number) {
   render();
   syncTimelineUI();
   if (panelHandle && now - lastPanel > 90) { lastPanel = now; panelHandle.update(ctx()); }
+  refreshLive(now);
   requestAnimationFrame(frame);
 }
 
@@ -1026,10 +1110,14 @@ function bindControls() {
     if (sourcesOpen() || (e.target as HTMLElement).matches('input, select, textarea')) return;
     // while a tour is up, Space, the arrows and Escape are its own
     if (tours?.key(e)) return;
-    if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
+    // Space on a focused control (a layer switch, a button, a link) is that control's; elsewhere it plays and pauses
+    if (e.code === 'Space') {
+      if ((e.target as HTMLElement).closest?.('button, a[href], summary, [role="button"], [role="switch"]')) return;
+      e.preventDefault(); setPlaying(!state.playing);
+    }
     const step = timeLayer().monthly ? 1 / 12 : 1;
     // in a season replay the arrows step a day
-    if (state.replay && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { setPlaying(false); setTime(state.time + (e.key === 'ArrowRight' ? DAY_T : -DAY_T)); return; }
+    if (state.replay && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { setPlaying(false); setTime(dayT(shiftDay(tDay(state.time), e.key === 'ArrowRight' ? 1 : -1)) + DAY_T / 1440); return; }
     if (e.key === 'ArrowRight') { setPlaying(false); setTime(Math.floor(state.time / step + 1e-6) * step + step); }
     if (e.key === 'ArrowLeft') { setPlaying(false); setTime(Math.ceil(state.time / step - 1e-6) * step - step); }
     if (e.key === 'Escape') { if (menuOpen()) { setMenu(false); $('layers-btn').focus(); } else $('modal').hidden = true; }
@@ -1042,7 +1130,7 @@ function bindControls() {
 function showSources() {
   setPlaying(false);
   setMenu(false);
-  openSources(data, { onShow: focus });
+  openSources(data, { onShow: focus, canShow: (id) => !!byId[id]?.available });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1071,6 +1159,8 @@ function onScenario(kind: ScenarioKind | null) {
 
 async function boot() {
   data = await loadAll();
+  // what the live readings say at load, so the first check already sees an alert that has expired since
+  lastLiveSig = liveSig();
   layers = buildLayers(data);
   byId = Object.fromEntries(layers.map((l) => [l.id, l]));
   events = [...layers.flatMap((l) => (l.available ? l.events() : [])), ...CURATED_EVENTS].sort((a, b) => a.t - b.t);
@@ -1093,6 +1183,9 @@ async function boot() {
     const id = (e as CustomEvent).detail; const l = byId[id]; if (!l?.available) return;
     // a link out of the Town Finder (Workday Reach) leaves the Finder for the layer's own story
     if (state.mode === 'finder') { state.mode = 'layer'; state.ranked = null; $('finder-btn').classList.remove('active'); }
+    // "Hotspots now" during a season replay of the same layer: back to the layer's own timeline, at Now
+    // (a replay still loading is forgotten too, so it cannot take the map over from the layer's Now)
+    if (state.replay) { setPlaying(false); endReplay(); lastSparkYear = -1; } else cancelReplayStart();
     focus(id); if (!l.static) setTime(l.range[1]);
   });
   // a layer's link into the Town Finder (Workday Reach's "Change what matters")

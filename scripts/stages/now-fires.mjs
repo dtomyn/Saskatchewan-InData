@@ -5,8 +5,17 @@ import { getProvince, inSask } from '../lib/places.mjs';
 
 // CWFIS satellite hotspots of the last 24 hours, and the perimeters it estimates from them (season to date; kept while heat
 // was seen within 7 days).
+// Whether segments ab and cd cross (a perimeter edge against the province's outline).
+const side = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+const crosses = (a, b, c, d) => side(a, b, c) !== side(a, b, d) && side(c, d, a) !== side(c, d, b);
+
 export default async function nowFires() {
-  await getProvince();
+  const { clipFeature } = await getProvince();
+  const skRings = clipFeature.geometry.coordinates.flat();
+  // a perimeter is kept when a vertex is in Saskatchewan, or (a thin one across a corner can have none) an edge crosses
+  // the border
+  const touchesSask = (ps) => ps.some((poly) => poly[0].some(([x, y]) => inSask(x, y, 0.01)))
+    || ps.some((poly) => poly.some((ring) => ring.some((a, i) => i && skRings.some((sk) => sk.some((c, k) => k && crosses(ring[i - 1], a, sk[k - 1], c))))));
   const WFS = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs';
   // WFS 1.0.0 takes the box as lon,lat (2.0.0 with EPSG:4326 swaps the axes)
   const wfs = async (layer) => asJSON(await fetchBuf(`${WFS}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', typeName: layer, outputFormat: 'application/json', srsName: 'EPSG:4326', bbox: `${BBOX.west},${BBOX.south},${BBOX.east},${BBOX.north},EPSG:4326` })}`, { timeout: 180_000 }), layer);
@@ -28,7 +37,7 @@ export default async function nowFires() {
     const p = f.properties;
     if (!f.geometry || !p.lastdate || Date.now() - Date.parse(p.lastdate) > KEEP_DAYS * 864e5) continue;
     const ps = polys(f.geometry, 0.002);
-    if (!ps.some((poly) => poly[0].some(([x, y]) => inSask(x, y, 0.01)))) continue;
+    if (!touchesSask(ps)) continue;
     perimeters.push({ first: p.firstdate.slice(0, 16) + 'Z', last: p.lastdate.slice(0, 16) + 'Z', ha: round(p.area, 0), n: p.hcount, polys: ps });
   }
   log(`  ${hotspots.length} hotspots in the last 24 h, ${perimeters.length} estimated perimeters with heat in the last ${KEEP_DAYS} days`);

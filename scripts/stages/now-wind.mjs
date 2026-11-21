@@ -1,7 +1,7 @@
 import { AIR_GRID, airGrid, layerTimes } from '../lib/geomet.mjs';
 import { log, writeNow } from '../lib/io.mjs';
 
-// The wind right now (plans/wow/2-wind-and-smoke.md): the 10 m wind of ECCC's Regional Deterministic Prediction System
+// The wind right now: the 10 m wind of ECCC's Regional Deterministic Prediction System
 // (RDPS, 10 km, a new run every 6 hours) for the forecast hour nearest the clock, on the air grid. GeoMet publishes the
 // surface wind as speed and direction (the direction it blows from), so the eastward and northward parts are worked
 // out here, and kept in steps of 0.25 m/s. A model's forecast for that hour, not a measurement.
@@ -22,7 +22,7 @@ export default async function nowWind() {
     const s = sp[i], d = dir[i];
     if (!(s >= 0 && s < 120) || !(d >= 0 && d <= 360.5)) throw new Error(`a wind value out of range (${s} m/s from ${d}°)`);
     const r = (d * Math.PI) / 180;
-    const q = (x) => Math.max(-127, Math.min(127, Math.round(x / SCALE)));
+    const q = (x) => Math.round(x / SCALE); // plain JSON numbers: no byte range to clip a gale to
     u[i] = q(-s * Math.sin(r));
     v[i] = q(-s * Math.cos(r));
     top = Math.max(top, s);

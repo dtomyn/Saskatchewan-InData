@@ -419,7 +419,7 @@ Full-screen overlay (`S`, `#sources`): left = intro (kicker, big title, lede, st
 
 ### 5.7 Navigation and keys
 
-`L` layer menu · `Space` play/pause · `←/→` step a year (or month) · `P` panel · `S` sources · `Esc` closes. Hashes: `#sources`, `#<deep-finder>`, `#<feature layer>`. Inputs never capture shortcuts. Right-drag or Ctrl-drag tilts/rotates.
+`L` layer menu · `Space` play/pause (on a focused button, link or switch, Space belongs to that control) · `←/→` step the timeline (a year, a month, or a day in a replay) · `P` panel · `S` sources · `Esc` closes. Hashes: `#sources`, `#<deep-finder>`, `#<feature layer>`. Inputs never capture shortcuts. The sources view is a modal: Tab stays inside it, and closing it returns focus to what opened it. Right-drag or Ctrl-drag tilts/rotates.
 
 ### 5.8 Film handle
 

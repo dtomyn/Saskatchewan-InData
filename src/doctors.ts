@@ -47,7 +47,8 @@ export function placeDoctors(data: Data, key: string): PlaceDoctors | null {
   return { c, p: trip(t.p), nc: t.nc, np: t.np };
 }
 
-export const doctorTripText = (t: DoctorTrip) => (t.min != null ? `${t.min} min` : `${Math.round(t.km)} km`);
+/** A clinic or pharmacy in town (0 km: one placed at the town's own centre) is "In town", not a drive. */
+export const doctorTripText = (t: DoctorTrip) => (t.km === 0 ? 'In town' : t.min != null ? `${t.min} min` : `${Math.round(t.km)} km`);
 
 export function doctorsLayer(data: Data): AtlasLayer {
   const color = DOCTORS_COLOR;
@@ -58,7 +59,12 @@ export function doctorsLayer(data: Data): AtlasLayer {
   let target: TargetId = 'c';
   const places = new Map(data.munis.map((m) => [m.key, placeDoctors(data, m.key)]));
   const tripOf = (key: string, k: TargetId) => places.get(key)?.[k] ?? null;
-  const val = (key: string) => { const t = tripOf(key, target); return t ? t.min ?? t.km : null; };
+  // one unit for every comparison: minutes when the data are routed, otherwise kilometres (a run whose router failed
+  // part-way keeps its earlier minutes, which would not compare with the later kilometres)
+  const tv = (t: DoctorTrip) => (routed ? t.min ?? t.km : t.km);
+  const val = (key: string) => { const t = tripOf(key, target); return t ? tv(t) : null; };
+  /** a hospital standing in for a clinic (inferred) says so wherever its trip is shown */
+  const inferredTag = (t: DoctorTrip | null) => (t?.inferred ? ' (hospital in town, inferred)' : '');
   const ramp = d3.scaleLinear<string>().domain([2, 30, 120]).range(['#fff0f4', color, '#8b5cf6']).interpolate(d3.interpolateRgb).clamp(true);
   const height = (v: number) => 2600 + Math.min(v, 300) * 600;
   const tcol = (k: TargetId) => TARGETS.find((g) => g.id === k)!.color;
@@ -101,7 +107,7 @@ export function doctorsLayer(data: Data): AtlasLayer {
           } as any),
           new TextLayer<Row>({
             id: 'doctors-mins', data: rows, getPosition: (r) => r.path[r.path.length - 1],
-            getText: (r) => `${TARGETS.find((g) => g.id === r.k)!.label}: ${doctorTripText(r.t)}\n${r.t.name}`,
+            getText: (r) => `${TARGETS.find((g) => g.id === r.k)!.label}${inferredTag(r.t)}: ${doctorTripText(r.t)}\n${r.t.name}`,
             getSize: (r) => (r.k === target ? 13 : 11), getColor: (r) => rgb(tcol(r.k), 245),
             getPixelOffset: (r) => [0, r.k === 'c' ? -14 : 14], getAlignmentBaseline: (r) => (r.k === 'c' ? 'bottom' : 'top'),
             fontFamily: 'Inter, sans-serif', fontWeight: 700, characterSet: 'auto', outlineWidth: 3, outlineColor: [6, 10, 18, 230],
@@ -135,7 +141,7 @@ export function doctorsLayer(data: Data): AtlasLayer {
       const draw = () => {
         el.querySelectorAll<HTMLButtonElement>('[data-k]').forEach((b) => b.classList.toggle('on', b.dataset.k === target));
         const g = TARGETS.find((x) => x.id === target)!;
-        const rows = data.munis.flatMap((m) => { const t = tripOf(m.key, target); return t ? [{ m, t, v: t.min ?? t.km, n: places.get(m.key)?.[target === 'c' ? 'nc' : 'np'] ?? 0 }] : []; }).sort((a, b) => a.v - b.v);
+        const rows = data.munis.flatMap((m) => { const t = tripOf(m.key, target); return t ? [{ m, t, v: tv(t), n: places.get(m.key)?.[target === 'c' ? 'nc' : 'np'] ?? 0 }] : []; }).sort((a, b) => a.v - b.v);
         const inTown = rows.filter((r) => r.n > 0).length;
         hero(0, String(target === 'c' ? clinics.length : sites.length - clinics.length), target === 'c' ? 'clinics and health centres' : 'pharmacies mapped');
         hero(1, `${inTown} of ${rows.length}`, `places with a ${g.short} in town`);
@@ -143,7 +149,7 @@ export function doctorsLayer(data: Data): AtlasLayer {
         hero(3, `${rows.filter((r) => r.v > 30).length}`, `places more than 30 ${unit} away`);
         const max = d3.max(rows, (r) => r.v) ?? 1;
         body.innerHTML = `<h3>${routed ? 'Drive' : 'Distance'} to the nearest ${esc(g.short)}</h3>
-          <ol class="rank-list">${rows.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${esc(r.t.name)}${r.t.city ? `, ${esc(r.t.city)}` : ''} · ${Math.round(r.t.km)} km · ${r.n} in town</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
+          <ol class="rank-list">${rows.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${esc(r.t.name)}${r.t.city ? `, ${esc(r.t.city)}` : ''} · ${r.t.km === 0 ? 'in town' : `${Math.round(r.t.km)} km`} · ${r.t.inferred ? 'no clinic mapped; a hospital in town stands in (inferred)' : `${r.n} in town`}</span></span><span><div class="bar"><i style="width:${Math.round((r.v / max) * 100)}%;background:${ramp(r.v)}"></i></div><div class="bar-v">${Math.round(r.v)}</div></span></li>`).join('')}</ol>
           <div class="ramp" style="background:${rampCSS((t) => ramp(2 + t * 118))}"></div>
           <div class="ramp-labels"><span>2 ${unit}</span><span>30</span><span>120+ ${unit}</span></div>`;
       };
@@ -158,7 +164,7 @@ export function doctorsLayer(data: Data): AtlasLayer {
       el.insertAdjacentHTML('beforeend', `
         <div class="legend">${(Object.keys(SITE_KINDS) as DoctorSite['k'][]).map((k) => `<span><i class="sw" style="background:${SITE_KINDS[k].color}"></i>${SITE_KINDS[k].label} (${n(k)})</span>`).join('')}<span><i class="sw" style="background:${color};box-shadow:0 0 0 2px #fff"></i>Walk-in (${sites.filter((s) => s.w).length})</span></div>
         <div class="callout" style="--c:${color}"><b>A clinic on the map is not a doctor taking new patients.</b> Many clinics have closed their lists, rural clinics may open only on certain days, and some sites are staffed by a nurse practitioner rather than a doctor. Call the clinic before you count on it.</div>
-        <p class="note">Clinics are the Saskatchewan Health Authority’s clinics and primary health care centres in Statistics Canada’s Open Database of Healthcare Facilities (a 2020 list; ${sites.filter((s) => s.approx).length} with no point in the file are shown at their town’s centre), joined with the medical clinics, doctors’ offices and nurses mapped in OpenStreetMap. Imaging, labs, dental, eye, chiropractic, mental-health, public-health and specialist clinics are left out, and so are hospitals (see Hospital access). Pharmacies are OpenStreetMap only, counted as in Daily needs; Daily needs’ clinic count is OpenStreetMap only too, so this layer may find more. Neither list has most private family practices, so even a regional centre can show none: a place with no clinic mapped but a hospital in town is <b>inferred</b> to have doctors there (its doctors usually practise at or beside the hospital), and its report says so.</p>
+        <p class="note">Clinics are the Saskatchewan Health Authority’s clinics and primary health care centres in Statistics Canada’s Open Database of Healthcare Facilities (a 2020 list; ${sites.filter((s) => s.approx).length} with no point in the file, or a point more than 15 km from the town it names, are shown at their town’s centre), joined with the medical clinics, doctors’ offices and nurses mapped in OpenStreetMap. Imaging, labs, dental, eye, chiropractic, mental-health, public-health and specialist clinics are left out, and so are hospitals (see Hospital access). Pharmacies are OpenStreetMap only, counted as in Daily needs; Daily needs’ clinic count is OpenStreetMap only too, so this layer may find more. Neither list has most private family practices, so even a regional centre can show none: a place with no clinic mapped but a hospital in town is <b>inferred</b> to have doctors there (its doctors usually practise at or beside the hospital), and its report says so.</p>
         <p class="note">The Saskatchewan Health Authority posts temporary emergency-department and service disruptions only as notices on ${disrupt ? `<a href="${disrupt}" target="_blank" rel="noopener">its service disruptions page</a>` : 'its service disruptions page'}, not as data, so they are not on the map: check it before you rely on a rural site.</p>
         ${sourceLine(`${D.source}; ${D.osmSource}. ${D.routingSource ?? 'Straight-line distances.'} Built ${D.asOf}.`)}`);
       return { update() {} };
@@ -174,7 +180,7 @@ export function doctorsLayer(data: Data): AtlasLayer {
       if (!o.m) return null;
       const p = places.get(o.m.key);
       if (!p) return null;
-      return `<b>${esc(o.m.name)}</b>${TARGETS.map((g) => { const t = p[g.id]; return `<br><span class="tk">${g.label}</span> <span class="tv">${t ? doctorTripText(t) : 'n/a'}</span>`; }).join('')}<br><span class="tk">${p.nc} clinics, ${p.np} pharmacies in town</span><br><span class="tk">Click for town report</span>`;
+      return `<b>${esc(o.m.name)}</b>${TARGETS.map((g) => { const t = p[g.id]; return `<br><span class="tk">${g.label}</span> <span class="tv">${t ? `${doctorTripText(t)}${inferredTag(t)}` : 'n/a'}</span>`; }).join('')}<br><span class="tk">${p.nc} clinics${p.c?.inferred ? ' mapped (a hospital stands in, inferred)' : ''}, ${p.np} pharmacies in town</span><br><span class="tk">Click for town report</span>`;
     },
     describe(info) {
       if (info.layer?.id !== 'doctors-sites') return null;
@@ -197,7 +203,7 @@ export function doctorsLayer(data: Data): AtlasLayer {
 
 /** Doctors & clinics: the drive to the nearest clinic and pharmacy, and how many are in town. */
 export function doctorsRows(p: PlaceDoctors, slackKm: number) {
-  const sub = (x: DoctorTrip | null) => (x ? `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km<br>${esc(x.note)}` : 'none reachable by road');
+  const sub = (x: DoctorTrip | null) => (x ? `${x.km === 0 ? `in town: ${esc(x.name)}` : `${x.min != null ? 'drive' : 'straight line'} to ${esc(x.name)}${x.city ? `, ${esc(x.city)}` : ''} · ${Math.round(x.km)} km`}<br>${esc(x.note)}` : 'none reachable by road');
   return `<h3>Doctors &amp; clinics</h3>
     <div class="metric-grid">
       ${metric('Clinic', DOCTORS_COLOR, p.c ? (p.c.inferred ? 'In town' : doctorTripText(p.c)) : na, p.c?.inferred ? `${esc(p.c.name)}. ${esc(p.c.note)}` : sub(p.c))}

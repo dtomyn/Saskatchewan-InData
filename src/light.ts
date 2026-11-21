@@ -252,14 +252,13 @@ export function lightLayer(data: Data): AtlasLayer {
             const kpEnd = a.kp ? new Date(Date.parse(a.kp.t) + a.kp.hours * 36e5).toISOString() : '';
             body = `<p><b>${top.v < 1 ? 'Under 1 %' : `${Math.round(top.v)} %`}</b> is the highest chance of aurora overhead among the atlas’s places${top.v < 1 ? '' : `, at ${esc(top.m.name)}`}. NOAA’s model for <b>${esc(skTime(a.valid))}</b> Saskatchewan time, from solar wind measured ${ageTag(a.observed)}.</p>
               ${a.kp ? `<p>Planetary Kp <b>${a.kp.v.toFixed(1)}</b>: ${kpWord(a.kp.v)} (observed, the 3 hours to ${esc(skTime(kpEnd))})</p>` : ''}
-              ${tonight(a)}
-              <p>${sunLine}</p>`;
+              ${tonight(a)}`;
           } else if (F) {
-            body = `<p class="now-old">NOAA’s last forecast here was for ${esc(skTime(F.valid))}, more than ${AURORA_DROP_H} hours ago, so no aurora is drawn: the oval moves within minutes. The hourly refresh may have stopped.</p><p>${sunLine}</p>`;
+            body = `<p class="now-old">NOAA’s last forecast here was for ${esc(skTime(F.valid))}, more than ${AURORA_DROP_H} hours ago, so no aurora is drawn: the oval moves within minutes. The hourly refresh may have stopped.</p>`;
           }
           const g = (v: number) => `rgba(${AURORA_RGB.join(',')},${auroraAlpha(v).toFixed(2)})`;
           legend.innerHTML = `${nowBlock({ color: NOW_COLOR, asOf: F?.observed ?? null, body, source: F?.source ?? '', sourceUrl: F?.sourceUrl, missing: 'This copy of the data has no aurora forecast, so only the edge of night is drawn.' })}
-            ${F ? '' : `<p class="note">${sunLine}</p>`}
+            <p class="note">${sunLine}</p>
             <h3>Chance of aurora overhead (NOAA OVATION)</h3>
             <div class="ramp" style="background:linear-gradient(90deg,${[0, 5, 10, 25, 50, 75, 100].map((v) => `${g(v)} ${v}%`).join(',')}),#0b1220"></div>
             <div class="ramp-labels"><span>0 %</span><span>50 %</span><span>100 %</span></div>
@@ -314,7 +313,8 @@ export function lightLayer(data: Data): AtlasLayer {
     },
     tooltip(info) {
       const id = info.layer?.id ?? '';
-      if (!info.object || !id.startsWith('light') || !L) return null;
+      // the sky picture is a bitmap: its picks carry a coordinate, not an object
+      if ((!info.object && id !== 'light-now-base') || !id.startsWith('light') || !L) return null;
       const row = (k: string, v: string) => `<br><span class="tk">${k}</span> <span class="tv">${v}</span>`;
       if (id === 'light-preserve-base') {
         const p = info.object as PPoly;
@@ -324,7 +324,9 @@ export function lightLayer(data: Data): AtlasLayer {
         const [lon, lat] = (info.coordinate ?? []) as number[];
         if (lon == null || lat == null) return null;
         const a = A(), n = nowAt({ lon, lat });
-        return `<b>${n.sky === 'day' ? 'The sun is up' : n.sky === 'twilight' ? 'Twilight' : 'Dark'}</b> <span class="tk">${Math.abs(lat).toFixed(1)}°N ${Math.abs(lon).toFixed(1)}°W</span>${row('Sun', `${Math.abs(sunAlt(lat, lon, sunAt(Date.now()))).toFixed(0)}° ${n.sky === 'day' ? 'above' : 'below'} the horizon`)}${a && n.v != null ? row('Aurora overhead', `${pct(n.v)} · NOAA’s model for ${esc(skTime(a.valid))}`) : ''}`;
+        // the sun's own (geometric) altitude says above or below; "The sun is up" keeps the apparent-sunrise rule
+        const alt = sunAlt(lat, lon, sunAt(Date.now()));
+        return `<b>${n.sky === 'day' ? 'The sun is up' : n.sky === 'twilight' ? 'Twilight' : 'Dark'}</b> <span class="tk">${Math.abs(lat).toFixed(1)}°N ${Math.abs(lon).toFixed(1)}°W</span>${row('Sun', `${Math.abs(alt).toFixed(0)}° ${alt >= 0 ? 'above' : 'below'} the horizon`)}${a && n.v != null ? row('Aurora overhead', `${pct(n.v)} · NOAA’s model for ${esc(skTime(a.valid))}`) : ''}`;
       }
       if (id === 'light-aurora-base') {
         const c = info.object as Cell;

@@ -74,7 +74,7 @@ export const ALL_SOURCES: Source[] = [
     },
   },
   {
-    id: 'nbac', key: 'fires', name: 'Burn outlines', color: '#c8553d', group: 'Hazards',
+    id: 'fires', key: 'fires', name: 'Burn outlines', color: '#c8553d', group: 'Hazards',
     owner: 'Natural Resources Canada · Canadian Forest Service', title: 'National Burned Area Composite (NBAC): mapped burn perimeters', url: 'https://cwfis.cfs.nrcan.gc.ca/ha/nbac',
     endpoint: 'cwfis.cfs.nrcan.gc.ca/geoserver/public/wfs · typeName=public:nbac, WFS 1.0.0 in EPSG:4326, one Saskatchewan year at a time', licence: OGL_CA,
     gives: 'The mapped outline of each burn, from satellite imagery and agency mapping: Wildfires draws these for fires of 200 ha or more, and a circle for the rest.',
@@ -212,7 +212,7 @@ export const ALL_SOURCES: Source[] = [
     endpoint: 'api.weather.gc.ca/collections/climate:candcsu6:projected:annual:P30Y-Avg/coverage · one grid per window, scenario and percentile', licence: 'ECCC Data Servers End-use Licence',
     gives: 'Model projections, not a record: the change in mean temperature, daily highs and lows and precipitation from 1971–2000, for 2021–2050, 2041–2070 and 2071–2100, under low (SSP1-2.6) and high (SSP5-8.5) emissions, as the median and 10th–90th percentile of 26 models at each place.',
     read: (d) => d.projections && { n: Object.keys(d.projections.towns).length, what: `projections for ${Object.keys(d.projections.towns).length} places, ${d.projections.windows.length} windows to 2100` },
-    rings: (d) => Object.fromEntries((d.projections?.windows ?? []).map((w) => [w + 15, { v: 0.45, label: `projection, ${w}–${w + 29} average (not a record)` }])),
+    rings: (d) => Object.fromEntries((d.projections?.windows ?? []).map((w) => [w + 15, { v: 0.45, proj: true, label: `projection, ${w}–${w + 29} average (not a record)` }])),
   },
   {
     id: 'normals', key: 'normals', name: 'Climate normals', color: '#c5e86c', group: 'Climate',
@@ -370,7 +370,7 @@ export const ALL_SOURCES: Source[] = [
     rings: (d) => (d.industry ? { [d.industry.npriYear]: { v: 0.7, label: `NPRI ${d.industry.npriYear} reporting year` }, [NOW]: { v: 1, label: `wells, pipelines and mines as licensed on ${d.industry.asOf}` } } : {}),
   },
   {
-    id: 'power', key: 'power', name: 'Power grid', color: '#b4c6ff', group: 'People & places',
+    id: 'industry', key: 'power', name: 'Power grid', color: '#b4c6ff', group: 'People & places',
     owner: 'OpenStreetMap contributors', title: 'power=line, power=substation, power=plant', url: 'https://wiki.openstreetmap.org/wiki/Power_networks',
     endpoint: 'overpass-api.de (and mirrors) · ways and outlines inside ISO3166-2 CA-SK', licence: 'OSM ODbL',
     gives: 'The high-voltage lines, substations and generating stations mappers have drawn (partial: SaskPower publishes no open grid map), and how near each place they run.',

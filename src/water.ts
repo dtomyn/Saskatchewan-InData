@@ -96,7 +96,8 @@ export function waterLayer(data: Data): AtlasLayer {
     range: [new Date().getFullYear(), new Date().getFullYear() + 0.99],
     static: true,
     period: 'advisories in effect today',
-    available: sites.length > 0,
+    // the lists were read (even if every advisory in them is unplaced, or there are none): the layer is there
+    available: !!W,
     unavailable: 'The drinking water advisories could not be downloaded when this copy of the data was built. Run <code>npm run data water</code>, then reload.',
     build({ selected, focusedId }) {
       const focused = focusedId === 'water';
@@ -111,7 +112,7 @@ export function waterLayer(data: Data): AtlasLayer {
         } as any),
       ];
       if (focused) out.push(...townColumns('water', data.munis, (m) => places.get(m.key)?.near.length ?? null, (v) => 2500 + Math.sqrt(v) * 9000,
-        (v, m) => (places.get(m.key)?.sys.length ? rgb(WATER_KINDS.boil.color, 235) : rgb(ramp(v), 235)), 0, selected));
+        (v, m) => { const p = places.get(m.key); return p?.sys.length || p?.su ? rgb(WATER_KINDS.boil.color, 235) : rgb(ramp(v), 235); }, 0, selected));
       return out;
     },
     spark: () => [],
@@ -140,7 +141,7 @@ export function waterLayer(data: Data): AtlasLayer {
       const longest = [...sites].sort((a, b) => (days(b) ?? -1) - (days(a) ?? -1)).slice(0, 10);
       const body = el.appendChild(mk('div'));
       body.innerHTML = `<h3>Town water systems under an advisory</h3>
-        ${towns.length ? `<ol class="rank-list">${towns.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${r.p.sys.map((s) => `${esc(WATER_KINDS[s.k].short)} since ${esc(s.d ?? '?')}${s.part ? ` · ${esc(s.part)}` : ''}`).join('; ')}</span></span><span></span></li>`).join('')}</ol>` : '<p class="note">None of the atlas’s places has an advisory on its town water system today.</p>'}
+        ${towns.length ? `<ol class="rank-list">${towns.map((r, i) => `<li data-key="${esc(r.m.key)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(r.m.name)}</span><br><span class="rd">${r.p.sys.length ? r.p.sys.map((s) => `${esc(WATER_KINDS[s.k].short)} since ${esc(s.d ?? '?')}${s.part ? ` · ${esc(s.part)}` : ''}`).join('; ') : 'an advisory listed for the town system (Water Security Agency; not mapped)'}</span></span><span></span></li>`).join('')}</ol>` : '<p class="note">None of the atlas’s places has an advisory on its town water system today.</p>'}
         <h3>Longest in effect</h3>
         <ol class="rank-list water-long">${longest.map((s, i) => `<li data-i="${sites.indexOf(s)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(s.n)}</span><br><span class="rd">${esc(WATER_KINDS[s.k].short)} · since ${esc(s.d ?? '?')}${s.src === 'isc' && s.reg ? ` · ${esc(s.reg)}` : s.at ? ` · near ${esc(s.at)}` : ''}</span></span><span class="bar-v">${lastedText(days(s))}</span></li>`).join('')}</ol>`;
       body.addEventListener('click', (e) => {
@@ -168,7 +169,7 @@ export function waterLayer(data: Data): AtlasLayer {
       if (!o.m) return null;
       const p = places.get(o.m.key);
       if (!p) return null;
-      return `<b>${esc(o.m.name)}</b><br><span class="tk">Town water system</span> <span class="tv">${p.sys.length ? `${esc(WATER_KINDS[p.sys[0].k].short)}${p.sys[0].part ? ' (part)' : ''}` : 'no advisory'}</span><br><span class="tk">Advisories within ${W?.nearKm} km</span> <span class="tv">${p.near.length}</span><br><span class="tk">Click for town report</span>`;
+      return `<b>${esc(o.m.name)}</b><br><span class="tk">Town water system</span> <span class="tv">${p.sys.length ? `${esc(WATER_KINDS[p.sys[0].k].short)}${p.sys[0].part ? ' (part)' : ''}` : p.su ? 'advisory listed (Water Security Agency)' : 'no advisory'}</span><br><span class="tk">Advisories within ${W?.nearKm} km</span> <span class="tv">${p.near.length}</span><br><span class="tk">Click for town report</span>`;
     },
     describe(info) {
       if (info.layer?.id !== 'water-sites') return null;

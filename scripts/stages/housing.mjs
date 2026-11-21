@@ -10,31 +10,46 @@ import { PLACES_LIST, PLACE_KEYS, normalizeName } from '../places.mjs';
 export default async function housing() {
   const CHARS = { 1474: 'value', 1472: 'ownCost', 1480: 'rentCost', 1451: 'hh', 1453: 'hh30', 1470: 'own30', 1478: 'rent30', 1401: 'owners', 1402: 'renters' };
   const pick = (vals) => Object.fromEntries(Object.entries(vals).filter(([c]) => CHARS[c]).map(([c, v]) => [CHARS[c], v]));
+  // The profile publishes some small places' owner or renter rate as 0.0 where the count of households at 30 %+ says
+  // otherwise (a suppressed figure, not a zero): a 0 rate is dropped (left out, never 0) when the other tenure's
+  // households cannot make up the total, more than random rounding (counts to 5) explains (never when the other rate is
+  // itself unknown: those households could make up the whole total).
+  const SLACK = 10;
+  const tenure = (o) => {
+    if (o.hh30 == null || o.owners == null || o.renters == null) return;
+    const own = o.own30 == null ? null : (o.owners * o.own30) / 100, rent = o.rent30 == null ? null : (o.renters * o.rent30) / 100;
+    const dropOwn = o.own30 === 0 && rent != null && o.hh30 - rent >= SLACK, dropRent = o.rent30 === 0 && own != null && o.hh30 - own >= SLACK;
+    if (dropOwn) delete o.own30;
+    if (dropRent) delete o.rent30;
+    return dropOwn || dropRent;
+  };
+  let dropped = 0;
+  const stir = (o) => {
+    if (tenure(o)) dropped++;
+    if (o.hh && o.hh30 != null) o.stir30 = round((o.hh30 / o.hh) * 100, 1);
+    delete o.hh30;
+    return o;
+  };
   const cp = await censusProfile('', Object.keys(CHARS));
   const keys = Object.keys(cp.places).sort();
   const census = {};
   for (const k of keys) {
-    const o = pick(cp.places[k].v);
-    if (o.hh && o.hh30 != null) o.stir30 = round((o.hh30 / o.hh) * 100, 1);
-    delete o.hh30;
+    const o = stir(pick(cp.places[k].v));
     census[k] = { csd: cp.places[k].csd, ...o };
   }
-  const prov = pick(cp.prov);
-  if (prov.hh && prov.hh30 != null) prov.stir30 = round((prov.hh30 / prov.hh) * 100, 1);
-  delete prov.hh30;
+  const prov = stir(pick(cp.prov));
   const missing = PLACES_LIST.filter((p) => !census[normalizeName(p.name)]).map((p) => p.name);
   log(`  census: ${keys.length} places matched${missing.length ? `; no CSD for ${missing.join(', ')}` : ''}`);
   // every census subdivision, for the province-wide tint and the census-only report (keyed by CSD uid)
   const csd = {};
   for (const [uid, c] of Object.entries(await censusProfileAll('housing-', Object.keys(CHARS)))) {
-    const o = pick(c.v);
-    if (o.hh && o.hh30 != null) o.stir30 = round((o.hh30 / o.hh) * 100, 1);
-    delete o.hh30;
+    const o = stir(pick(c.v));
     if (Object.keys(o).length) csd[uid] = o;
   }
   log(`  census: ${Object.keys(csd).length} subdivisions with values, ${Object.values(csd).filter((o) => o.value != null).length} with a dwelling value`);
   const noValue = keys.filter((k) => census[k].value == null);
   if (noValue.length) log('  census: dwelling value suppressed for', noValue.join(', '));
+  log(`  census: ${dropped} owner or renter 30 %+ rates published as 0 against the household count, left out`);
 
   // CMHC Rental Market Survey (October), row and apartment structures of three units and over, via Statistics Canada
   const rent = {};

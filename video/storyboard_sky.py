@@ -2,9 +2,10 @@
 
 Where the how-to (video/storyboard.py) teaches the controls, this one tells a story: a week's visit that slowly turns
 into the thought of staying. Day by day it shows the sky (Light & dark: the longest day, the aurora, the sky right now,
-the dark-sky preserves), the lakes (Camping & rec's Weekend Reach), the land (What grows here, Treaties & reserves),
-a city (Saskatoon in 3D and its Town Report), the question of staying (Town Finder), and then, plainly, the catch:
-winter, wildfire, storms, floods, crime and a warming climate, each from the layer that maps it. It ends where it
+the dark-sky preserves), the lakes (Camping & rec's Weekend Reach), the land (What grows here, Drought, Treaties &
+reserves), a city (Saskatoon in 3D, its Town Report, Who lives here), the question of staying (Town Finder, then Doctors &
+clinics, Childcare and Schools & learning), and then, plainly, the catch: winter, wildfire and smoke, tornadoes and hail,
+floods, drinking water and radon, crime and the courts, and a warming climate, each from the layer that maps it. It ends where it
 began, under the sky. The app's features are used, never taught: the cursor opens menus and clicks chips as a
 visitor would, and the narration talks about the place, not the buttons.
 
@@ -59,29 +60,50 @@ FACTS = """() => {
   const twinName = (e) => { if (e[0] < 0) return null; const s = T.stations[e[0]]; return s.k ? name(s.k) : s.name; };
   const years = d.treaties.treaties.map((t) => t.year);
   const bldg = d.buildings.areas.find((a) => a.name === 'Saskatoon');
+  const hailSw = d.hail.rows.filter((r) => r[4] === 0);   // the radar swaths (the research database's storms are 1)
+  const dEv = atlas.layers.find((l) => l.id === 'drought').events()[0];   // the worst drought year on the map
+  const P = d.community.towns.saskatoon;
+  // the most smoke days any air monitor counted in a year: [days, year, station]
+  const smoke = d.smoke.stations.flatMap((s) => Object.entries(s.days).map(([y, n]) => [n, +y, s.name])).sort((a, b) => b[0] - a[0] || b[1] - a[1])[0];
   return {
     sktnDay: hm(L.towns.saskatoon.d[2]), northName: name(north[0]), northDay: hm(north[1].d[2]),
     often: towns.filter(([, t]) => t.a === 'often').length,
     preserves: word(L.preserves.length),
     parks: C.parks.length, camps: C.camps.filter((c) => c.kind !== 'backcountry').length,
-    reach4: reach.filter((r) => r[1] <= 240).length,
+    reach4: reach.filter((r) => r[1] <= 240).length, reachRouted: !!C.reachRouted,
     treaties: word(d.treaties.treaties.length, true), treatyFrom: Math.min(...years), treatyTo: Math.max(...years),
     sktnBldg: (Math.floor(bldg.n / 1000) * 1000).toLocaleString('en-CA'),
     sktnValue: money(H.value), sktnInc: money(J.inc), sktnOwn30: Math.round(H.own30),
     sktnJan: Math.abs(Math.round(jan.tJan)), sktnFrost: Math.round(jan.frostDays),
-    twinLow: twinName(tw.ssp126[1][0]) || 'warmer than anywhere here today',
-    twinHighWarm: tw.ssp585[1][0][0] === -1,
+    twinLowWarm: tw.ssp126[1][0][0] === -1, twinHighWarm: tw.ssp585[1][0][0] === -1,
+    twinWarmer: tw.ssp585[1][0][1] > tw.ssp126[1][0][1],
     tor: d.tornadoes.rows.filter((r) => r[2] >= 2017).length,
     torFrom: 2017,
+    hail: hailSw.length, hailFrom: Math.floor(Math.min(...hailSw.map((r) => r[2]))), hailTo: Math.floor(Math.max(...hailSw.map((r) => r[2]))),
+    droughtYear: dEv ? Math.floor(dEv.t) : null, droughtT: dEv ? dEv.t : null,
+    droughtPct: dEv ? (/an average (\\d+)%/.exec(dEv.body) || [])[1] ?? null : null,
+    sktnImm: Math.round((P.imm / P.hhPop) * 100), sktnBorn: P.birth[0] ? (/^(Philippines|United |Netherlands|Czech|Dominican|Central African)/.test(P.birth[0][0]) ? 'the ' : '') + P.birth[0][0] : null,
+    smokeDays: smoke[0], smokeYear: smoke[1], smokeStation: smoke[2],
+    radonPct: Math.round((d.radon.prov.hi / d.radon.prov.n) * 100), radonGuide: d.radon.guide,
   };
 }"""
 
 
 def prepare(found):
     """Checks the data still says what the narration says (render.py calls this before filming)."""
-    # line fu-2 only holds while Saskatoon's high-emissions twin is "warmer than anywhere": stop rather than say something untrue
-    if not found.get("twinHighWarm"):
-        raise SystemExit("Saskatoon's 2041-2070 high-emissions twin is no longer 'warmer than anywhere': rewrite line fu-2")
+    # line fu-2 holds only while Saskatoon's 2041-2070 twin is "warmer than anywhere" under both scenarios, the high one
+    # warmer still: stop rather than say something untrue
+    if not (found.get("twinLowWarm") and found.get("twinHighWarm") and found.get("twinWarmer")):
+        raise SystemExit("Saskatoon's 2041-2070 twins are no longer both 'warmer than anywhere', high warmer than low: rewrite line fu-2")
+    # line l-2 calls Weekend Reach's times drives: without routing the atlas calls them rough straight-line estimates
+    if not found.get("reachRouted"):
+        raise SystemExit("Weekend Reach's times are not routed: rewrite line l-2 (and the YouTube text) before filming")
+    # line g-3 names the drought layer's worst year and its average share in severe drought or worse
+    if not (found.get("droughtYear") and found.get("droughtPct")):
+        raise SystemExit("Drought has no worst-year event to quote: rewrite line g-3")
+    # line h-4b counts the radar's hail swaths
+    if not found.get("hail"):
+        raise SystemExit("Hail has no radar swaths: rewrite line h-4b")
 
 
 def spoken(text):
@@ -214,12 +236,22 @@ def land(f):
     f.wait(6000)
     f.voice_done(400)
     f.click({"sel": "#play"})
+    # the dry years: the drought map at the end of the worst drought year's peak month
+    clean(f)
+    f.say("g-3")
+    pick_layer(f, "Drought")
+    f.wait(400)
+    f.run("() => atlas.setTime(atlas.layers.find((l) => l.id === 'drought').events()[0].t)")
+    f.run("() => atlas.map.easeTo({ center: [-106.2, 51.0], zoom: 5.5, pitch: 40, bearing: -6, duration: 3000 })")
+    f.wait(2600)
+    f.board("Drought", "Drought at its worst year's peak: the Canadian Drought Monitor's categories shade the farm belt, town dots coloured to match.")
+    f.voice_done(400)
     f.say("g-2")
     clean(f)
     pick_layer(f, "Treaties & reserves")
     f.run("() => atlas.map.easeTo({ ...atlas.HOME, duration: 3200 })")
     f.wait(2600)
-    f.board("Treaty land", "Treaties & reserves: the six numbered treaties that cover the province, and the reserves inside them.")
+    f.board("Historical treaties", "Treaties & reserves: the numbered treaties and the land each one covers.")
     f.voice_done(500)
 
 
@@ -253,6 +285,16 @@ def city(f):
     f.run("() => { document.getElementById('panel').scrollTop = 0; }")
     f.click({"sel": "#panel .close-x"})
     f.wait(400)
+    # who already lives here: the census measure tints the subdivisions, places of worship dot the city
+    clean(f)
+    f.run("() => { const b = document.getElementById('terrain-btn'); if (b?.getAttribute('aria-pressed') === 'true') b.click(); }")
+    f.say("ci-4")
+    pick_layer(f, "Who lives here")
+    f.run("() => atlas.map.easeTo({ ...atlas.HOME, pitch: 45, duration: 3400 })")
+    f.wait(3200)
+    orbit(f, 14, 7000)
+    f.board("Who lives here", "Who lives here: the census share of immigrants, a column for each town and every subdivision tinted.")
+    f.voice_done(400)
 
 
 def stay(f):
@@ -284,6 +326,16 @@ def stay(f):
     f.wait(700)
     f.click({"sel": "#panel .close-x"})
     f.wait(400)
+    # behind the scores: the layers a newcomer would open next, picked in turn
+    clean(f)
+    f.say("st-4")
+    for name in ("Doctors & clinics", "Childcare", "Schools & learning"):
+        pick_layer(f, name)
+        f.wait(1700)
+    f.board("Behind the scores", "Doctors & clinics, Childcare and Schools & learning picked in turn: sites, and the drive from every place.")
+    f.voice_done(300)
+    f.say("st-5")
+    f.voice_done(400)
 
 
 def catch(f):
@@ -304,18 +356,37 @@ def catch(f):
     f.say("h-3")
     pick_layer(f, "Wildfires")
     f.wait(500)
-    f.run("() => { atlas.replaySeason(); }")
+    # resolves once the season plays; false when the daily record has none
+    if not f.run("() => atlas.replaySeason()"):
+        raise SystemExit("Wildfires has no fire season to replay: restore the daily record into public/data/history "
+                         "(git clone -b data-history <repo> public/data/history) and build before filming")
     f.wait(15000)
     f.board("A fire season", "Wildfires replays this year's season from the daily record: hotspots flare, cool to embers, and the panel counts them day by day.")
     f.voice_done(600)
     f.run("() => atlas.leaveReplay()")
     clean(f)
+    # smoke: each air monitor's smoke days, at the last year on record
+    f.say("h-3b")
+    pick_layer(f, "Smoke & air")
+    f.run("() => atlas.setTime(atlas.layers.find((l) => l.id === 'smoke').now?.archiveEnd ?? atlas.layers.find((l) => l.id === 'smoke').range[1])")
+    f.run("() => atlas.map.easeTo({ center: [-105.8, 53.0], zoom: 4.9, pitch: 48, bearing: -12, duration: 3000 })")
+    f.wait(2800)
+    f.board("Smoke", "Smoke & air: each air monitor's smoke days a year stand as columns, haze to ember red.")
+    f.voice_done(300)
+    clean(f)
     # storms
     f.say("h-4")
     pick_layer(f, "Tornadoes")
+    f.run("() => atlas.setTime(atlas.layers.find((l) => l.id === 'tornadoes').range[1])")
     f.run("() => atlas.map.easeTo({ center: [-105.6, 51.2], zoom: 5.6, pitch: 45, bearing: -10, duration: 2800 })")
     f.wait(2400)
     f.board("Storms", "Tornadoes: every one on record, mapped where it touched down.")
+    f.voice_done(300)
+    f.say("h-4b")
+    pick_layer(f, "Hail")
+    f.run("() => atlas.setTime(atlas.layers.find((l) => l.id === 'hail').range[1])")
+    f.wait(2400)
+    f.board("Hail", "Hail joins the tornadoes: the radar's hail swaths, dots sized and coloured by their largest stones.")
     f.voice_done(300)
     clean(f)
     # floods: the water sheet and the buildings that touch the mapped extent
@@ -328,12 +399,32 @@ def catch(f):
     f.board("Floods", "Into Moose Jaw: the mapped flood extent as water, and the buildings that touch it tinted.")
     f.voice_done(300)
     clean(f)
-    # crime
+    # under a home: drinking water advisories in effect, then radon by health region
+    f.say("h-5b")
+    f.run("() => atlas.map.easeTo({ ...atlas.HOME, duration: 3200 })")
+    pick_layer(f, "Drinking water")
+    f.wait(3000)
+    f.board("Drinking water", "Drinking water: the advisories in effect today, each placed by the place it names.")
+    f.voice_done(300)
+    f.say("h-5c")
+    clean(f)
+    pick_layer(f, "Radon")
+    f.wait(2600)
+    f.board("Radon", "Radon: health regions tinted by the share of tested homes at or above Canada's guideline.")
+    f.voice_done(300)
+    clean(f)
+    # crime, then the drive to the nearest police and courthouse
     f.say("h-6")
-    f.run("() => atlas.map.easeTo({ ...atlas.HOME, duration: 3000 })")
     pick_layer(f, "Crime severity")
+    f.run("() => atlas.setTime(atlas.layers.find((l) => l.id === 'crime').range[1])")
     f.wait(2000)
     f.board("Crime", "Crime severity: each town's index from Statistics Canada, on the timeline year by year.")
+    f.voice_done(300)
+    f.say("h-7")
+    clean(f)
+    pick_layer(f, "Courts & police")
+    f.wait(2600)
+    f.board("Courts & police", "Courts & police: courthouses, police detachments and correctional centres, and the drive from every place to the nearest.")
     f.voice_done(300)
     clean(f)
 
@@ -346,7 +437,7 @@ def future(f):
     chip(f, '#panel [data-twin="on"]', 600)
     pick_option(f, "#panel .twin-town", "saskatoon")
     f.wait(2600)
-    f.board("Climate twin", "The Climate twin chip: an arc from Saskatoon to the station whose climate today matches its projected one, 2041–2070.")
+    f.board("Climate twin", "The Climate twin chip on Saskatoon, 2041–2070: warmer than any station today under both scenarios; a faint arc to the cool end of the models' range.")
     f.voice_done(300)
     f.say("fu-2")
     f.camera({"sel": "#panel .twin-out", "grow": 20}, 1300, whoosh=0.3, max=1.8)
@@ -393,8 +484,8 @@ def ending(f):
     f.js("([u, fine]) => Stage.end('Come for the sky. Stay for everything under it.', u, fine)",
          [f.url, "Every number from open data: Saskatchewan, Statistics Canada and the Government of Canada · unofficial · nothing to install"])
     f.say("end-1")
-    f.board("End card", "The window drifts back; the end card.")
     f.voice_done(3200)
+    f.board("End card", "The window drifts back; the end card.")
     f.js("Stage.blackout(1800)")
     f.wait(2000)
 
@@ -419,37 +510,46 @@ SCENES = [
                 "l-2": "Start from Saskatoon and light the campfires. Each one catches when a drive from the city would get there. Within four hours, {reach4} of them.",
                 "l-3": "A long weekend puts you on a lake in Prince Albert National Park, at the edge of the forest that covers the north."}),
     dict(id="land", title="Day three: the land", run=land,
-         shows="What grows here played from 2009 over the farm belt; Treaties & reserves.", camera="Full-frame.",
+         shows="What grows here played from 2009 over the farm belt; Drought at its worst year; the historical treaties.", camera="Full-frame.",
          motion="The timeline plays; the camera turns.", sound="Clicks.",
          lines={"g-1": "Head south, and the land becomes a patchwork you could read from space. Every year since 2009, satellites have mapped what grows in each field. That yellow is canola.",
-                "g-2": "And all of it is Treaty land. {treaties} numbered treaties, signed between {treatyFrom} and {treatyTo}, cover the province, with the First Nations reserves inside them. It's worth knowing whose land you're standing on."}),
+                "g-3": "And some years the rain doesn't come. In {droughtYear}, the worst year on the drought map, an average {droughtPct} percent of the province was in severe drought or worse.",
+                "g-2": "The map also shows the historical treaties. {treaties} numbered treaties, signed between {treatyFrom} and {treatyTo}, cover the province."}),
     dict(id="city", title="Day four: the city", run=city,
-         shows="Saskatoon in 3D with terrain; its Town Report: census tracts, home value, income, more.", camera="Full-frame; zoomed on the tract map.",
+         shows="Saskatoon in 3D with terrain; its Town Report: census tracts, home value, income, more; Who lives here over the city.", camera="Full-frame; zoomed on the tract map.",
          motion="The map flies down into the city and circles it; the report scrolls.", sound="Whooshes.",
          lines={"ci-1": "Saskatoon sits on the South Saskatchewan River, a city of bridges. All {sktnBldg} or so of its buildings stand in 3D, right down to the street.",
                 "ci-2": "Every place has a report. In the last census, the median home in Saskatoon was worth {sktnValue}, and the median household earned {sktnInc} a year.",
-                "ci-3": "Only {sktnOwn30} percent of owners spend more than a third of their income on shelter. Keep scrolling: schools, doctors, water, and the land around it."}),
+                "ci-3": "Only {sktnOwn30} percent of owners spend 30 percent or more of their income on shelter. Keep scrolling: schools, doctors, water, and the land around it.",
+                "ci-4": "And people come here from all over. About {sktnImm} percent of Saskatoon's people are immigrants, most often born in {sktnBorn}."}),
     dict(id="stay", title="Day five: what if you stayed?", run=stay,
-         shows="Town Finder with the New to Saskatchewan preset; the top place's report.", camera="Full-frame.",
+         shows="Town Finder with the New to Saskatchewan preset; the top place's report; Doctors & clinics, Childcare, Schools & learning.", camera="Full-frame.",
          motion="Columns re-rank as the camera turns.", sound="Clicks.",
          lines={"st-1": "By day five, the question changes. Not where to go next, but where you could live.",
                 "st-2": "Town Finder weighs what a move turns on: a doctor nearby, childcare, schools, settlement services, internet, the drive to work. Choose what matters, and every town ranks itself.",
-                "st-3": "Then open any of them, and see what living there would really be like."}),
+                "st-3": "Then open any of them, and see what living there would really be like.",
+                "st-4": "Behind every score is a map of its own: clinics and pharmacies, licensed childcare, schools, and the drive to each from every town.",
+                "st-5": "A clinic on the map isn't a doctor taking new patients, and a licence isn't an open space. So call ahead."}),
     dict(id="catch", title="Day six: the honest part", run=catch,
-         shows="Climate normals; this year's fire season replayed; tornadoes; Moose Jaw's flood extent in 3D; crime severity.", camera="Full-frame.",
+         shows="Climate normals; this year's fire season replayed; smoke days; tornadoes and hail; Moose Jaw's flood extent in 3D; drinking water advisories; radon; crime severity; courts and police.", camera="Full-frame.",
          motion="Each layer picked in turn; the season plays; the map flies into Moose Jaw.", sound="Clicks, whooshes.",
          lines={"h-1": "Now the catch. Every place has one, and the atlas doesn't hide them.",
                 "h-2": "Winter is real. January in Saskatoon averages minus {sktnJan} degrees, and on {sktnFrost} days a year the temperature drops below freezing.",
                 "h-3": "Summer brings fire, mostly in the northern forest, and smoke that travels. This is this year's season, day by day, from the atlas's own daily record. These are satellite hotspots, not confirmed fires.",
+                "h-3b": "Smoke and air counts the smoky days. In {smokeYear}, the air monitor at {smokeStation} logged {smokeDays} of them.",
                 "h-4": "Storms build fast on the open prairie. {tor} tornadoes are on record here since {torFrom}.",
+                "h-4b": "And hail: from {hailFrom} to {hailTo}, radar traced {hail} hail swaths across the province.",
                 "h-5": "Rivers rise in spring. Where the province has mapped a flood extent, you can see which buildings touch it.",
-                "h-6": "And crime runs high in some towns. Each one's crime severity is here, year by year, from Statistics Canada, so you can see which."}),
+                "h-5b": "Closer to home, check the water. Drinking water shows every advisory in effect today, from boil water orders in towns to long-term advisories on First Nations.",
+                "h-5c": "And radon, a gas that seeps up from the ground. About {radonPct} percent of the homes tested in Saskatchewan were at or over Canada's guideline. Only a test of your own home tells.",
+                "h-6": "And crime runs high in some towns. Each one's crime severity is here, year by year, from Statistics Canada, so you can see which.",
+                "h-7": "And if you ever need them, Courts and police shows the drive from every place to its nearest police station and courthouse."}),
     dict(id="future", title="Day six: the climate", run=future,
          shows="Climate's Climate twin: Saskatoon's arc, its twin line, then every place.", camera="Zoomed on the twin line; full-frame for the arcs.",
          motion="Arcs sweep across the province.", sound="Clicks.",
          lines={"fu-1": "And the climate is moving. Match Saskatoon's projected climate for 2041 to 2070 against the whole province today.",
-                "fu-2": "With low emissions, it's like {twinLow} today. With high emissions, it's warmer than anywhere in Saskatchewan now. A model range, never a forecast.",
-                "fu-3": "Do it for every place, and the arcs all point south."}),
+                "fu-2": "Even with low emissions, it's warmer than anywhere in Saskatchewan today. With high emissions, warmer still. A model range, never a forecast.",
+                "fu-3": "Do it for every place, and most arcs point south."}),
     dict(id="home", title="Day seven: come for the sky", run=home_again,
          shows="Back to the opening view: the province under night's shade and the aurora forecast.", camera="Full-frame; the bars return.",
          motion="The map turns slowly.", sound="The music settles.",
@@ -466,7 +566,9 @@ def youtube(found, url, chapters):
 Come for the Sky: a Week in Saskatchewan (and Maybe Longer) | Living Skies Atlas
 
 DESCRIPTION
-Never been to Saskatchewan? Follow a week's visit that turns into the thought of staying: the longest days and the northern lights, {found['camps']} campgrounds lighting up within a drive of Saskatoon, the farm belt from space, Treaty land, Saskatoon in 3D, and Town Finder's take on where a newcomer might live. Then the honest part: winter, wildfire, storms, floods, crime and a warming climate, each shown from the data that maps it.
+Never been to Saskatchewan? Follow a week's visit that turns into the thought of staying: the longest days and the northern lights, {found['reach4']} campgrounds lighting up within four hours' drive of Saskatoon, the farm belt from space and its drought years, the historical treaties, Saskatoon in 3D and who lives there, and Town Finder's take on where a newcomer might live, with the doctors, childcare and schools behind it. Then the honest part: winter, wildfire and smoke, tornadoes and hail, floods, drinking water and radon, crime and the courts, and a warming climate, each shown from the data that maps it.
+
+There are more layers to explore that aren't in this film, including Hospital access, Newcomer services, Getting around, Workday Reach, Home costs (with property tax), Jobs & income, Daily needs, Internet & mobile, Population and Hidden neighbours.
 
 Everything in this film is Living Skies Atlas, a free, unofficial 3D map of Saskatchewan's open data, filmed frame by frame from the real app. It is not affiliated with or endorsed by the Government of Saskatchewan or any agency whose data it uses. I built it with Claude Code (Anthropic's AI coding tool). The narration uses a synthetic voice (Kokoro).
 
@@ -474,7 +576,7 @@ Try it yourself: {url}
 
 {chapters}
 
-Hotspots are satellite detections, not confirmed fires; the aurora is a model's forecast, not a sighting; a climate twin is a model range, not a forecast; a mapped flood extent says a building touches it, not that it will flood. Data: Statistics Canada, Natural Resources Canada, Environment and Climate Change Canada, Canadian Wildland Fire Information System, NOAA, Agriculture and Agri-Food Canada, Water Security Agency, Government of Saskatchewan, Indigenous Services Canada, Parks Canada, Northern Tornadoes Project, Microsoft building footprints. Contains information licensed under the Open Government Licence – Canada, the Open Government Licence – Saskatchewan and the Statistics Canada Open Licence; each source and its licence is listed under Data & sources in the app. Map data © OpenStreetMap contributors (ODbL); basemap © CARTO. Data extract {found['extract']}.
+Hotspots are satellite detections, not confirmed fires; the aurora is a model's forecast, not a sighting; a climate twin is a model range, not a forecast; a mapped flood extent says a building touches it, not that it will flood. Data: Statistics Canada, Natural Resources Canada, Environment and Climate Change Canada, Canadian Wildland Fire Information System, NOAA, Agriculture and Agri-Food Canada, Water Security Agency, Government of Saskatchewan, Indigenous Services Canada, Parks Canada, Northern Tornadoes Project, Northern Hail Project, Health Canada, Saskatchewan Health Authority, Microsoft building footprints. Contains information licensed under the Open Government Licence – Canada, the Open Government Licence – Saskatchewan and the Statistics Canada Open Licence; each source and its licence is listed under Data & sources in the app. Map data © OpenStreetMap contributors (ODbL); basemap © CARTO. Data extract {found['extract']}.
 
 This is an exploration tool, not legal, real-estate, insurance or health advice.
 

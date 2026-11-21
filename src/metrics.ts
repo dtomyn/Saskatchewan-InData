@@ -43,9 +43,9 @@ export type TownMetrics = {
   hospital: CareTrip | null; // nearest hospital proper by road
   camp: CareTrip | null; // nearest campground you can drive to (Parks Canada or OpenStreetMap)
   parks50km: number; // parks, recreation sites and regional parks whose centre is within 50 km
-  fires25km: number; // fires started within 25 km since 1990
-  burnedHa50km: number; // area burned by fires that started within 50 km since 1990
-  tornadoes50km: number; // tornadoes on record within 50 km (ECCC 1980–2009, Northern Tornadoes Project 2017 →)
+  fires25km: number | null; // fires started within 25 km since 1990 (null when the fire archive did not load)
+  burnedHa50km: number | null; // area burned by fires that started within 50 km since 1990
+  tornadoes50km: number | null; // tornadoes on record within 50 km (ECCC 1980–2009, Northern Tornadoes Project 2017 →); null when not loaded
   treaty: string | null; // the numbered treaty area the town centre is in
   climate: { name: string; dist: number; meanTemp: number; precip: number | null; trend: number | null } | null;
   hail: PlaceHail | null; // Northern Hail Project storms (radar swaths 2022–2024, research database) passing within 50 km, and the largest hail among them
@@ -188,14 +188,15 @@ export function townMetrics(data: Data): TownMetrics[] {
     const svc = data.crime?.service?.[m.key];
 
     // hazards
-    let fires25km = 0, burnedHa50km = 0, tornadoes50km = 0;
+    // a dataset that did not load is unknown (null), never zero events
+    let fires25km: number | null = data.fires ? 0 : null, burnedHa50km: number | null = data.fires ? 0 : null;
+    const tornadoes50km = data.tornadoes ? data.tornadoes.rows.filter((r) => km(m.lon, m.lat, r[0], r[1]) <= 50).length : null;
     for (const p of data.fires?.points ?? []) {
       if (p[2] < 1990) continue;
       const d = km(m.lon, m.lat, p[0], p[1]);
-      if (d <= 25) fires25km++;
-      if (d <= 50) burnedHa50km += p[3];
+      if (d <= 25) fires25km!++;
+      if (d <= 50) burnedHa50km! += p[3];
     }
-    for (const r of data.tornadoes?.rows ?? []) if (km(m.lon, m.lat, r[0], r[1]) <= 50) tornadoes50km++;
     const treaty = data.treaties?.treaties.find((t) => t.polys.some((p) => inPoly(m.lon, m.lat, p)))?.name ?? null;
 
     // nearest long-record climate station with recent data
@@ -222,11 +223,13 @@ export function townMetrics(data: Data): TownMetrics[] {
     let river: TownMetrics['river'] = null;
     if (data.rivers) {
       let best: { s: (typeof data.rivers.stations)[number]; d: number } | null = null;
+      // a gauge with no median (0: a dry channel's) or no peaks has no flood share to give
       for (const s of data.rivers.stations) {
+        if (!(s.median > 0) || !Object.keys(s.peaks).length) continue;
         const d = km(m.lon, m.lat, s.lon, s.lat);
         if (d <= 25 && (!best || d < best.d)) best = { s, d };
       }
-      if (best) {
+      if (best && best.s.median > 0 && Object.keys(best.s.peaks).length) {
         const vals = Object.entries(best.s.peaks);
         const high = vals.filter(([, v]) => v >= 1.5 * best!.s.median).length;
         const rec = vals.reduce((a, b) => (b[1] > a[1] ? b : a));
@@ -306,7 +309,9 @@ export type Criterion = {
   drive?: boolean;
 };
 
-const mins = (t: CareTrip | null) => (t ? t.min ?? t.km : null);
+/** A drive in minutes; a trip known only as a straight line (km) is left out, never ranked as if it were minutes. */
+/** a trip's minutes; one of 0 km is in town (0), though straight-line or unrouted trips carry no minutes */
+const mins = (t: { min: number | null; km?: number } | null | undefined) => t?.min ?? (t?.km === 0 ? 0 : null);
 
 export const CRITERIA: Criterion[] = [
   { id: 'safety', label: 'Low crime', hint: 'Lower Crime Severity Index (latest year, own police service)', value: (t) => t.csi, higherIsBetter: false, defaultWeight: 3 },
@@ -336,12 +341,12 @@ export const CRITERIA: Criterion[] = [
   { id: 'internet', label: 'Fast internet', hint: 'More of the homes in town offered fixed internet at 50/10 Mbps or better, wired or fixed wireless (ISED National Broadband Data: offered, not measured)', value: (t) => t.internet?.f50 ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'diverse', label: 'Diverse community', hint: 'More of the people in town are immigrants (Census 2021: immigrants as a share of people in private households), so a newcomer is more likely to find others who made the same move. It measures where people were born, nothing else', value: (t) => t.community?.immShare ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'newcomer', drive: true, label: 'Newcomer services nearby', hint: 'Shorter drive to the nearest settlement agency (IRCC-funded, or on the province’s settlement list): free help to settle, find work and get credentials recognised', value: (t) => mins(t.newcomer?.s ?? null), higherIsBetter: false, defaultWeight: 0 },
-  { id: 'clinic', drive: true, label: 'Clinic nearby', hint: 'Shorter drive to the nearest medical clinic, doctor’s office or primary health care centre (Saskatchewan Health Authority sites in Statistics Canada’s ODHF, and OpenStreetMap). A clinic nearby is not a doctor taking new patients', value: (t) => (t.doctors?.c ? t.doctors.c.min ?? t.doctors.c.km : null), higherIsBetter: false, defaultWeight: 0 },
-  { id: 'childcare', drive: true, label: 'Childcare nearby', hint: 'Shorter drive to the nearest licensed child care centre (Ministry of Education list). Licensed is not the same as a space being open: waitlists are common', value: (t) => (t.childcare?.c ? t.childcare.c.min ?? t.childcare.c.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'clinic', drive: true, label: 'Clinic nearby', hint: 'Shorter drive to the nearest medical clinic, doctor’s office or primary health care centre (Saskatchewan Health Authority sites in Statistics Canada’s ODHF, and OpenStreetMap). A clinic nearby is not a doctor taking new patients', value: (t) => mins(t.doctors?.c), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'childcare', drive: true, label: 'Childcare nearby', hint: 'Shorter drive to the nearest licensed child care centre (Ministry of Education list). Licensed is not the same as a space being open: waitlists are common', value: (t) => mins(t.childcare?.c), higherIsBetter: false, defaultWeight: 0 },
   { id: 'industry', label: 'Fewer industrial neighbours', hint: 'Fewer oil and gas wells (active, suspended or abandoned) and oil and gas facilities within 5 km of the town limits, industrial sites reporting to the National Pollutant Release Inventory within 5 km, licensed pipelines within 2 km and producing mines within 25 km, one count each. Neutral: these are also where many of the jobs are', value: (t) => t.industry?.score ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'radon', label: 'Lower radon', hint: 'Fewer of the tested homes in the place’s health region at or above Canada’s radon guideline, 200 Bq/m³ (Health Canada survey, 2009–2011; 2007 health regions, so neighbouring places tie). A regional odds, not a property’s: every home should get a long-term test', value: (t) => t.radon?.region.pct ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'winterday', label: 'Longer winter days', hint: 'More hours from sunrise to sunset on December 21, the shortest day (computed from latitude: the farther south, the longer; under an hour and a half between the far north and the border)', value: (t) => t.light?.d[0] ?? null, higherIsBetter: true, defaultWeight: 0 },
-  { id: 'airport', drive: true, label: 'Near an airport', hint: 'Shorter drive to the nearest airport with scheduled passenger flights (OurAirports’ flag; Regina and Saskatoon have the most routes, the smaller ones a few flights a day or week)', value: (t) => (t.transit?.air ? t.transit.air.min ?? t.transit.air.km : null), higherIsBetter: false, defaultWeight: 0 },
+  { id: 'airport', drive: true, label: 'Near an airport', hint: 'Shorter drive to the nearest airport with scheduled passenger flights (OurAirports’ flag; Regina and Saskatoon have the most routes, the smaller ones a few flights a day or week)', value: (t) => mins(t.transit?.air), higherIsBetter: false, defaultWeight: 0 },
   { id: 'carfree', label: 'Can live without a car', hint: 'What is mapped in town to get around without driving: a city bus (2), an intercity bus stop (1), a VIA Rail stop (1). Intercity bus is only what OpenStreetMap has (partial), and it says nothing about how often anything runs', value: (t) => t.transit?.carFree ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'needs', label: 'Daily needs in town', hint: 'More of eight everyday services mapped in town (OpenStreetMap): grocery store, pharmacy, school, bank or credit union, gas station, library, post office, clinic', value: (t) => t.needs?.met ?? null, higherIsBetter: true, defaultWeight: 2 },
 ];
@@ -361,7 +366,11 @@ export function loadWeights(): Record<string, number> {
   const def = Object.fromEntries(CRITERIA.map((c) => [c.id, c.defaultWeight]));
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
-    if (saved && typeof saved === 'object') return { ...def, ...migrate(saved) };
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      // only known criteria with a whole weight from 0 to 5 (the slider's range); anything else keeps its default
+      const ok = Object.entries(migrate(saved)).filter(([k, v]) => k in def && Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 5);
+      return { ...def, ...Object.fromEntries(ok) };
+    }
   } catch { /* storage unavailable */ }
   return def;
 }
@@ -378,14 +387,14 @@ export function rankTowns(towns: TownMetrics[], weights: Record<string, number>)
     const vals = towns.map((t) => ({ k: t.muni.key, v: c.drive && t.muni.tier === 2 ? null : c.value(t) })).filter((x) => x.v != null) as { k: string; v: number }[];
     vals.sort((a, b) => a.v - b.v);
     const m = new Map<string, number>();
-    vals.forEach((x, i) => {
-      let j = i;
-      while (j + 1 < vals.length && vals[j + 1].v === x.v) j++;
-      let s = i;
-      while (s > 0 && vals[s - 1].v === x.v) s--;
+    // a tie shares the midpoint of its run: one pass per run of equal values
+    for (let s = 0; s < vals.length; ) {
+      let j = s;
+      while (j + 1 < vals.length && vals[j + 1].v === vals[s].v) j++;
       const r = vals.length > 1 ? (s + j) / 2 / (vals.length - 1) : 0.5;
-      m.set(x.k, c.higherIsBetter ? r : 1 - r);
-    });
+      for (let i = s; i <= j; i++) m.set(vals[i].k, c.higherIsBetter ? r : 1 - r);
+      s = j + 1;
+    }
     parts[c.id] = m;
   }
   return towns

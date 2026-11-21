@@ -1,4 +1,4 @@
-// Climate twins (plans/wow/5-climate-twin.md): "by 2041–2070, Prince Albert's climate is projected to be like
+// Climate twins: "by 2041–2070, Prince Albert's climate is projected to be like
 // Balgonie's today", drawn as an arc from the town to its twin. The `twins` data stage does the matching (a place's
 // observed normals plus the projected change, against every Saskatchewan station's normals today, on annual mean
 // temperature and precipitation); this module only draws it: the Climate layer's Climate twin chip, its arcs, and the

@@ -8,6 +8,12 @@ RATE = 48000
 rng = numpy.random.default_rng(7)
 
 
+def reseed():
+    """Starts the noise over, so each film's mix is the same however many films ran before it."""
+    global rng
+    rng = numpy.random.default_rng(7)
+
+
 def _t(seconds):
     return numpy.arange(int(seconds * RATE)) / RATE
 

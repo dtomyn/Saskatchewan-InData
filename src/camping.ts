@@ -102,6 +102,8 @@ export function campingLayer(data: Data): AtlasLayer {
   };
   const NOW = new Date().getFullYear();
   const RECENT = NOW - 10;
+  // the fire record's last year: a year after it is unknown, never a 0 bar
+  const FIRE_END = Math.floor(data.fires?.points.at(-1)?.[2] ?? NOW);
 
   // ---- Weekend Reach state
   let reachKey: string | null = null;
@@ -111,6 +113,8 @@ export function campingLayer(data: Data): AtlasLayer {
   const reachRows = () => (reachKey ? reach[reachKey] ?? [] : []);
   /** For each minute 0…240, how many campgrounds the median place can reach. */
   const medianCurve = d3.range(0, 241, 5).map((x) => ({ x, y: d3.median(Object.keys(reach), (k) => lowerBound(reach[k], x + 0.5, (r) => r[1])) ?? 0 }));
+  /** the median place's count at exactly `w` minutes, as the selected place's is counted (a drive of `w` or less) */
+  const medianAt = (w: number) => d3.median(Object.keys(reach), (k) => lowerBound(reach[k], w + 1e-9, (r) => r[1])) ?? 0;
   const flyToReach = () => {
     const m = muni(reachKey);
     if (!m) return;
@@ -118,7 +122,10 @@ export function campingLayer(data: Data): AtlasLayer {
     const xs = [m.lon, ...pts.map((c) => c.lon)], ys = [m.lat, ...pts.map((c) => c.lat)];
     window.dispatchEvent(new CustomEvent('atlas:fly', { detail: { bounds: [[d3.min(xs)!, d3.min(ys)!], [d3.max(xs)!, d3.max(ys)!]] } }));
   };
+  // a delayed ignite (atlas:reach) holds a ticket: a newer pick, or Camping losing focus, makes it a no-op
+  let igniteTicket = 0;
   const ignite = (key: string | null) => {
+    igniteTicket++;
     reachKey = key && reach[key] ? key : null;
     waveStart = performance.now();
     if (reachKey) flyToReach();
@@ -131,7 +138,8 @@ export function campingLayer(data: Data): AtlasLayer {
     waveStart = performance.now() + 1e6;
     window.dispatchEvent(new CustomEvent('atlas:layer', { detail: 'camping' }));
     // let the panel and camera settle on the layer before the wave rolls
-    setTimeout(() => ignite(k), 450);
+    const mine = ++igniteTicket;
+    setTimeout(() => { if (mine === igniteTicket && reachKey === k) ignite(k); }, 450);
   });
 
   // ---- the hovered or selected town's road to its nearest campground
@@ -190,12 +198,12 @@ export function campingLayer(data: Data): AtlasLayer {
         { v: area, l: 'area' },
         ...(front.length ? [{ v: String(front.length), l: front.length > 1 ? 'campgrounds' : 'campground' }] : []),
         ...(sites ? [{ v: fmt.int(sites), l: 'campsites counted' }] : []),
-        ...(best ? [{ v: hm(best.min), l: `from ${best.m.name}, the closest place by road` }] : []),
-        ...(fires.length ? [{ v: fmt.ha(burned(RECENT)), l: `burned inside since ${RECENT}` }] : []),
+        ...(best ? [{ v: hm(best.min), l: `from ${best.m.name}, the closest place ${C?.reachRouted ? 'by road' : '(rough estimate, not routed)'}` }] : []),
+        ...(fires.length ? [{ v: fmt.ha(burned(RECENT)), l: `burned by fires that started inside, since ${RECENT}` }] : []),
         ...(clim ? [{ v: `${clim.s.tJul!.toFixed(1)} °C`, l: 'July average nearby' }] : []),
       ],
       sections,
-      detail: fires.length ? detailBars('Area burned inside the park, by year', d3.range(1980, NOW + 1).map((x) => ({ x, y: byYear.get(x) ?? 0 })), FIRE, (v) => d3.format('~s')(v), (d) => `<b>${d.x}</b><br>${fmt.ha(d.y)} burned`) : undefined,
+      detail: fires.length ? detailBars('Area burned by fires that started inside the park, by year', d3.range(1980, FIRE_END + 1).map((x) => ({ x, y: byYear.get(x) ?? 0 })), FIRE, (v) => d3.format('~s')(v), (d) => `<b>${d.x}</b><br>${fmt.ha(d.y)} burned by fires that started inside`) : undefined,
       sources: [
         { label: 'Saskatchewan GeoHub: park boundaries', url: 'https://open.canada.ca/data/en/dataset/65f14e41-c6c7-512e-e231-aa1079978b12' },
         ...(web ? [{ label: 'Park website', url: web }] : []),
@@ -216,6 +224,8 @@ export function campingLayer(data: Data): AtlasLayer {
     unavailable: 'The park boundary, Parks Canada or OpenStreetMap services could not be reached when this copy of the data was built. Run <code>npm run data camping</code>, then reload.',
     build({ selected, hovered, focusedId, clock }) {
       const focused = focusedId === 'camping';
+      // losing focus cancels a pending ignite and releases its hold, so the reach shows whole when Camping is back
+      if (!focused) { igniteTicket++; if (waveStart > performance.now()) waveStart = -1e9; }
       const live = focused && !!reachKey;
       const w = live ? waveMin(clock) : 0;
       // minutes from the wave's origin to each campground, for the current reach
@@ -412,7 +422,7 @@ export function campingLayer(data: Data): AtlasLayer {
         const got = r.filter((x) => x[1] <= w);
         const inPark = d3.rollup(got.filter(([i]) => camps[i].p != null), (v) => ({ n: v.length, min: d3.min(v, (x) => x[1])! }), ([i]) => camps[i].p!);
         const sites = d3.sum(got, ([i]) => camps[i].sites ?? 0);
-        const med = medianCurve.find((p) => p.x >= w)?.y ?? 0;
+        const med = medianAt(w);
         const name = muni(k)?.name ?? '';
         liveEl.innerHTML = `<div class="reach-big"><b>${fmt.int(got.length)}</b> campgrounds within <b>${hm(w)}</b> of ${esc(name)}</div>
           <div class="rd">${inPark.size} parks and rec sites${sites ? ` · ${fmt.int(sites)} counted sites` : ''} · the median place reaches ${Math.round(med)}${got.length && med ? ` (${got.length >= med ? `${(got.length / Math.max(1, med)).toFixed(1)}×` : `${Math.round((got.length / med) * 100)}%`})` : ''}</div>`;
@@ -439,7 +449,7 @@ export function campingLayer(data: Data): AtlasLayer {
         if (ranked.length) {
           const top = ranked[0].ha;
           fireBox.innerHTML = `<h3>Fire country</h3>
-            <div class="callout" style="--c:${FIRE}">Since ${RECENT}, wildfires that started inside parks burned <b>${fmt.ha(d3.sum(ranked, (x) => x.ha))}</b> of them, and <b>${scorched}</b> campgrounds had a fire of 1,000 ha or more start within 10 km.</div>
+            <div class="callout" style="--c:${FIRE}">Since ${RECENT}, wildfires that started inside parks burned <b>${fmt.ha(d3.sum(ranked, (x) => x.ha))}</b> in all (inside the parks or beyond), and <b>${scorched}</b> campgrounds had a fire of 1,000 ha or more start within 10 km.</div>
             <ol class="rank-list">${ranked.slice(0, 6).map((x, i) => `<li data-park="${parks.indexOf(x.p)}"><span class="rk">${i + 1}</span><span><span class="nm">${esc(x.p.name)}</span><br><span class="rd">${PARK_TYPES[x.p.type].label}</span></span><span><div class="bar"><i style="width:${Math.round((x.ha / top) * 100)}%;background:${FIRE}"></i></div><div class="bar-v">${fmt.ha(x.ha)}</div></span></li>`).join('')}</ol>`;
           fireBox.addEventListener('click', (e) => {
             const i = (e.target as HTMLElement).closest<HTMLElement>('li')?.dataset.park;
@@ -493,7 +503,7 @@ export function campingLayer(data: Data): AtlasLayer {
         const stats = [
           ...(c.sites ? [{ v: fmt.int(c.sites), l: c.src === 'pc' ? 'campsites (Parks Canada)' : 'sites (as mapped)' }] : []),
           ...(c.otentik ? [{ v: String(c.otentik), l: 'oTENTik tent-cabins' }] : []),
-          ...(from.length ? [{ v: hm(from[0].r![1]), l: `from ${from[0].m.name}, the closest place by road` }] : []),
+          ...(from.length ? [{ v: hm(from[0].r![1]), l: `from ${from[0].m.name}, the closest place ${C?.reachRouted ? 'by road' : '(rough estimate, not routed)'}` }] : []),
           ...(from.length ? [{ v: String(from.length), l: 'of the atlas’s places within 4 h' }] : []),
           ...(c.power != null ? [{ v: c.power ? 'Yes' : 'No', l: 'electrical hook-ups' }] : []),
           ...(c.fee != null ? [{ v: c.fee ? 'Yes' : 'Free', l: 'fee' }] : []),

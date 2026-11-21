@@ -3,7 +3,7 @@ import { polys, ringArea } from '../lib/geo.mjs';
 import { log, writeOut } from '../lib/io.mjs';
 
 // ECCC Adjusted & Homogenized Canadian Climate Data.
-// Flood-prone land (plans/digital-twin/3-forecasts-and-what-ifs.md, 3d): the Water Security Agency's published flood
+// Flood-prone land: the Water Security Agency's published flood
 // hazard mapping, never modelled here. The 1:500-year flood extent for the communities it has studied, and where the
 // Flood Damage Reduction Program split it, the floodway (deep, fast water) and the flood fringe. The historic 1978
 // Radville extent is a record, not a return period, and is left out.

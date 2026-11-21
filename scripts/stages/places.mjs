@@ -25,7 +25,6 @@ export default async function places() {
     out.push({ key: normalizeName(p.name), name: p.name, rd, kind, lon, lat, cgndb: h.id });
   }
   log(`  ${out.length} of ${PLACES_LIST.length} places located`);
-  setPlaces(out);
   // tier 2: every other city, town, village, resort village and northern municipality, from its 2021 census
   // subdivision (the same boundary service as the `subdivisions` stage); placed at the area centroid of its largest part
   const CSD = 'https://geo.statcan.gc.ca/geo_wa/rest/services/2021/Cartographic_boundary_files/MapServer/9';
@@ -56,6 +55,8 @@ export default async function places() {
   }
   small.sort((a, b) => a.key.localeCompare(b.key));
   log(`  tier 2: ${small.length} other communities (${Object.values(KIND).map((k) => `${k} ${small.filter((p) => p.kind === k).length}`).filter((t) => !/ 0$/.test(t)).join(', ')})`);
-  setSmallPlaces(small);
   await writeOut('municipalities', [...out.map((p) => ({ ...p, tier: 1 })), ...small]);
+  // the memoized lists change only once the whole file is written, so a failure leaves later stages on the last one
+  setPlaces(out);
+  setSmallPlaces(small);
 }
