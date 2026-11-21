@@ -1,4 +1,4 @@
-// MSC GeoMet's weather-model layers as small grids over the province (plans/wow/2-wind-and-smoke.md): a layer's forecast
+// MSC GeoMet's weather-model layers as small grids over the province: a layer's forecast
 // times from its WMS capabilities, and one valid time of it from the WCS as a GeoTIFF resampled to the atlas's air grid.
 
 import { fetchBuf } from './io.mjs';

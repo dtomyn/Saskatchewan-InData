@@ -1,7 +1,7 @@
 import { AIR_GRID, airGrid, layerTimes } from '../lib/geomet.mjs';
 import { log, writeNow } from '../lib/io.mjs';
 
-// The wind right now (plans/wow/2-wind-and-smoke.md): the 10 m wind of ECCC's Regional Deterministic Prediction System
+// The wind right now: the 10 m wind of ECCC's Regional Deterministic Prediction System
 // (RDPS, 10 km, a new run every 6 hours) for the forecast hour nearest the clock, on the air grid. GeoMet publishes the
 // surface wind as speed and direction (the direction it blows from), so the eastward and northward parts are worked
 // out here, and kept in steps of 0.25 m/s. A model's forecast for that hour, not a measurement.

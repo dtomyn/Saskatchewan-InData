@@ -1,6 +1,6 @@
 import { asJSON, fetchBuf, log, writeNow } from '../lib/io.mjs';
 
-// The aurora right now (plans/wow/1-live-aurora.md): NOAA SWPC's OVATION model, a short-range forecast of the chance
+// The aurora right now: NOAA SWPC's OVATION model, a short-range forecast of the chance
 // of aurora overhead on a 1° grid of the whole globe, re-run every few minutes from the solar wind measured upstream of
 // Earth. Kept: a window over western Canada wide enough to show the oval north of the province. Also the latest
 // planetary Kp (a 3-hour observed index) and the Kp NOAA predicts for the coming day and a half. A Kp part that cannot

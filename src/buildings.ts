@@ -1,4 +1,4 @@
-// 3D CITIES (plans/wow/6-3d-cities-and-flood.md): building footprints from the `buildings` stage's PMTiles file, drawn
+// 3D CITIES: building footprints from the `buildings` stage's PMTiles file, drawn
 // by MapLibre as plain extruded blocks past zoom 12 in the places with a Water Security Agency flood map and the two
 // cities. With River floods on, the mapped 1:500-year extent is a sheet of water and the footprints touching it are
 // tinted; the stage worked out which (tile attribute `f`), so the app does no geometry. Also 3D terrain, a map toggle.

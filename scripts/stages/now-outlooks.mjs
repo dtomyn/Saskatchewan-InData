@@ -3,7 +3,7 @@ import { BBOX, OGC } from '../lib/config.mjs';
 import { asJSON, fetchBuf, log, pool, round, writeNow } from '../lib/io.mjs';
 import { getPlaces, getProvince } from '../lib/places.mjs';
 
-// Short-range outlooks (plans/digital-twin/3-forecasts-and-what-ifs.md, 3c): published forecasts at each place, each
+// Short-range outlooks: published forecasts at each place, each
 // with the time it was issued and the time it is valid for. Thunderstorm outlook (MSC, May–October; none out of season),
 // today's fire danger class (CWFIS, from the SCRIBE weather forecast) and tomorrow's highest wildfire-smoke PM2.5
 // (ECCC's RAQDPS, which carries FireWork). AQHI forecasts come with `now-air`. A part that fails is left out, never zero.

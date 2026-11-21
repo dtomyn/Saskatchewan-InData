@@ -7,7 +7,7 @@ import { OUT } from '../lib/config.mjs';
 import { cachedFile, log, readOut, writeAtomic, writeOut, zipLines } from '../lib/io.mjs';
 import { writePMTiles } from '../lib/pmtiles.mjs';
 
-// 3D cities with flood water (plans/wow/6-3d-cities-and-flood.md). Building footprints for the places the Water
+// 3D cities with flood water. Building footprints for the places the Water
 // Security Agency has a flood map for, plus Regina and Saskatoon, as one PMTiles file the app reads with range
 // requests past zoom 12. Each footprint carries whether it touches the WSA's mapped 1:500-year extent (worked out
 // here, so the app does no geometry) and a height where OpenStreetMap has one; the flood extents ride along at full

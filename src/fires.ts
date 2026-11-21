@@ -145,7 +145,7 @@ export function firesLayer(data: Data): AtlasLayer {
       ];
     },
   };
-  // ---- the season replay (plans/wow/3): one season of the daily record, 1 April to 31 October, played in ~40 s.
+  // ---- the season replay: one season of the daily record, 1 April to 31 October, played in ~40 s.
   // Times go to the GPU as days since the season began (a float holds a fractional year only to a couple of hours).
   let season: FireSeason | null = null;
   let spread: SpreadEdge[] = [];

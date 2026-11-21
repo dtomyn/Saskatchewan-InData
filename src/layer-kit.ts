@@ -89,7 +89,7 @@ export interface AtlasLayer {
    */
   projection?: { from: number; bands: () => { color: string; pts: { x: number; lo: number; hi: number }[] }[] };
   /**
-   * A replay of one season of the daily record (Wildfires; plans/wow/3). While one runs, main.ts gives the timeline to
+   * A replay of one season of the daily record (Wildfires). While one runs, main.ts gives the timeline to
    * `range` (played in about 40 seconds), draws `build` in place of the layer's own, and draws `days` as the sparkline:
    * `y` null is a day with no record, hatched, never a zero. The layer's panel asks for it with an `atlas:replay`
    * event (`{ layer, year }`; a null year leaves it).

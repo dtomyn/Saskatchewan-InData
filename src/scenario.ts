@@ -1,4 +1,4 @@
-// What if this closed? (plans/digital-twin/3-forecasts-and-what-ifs.md, 3a). The visitor closes one or more sites a
+// What if this closed? The visitor closes one or more sites a
 // stage routes to (a hospital, a courthouse); every place whose nearest site by road is closed falls back to the next
 // one the stage kept for it (up to three, `driveTimes` in scripts/fetch-data.mjs). Nothing is invented: the fallback
 // is a drive the pipeline already routed. Only the drive changes, never capacity or waiting times.

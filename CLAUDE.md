@@ -31,7 +31,7 @@ The live stages (`now-*`; `npm run data now` runs all eight) cache nothing and w
 - Anything from outside the code (OSM names, data strings) goes through `esc()` / `safeUrl()` in `src/html.ts` before `innerHTML`. The production build ships a CSP (`vite.config.ts`).
 - Say when a value is inferred or borrowed: the in-town police rule (`nearestJustice` in `src/justice.ts`), borrowed climate stations, rural RCMP detachments standing in for a town.
 - When you change a behaviour the blueprint describes (layer menu rules, event panels), update `MAP-ATLAS-BLUEPRINT.md` and the README with it, and the intent in `intents/` that points at it (one file per thing people come to do, each with a `?film` check; a feature should serve at least one).
-- `ROADMAP.md` lists what is built and what is next (✅ built, *(verify)* = source not yet confirmed open); `plans/digital-twin/` holds the design notes behind the live readings, the daily record, scenarios, projections, the power grid and the finer entities.
+- `ROADMAP.md` lists what is built and what is next (✅ built, *(verify)* = source not yet confirmed open).
 
 ## Architecture
 

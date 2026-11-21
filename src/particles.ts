@@ -1,4 +1,4 @@
-// Particles that drift with a wind field (plans/wow/2-wind-and-smoke.md): a few thousand points moved on the CPU each
+// Particles that drift with a wind field: a few thousand points moved on the CPU each
 // frame, each drawn as a short trail by one deck.gl PathLayer fed from typed arrays. They show the wind's direction and
 // speed and count nothing. `step` is only called while the layer is drawn, so a layer that is off costs nothing; a
 // visitor who prefers reduced motion gets still arrows (`arrowPaths`) instead.

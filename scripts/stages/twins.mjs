@@ -2,7 +2,7 @@ import { distKm } from '../lib/geo.mjs';
 import { log, readOut, writeOut } from '../lib/io.mjs';
 import { getPlaces } from '../lib/places.mjs';
 
-// Climate twins (plans/wow/5-climate-twin.md): for each place, window and scenario, the Saskatchewan weather station
+// Climate twins: for each place, window and scenario, the Saskatchewan weather station
 // whose climate normals today are nearest the place's projected climate. Nothing is downloaded: it reads
 // projections.json (CanDCS-U6 changes from 1971–2000) and normals.json (station normals), both built before it.
 //

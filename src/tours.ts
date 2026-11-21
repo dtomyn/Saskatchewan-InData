@@ -1,4 +1,4 @@
-// Guided tours (plans/wow/4-guided-tours.md): the app drives itself through a short story and hands back control at
+// Guided tours: the app drives itself through a short story and hands back control at
 // any moment. Nothing is pre-rendered: a tour only calls what a visitor could click, with today's data.
 //
 // A tour is a list of steps. Each has a caption and, optionally, a camera view, something to `do` through the same

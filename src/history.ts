@@ -1,5 +1,5 @@
-// The daily record of the live feeds, drawn in the recent span between an archive's last year and Now
-// (plans/digital-twin/2-accumulated-state.md). Month files are fetched only when the timeline first enters that span.
+// The daily record of the live feeds, drawn in the recent span between an archive's last year and Now.
+// Month files are fetched only when the timeline first enters that span.
 // Rules: a provisional day never joins the official record (the span starts after the archive ends, so a year the
 // archive publishes drops out of view by itself); a missed day is a gap, never a zero; hotspots are not fires.
 import { AirHistory, FiresHistory, HistoryFeed, HistoryIndex, RiversHistory, WaterHistory, loadHistory, loadHistoryIndex } from './data';
@@ -128,7 +128,7 @@ export function firesHistory() {
 }
 
 /**
- * One fire season of the daily record, for the Wildfires replay (plans/wow/3): 1 April to 31 October, or to the last
+ * One fire season of the daily record, for the Wildfires replay: 1 April to 31 October, or to the last
  * day on record while the season is still running. Loaded on its own, apart from the recent span, so a season can be
  * replayed after the archive has published its year; it is still hotspots (heat, not fires) and still provisional.
  * `days` lists every calendar day: `n` is null on a day no run covered (a gap, never a zero).

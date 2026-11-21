@@ -1,4 +1,4 @@
-// Accumulated state (plans/digital-twin/2-accumulated-state.md): a compact daily record of the live feeds, so the
+// Accumulated state: a compact daily record of the live feeds, so the
 // timeline runs from each archive's last year up to today and point-in-time layers gain a history.
 //
 //   npm run data history            # roll today's readings into public/data/history/<feed>/<YYYY-MM>.json

@@ -1,4 +1,4 @@
-// The air in motion (plans/wow/2-wind-and-smoke.md): two live chips shared by Smoke & air and Wildfires, drawn at the
+// The air in motion: two live chips shared by Smoke & air and Wildfires, drawn at the
 // timeline's Now stop. **Wind**: ECCC's RDPS 10 m wind for the current forecast hour (`now/wind.json`) as drifting
 // trails (src/particles.ts), or still arrows for a visitor who prefers reduced motion. **Smoke forecast**: ECCC's
 // FireWork (RAQDPS-FW) surface PM2.5 from wildfire smoke, every third hour to the end of the run (`now/plume.json`),

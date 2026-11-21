@@ -515,7 +515,7 @@ export type Data = {
  * `protected`: land behind dikes. Polygons are rings of [lon, lat].
  */
 export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; place: string; water?: string | null; year?: number | null; program?: string | null; pdf?: string | null; polys: [number, number][][][] };
-/** 3D cities (plans/wow/6; the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
+/** 3D cities (the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
  *  count touching the WSA's mapped 1:500-year extent (`way` the floodway, `ext` the rest, `prot` only behind dikes) and with a height (`h`). */
 export type BuildingArea = { name: string; box: [number, number, number, number]; n: number; way: number; ext: number; prot: number; h: number };
 export type Buildings = { source: string; sourceUrl: string; licence: string; heights: string; flood: string; asOf: string; file: string; bytes: number; minzoom: number; maxzoom: number; storey: number; z12Min: number; bounds: [number, number, number, number]; areas: BuildingArea[] };
@@ -534,7 +534,7 @@ export type ProjWindow = [number, number, number, number];
 export type TwinMatch = [number, number, number, number];
 /** A station that can be a twin. `k`: the place it stands for (its own station, close by); `near`: its nearest place. */
 export type TwinStation = { id: string; name: string; lon: number; lat: number; t: number; p: number; yrs: number; near: string; km: number; k?: string };
-/** Climate twins (plans/wow/5; the `twins` stage): worked out from projections and normals, model output, never a record. */
+/** Climate twins (the `twins` stage): worked out from projections and normals, model output, never a record. */
 export type Twins = {
   source: string; asOf: string; normalsPeriod: string; baseline: string; baseShare: number; maxD: number;
   spread: { t: number; p: number }; maxT: number; windows: number[]; windowYears: number;
