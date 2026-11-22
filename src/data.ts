@@ -557,6 +557,8 @@ export type Data = {
   radon: Radon | null;
   light: Light | null;
   transit: Transit | null;
+  /** federal voting: ridings 1908–2025 and the latest result in each place's polls (the poll map loads on first use, `loadVotingPolls`) */
+  voting: Voting | null;
   /** live readings; all null when public/data/now/ is absent, or with ?film (unless ?now is also given) */
   now: Now;
   manifest: Record<string, { ok: boolean; updated?: string; lastError?: string }>;
@@ -605,6 +607,43 @@ export type Projections = {
   towns: Record<string, Record<ProjVar, Record<ProjScen, ProjWindow[]>>>;
 };
 
+/**
+ * Federal voting (the `voting` stage): Elections Canada's official results, 2011–2025, and the Library of Parliament's
+ * riding history before them. A candidate is [name, party key, votes, elected 1/0, incumbent 1/0]. Per riding: electors
+ * on the lists (`el`), rejected ballots, and the ballots cast on election day (`ed`), at advance polls (`adv`) and by
+ * special ballot (`sr`), rejected ones included.
+ */
+export type VotingRiding = { id: string; name: string; el: number; rej: number; ed: number; adv: number; sr: number; c: [string, string, number, number, number][] };
+export type VotingElection = { year: number; date: string; t: number; ge: number; order: string; level: 'poll' | 'riding'; url: string; ridings: VotingRiding[] };
+/** One general election province-wide: ridings, seats and votes by party, acclamations, each riding's winner [riding, name, party, % of valid votes]. */
+export type VotingHistory = { date: string; t: number; n: number; seats: Record<string, number>; votes: Record<string, number>; total: number; accl: number; r: [string, string, string, number | null][] };
+/**
+ * A place's polls at the latest election (`y`): its ridings [id, share of its electors], polls counted (`n`, `held`),
+ * electors, rejected ballots, valid votes by party; `adv` the advance ballots added when every advance district its polls
+ * are in lies inside it; `c` when no poll lies inside its limits and the poll holding its centre stands in.
+ */
+export type VotingPlace = { y: number; r: [string, number][]; n: number; held: number; el: number; rej: number; v: Record<string, number>; adv?: number; c?: 1 };
+export type Voting = {
+  source: string; sourceUrl: string; boundarySource: string; historySource: string; historyUrl: string; licence: string; licenceUrl: string; asOf: string;
+  parties: Record<string, string>; elections: VotingElection[]; history: VotingHistory[];
+  towns: Record<string, VotingPlace>; small: Record<string, VotingPlace>;
+};
+/**
+ * One poll (polling division, merged ones included): [riding index, number, name, advance district, electors, rejected
+ * ballots, votes per riding candidate (null: no poll held), geometry]. Geometry is polygons of rings written as integer
+ * steps of 1/q degree ([x0, y0, dx, dy, …]), or one [x, y] point for a poll too small to draw (a mobile poll's building).
+ */
+export type VotingPoll = [number, string, string, number | null, number, number, number[] | null, number[][][] | [number, number] | null];
+/** An advance poll: [riding index, number, name, electors, rejected ballots, votes per riding candidate]. */
+export type VotingAdvance = [number, number, string, number, number, number[]];
+export type VotingPolls = { q: number; outlines: Record<string, Record<string, number[][][]>>; years: Record<string, { order: string; u: VotingPoll[]; a: VotingAdvance[] }> };
+let votingPolls: Promise<VotingPolls | null> | null = null;
+/** The poll map (voting-polls.json, ~1.6 MB), fetched once on first use; a failed fetch is asked again later. */
+export function loadVotingPolls(): Promise<VotingPolls | null> {
+  if (!votingPolls) votingPolls = load<VotingPolls>('voting-polls').then((p) => { if (!p?.years) { setTimeout(() => (votingPolls = null), 30_000); return null; } return p; });
+  return votingPolls;
+}
+
 const base = import.meta.env.BASE_URL;
 
 async function load<T>(name: string): Promise<T | null> {
@@ -619,6 +658,7 @@ async function load<T>(name: string): Promise<T | null> {
 
 export async function loadAll(): Promise<Data> {
   const yieldsP = load<Yields>('yields');
+  const votingP = load<Voting>('voting');
   const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest, groundwater] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
@@ -714,6 +754,7 @@ export async function loadAll(): Promise<Data> {
     crops: crops?.years?.length && crops.maps?.length === crops.years.length ? crops : null,
     yields: await (async () => { const y = await yieldsP; return y?.years?.length && y.cds?.length && y.crops?.length ? y : null; })(),
     power: power?.lines?.length ? power : null,
+    voting: await votingP.then((v) => (v?.elections?.length && v.history?.length ? v : null)),
     now: {
       rivers: nRivers?.asOf && Array.isArray(nRivers.rows) ? nRivers : null,
       fires: nFires?.asOf && Array.isArray(nFires.hotspots) ? nFires : null,
