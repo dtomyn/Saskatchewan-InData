@@ -4,6 +4,7 @@ import * as d3 from 'd3';
 import { Data, fmt } from './data';
 import { provinceAnomalies } from './metrics';
 import { ago, skTime } from './now';
+import { hailSatInfo } from './hail';
 
 export type Ring = { v: number; label: string; proj?: boolean };
 export type Source = {
@@ -139,6 +140,14 @@ export const ALL_SOURCES: Source[] = [
       const f = norm(n, (v, m) => Math.sqrt(v / m));
       return Object.fromEntries(Object.keys(n).map((y) => [y, { v: f(+y), label: `${n[+y]} hail record${n[+y] === 1 ? '' : 's'}` }]));
     },
+  },
+  {
+    id: 'hailsat', key: 'hailsat', name: 'Hail from space', color: '#8fc46a', group: 'Hazards',
+    owner: 'European Space Agency (Copernicus) · Element 84 Earth Search on AWS', title: 'Sentinel-2 L2A surface reflectance, Cloud-Optimized GeoTIFFs: red, near infrared and scene classification', url: 'https://registry.opendata.aws/sentinel-2-l2a-cogs/',
+    endpoint: 'earth-search.aws.element84.com/v1/search (STAC, collection sentinel-2-l2a) · sentinel-cogs.s3.us-west-2.amazonaws.com, the 160 m overview read by range', licence: 'Copernicus Sentinel data terms (free and open); Contains modified Copernicus Sentinel data',
+    gives: 'Hail’s From space pictures: the vegetation index (NDVI) on the clearest days before and after a few big radar swaths, and the change between them. Vegetation change, not damage.',
+    read: () => { const s = hailSatInfo(); return s && { n: s.n, what: `before and after ${s.n} hail swath${s.n === 1 ? '' : 's'} (${s.credit})` }; },
+    rings: () => Object.fromEntries((hailSatInfo()?.years ?? []).map((y) => [y, { v: 0.3, label: 'Sentinel-2 before and after a hail swath' }])),
   },
   {
     id: 'drought', key: 'drought', name: 'Drought', color: '#e0a43a', group: 'Hazards',
@@ -489,6 +498,7 @@ export const DERIVED = [
   ['Tornado track ends', 'for Northern Tornadoes Project events are estimated here from the start point, track length and direction of motion it publishes; mapped end points from Environment Canada are used as they are.'],
   ['Hail', 'swath sizes are the radar’s Maximum Expected Size of Hail (MESH), an estimate, not a measured stone; the 2022 swaths have none. A swath stored in pieces (one per bend) is joined back into one track, and only the part inside the query box around Saskatchewan is kept, so a long Alberta or Manitoba swath may look shorter here. A research-database storm whose point was off the map is placed at the atlas town it is named after (inferred), and sizes the database gives in centimetres are converted. A place’s count is every swath or storm passing within 50 km of its centre.'],
   ['Hail exposure', 'Hail’s Under the storm chip is worked out here: each radar swath (a centre line and a widest width) becomes a corridor as wide as the swath at its widest all along its centre line, cut square at the ends, so it is an upper bound; the same year’s Annual Crop Inventory is read inside it every ~120 m (200 m Web Mercator pixels, each one 30 m inventory pixel), in Saskatchewan only, and counted by class. Swaths with no width (all of 2022’s) get no corridor. It is exposure, the crops under a swath that season, never damage or loss: no open data says which fields the hail hit or what it cost. A season’s total counts land under two swaths once.'],
+  ['Hail from space', 'the before and after pictures of a few big swaths are worked out here from Sentinel-2: NDVI, (near infrared − red) ÷ (near infrared + red) in surface reflectance, at the scenes’ 160 m overview, keeping only pixels the scene classification calls vegetation or bare soil and taking each from the clear scene nearest the storm (up to 20 days either side); the change is after minus before, shown for the corridor and 10 km around it so the change outside the swath can be compared. Vegetation change, not damage: harvest, haying, ripening and growth change it too.'],
   ['Hail in dollars', 'there is no open loss data by storm, so the biggest storms’ figures are typed into the timeline by hand from the insurers’ own publications (read on 2026-11-21), each with its link: Municipal Hail’s annual reports (its own crop-hail claims, not SCIC’s or the private insurers’) and the Insurance Bureau of Canada’s news releases (CatIQ’s estimates of insured damage to homes, cars and businesses).'],
   ['Drought', 'the Canadian Drought Monitor is a consensus map drawn from many indicators, not a measurement. It is read here on a 10 km grid in the map service’s own Web Mercator projection, so edges are blocky and a few kilometres off; a place takes the category of the cell its centre is in, so a town near an edge can read one step off. Province shares are of its land and lakes, cells weighted by their true area. Until early 2004 the maps covered only the agricultural south.'],
   ['Hospitals', 'are the ODHF rows whose type or name says hospital; health centres and clinics are shown but not counted as the nearest hospital.'],

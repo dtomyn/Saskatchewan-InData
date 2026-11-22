@@ -125,13 +125,72 @@ function exposureLine(r: HailRow) {
   return `Under the storm: it crossed ${km2Text(e.crop)} of cropland${e.canola != null && e.crop > 0 ? `, ${Math.round(e.canola)} % of it canola` : ''}, in a corridor of ${km2Text(e.corridor)} in Saskatchewan (${Math.floor(r[2])} crop inventory). That is exposure, the crops under the swath, not damage.${part}`;
 }
 
-/** The event panel's Under the storm section for a swath (filled once the file is in, so a late load still shows). */
+/**
+ * From space (the `hailsat` stage, hail-sat.json): for a few big swaths, Sentinel-2's vegetation index (NDVI) on the
+ * clearest days before and after, as three pictures (before, after, change) over the corridor and 10 km around it.
+ */
+type SatSwath = {
+  t: number; lon: number; lat: number; name: string; day: string; why: string; bounds: [number, number, number, number]; w: number; h: number; px: number;
+  before: { from: string; to: string; scenes: number; cover: number }; after: { from: string; to: string; scenes: number; cover: number };
+  change: { inside: number | null; around: number | null }; files: { before: string; after: string; change: string };
+};
+type HailSat = { source: string; sourceUrl: string; licence: string; licenceUrl: string; credit: string; swaths: SatSwath[] };
+let SAT: HailSat | null = null;
+let satLoad: Promise<void> | null = null;
+function ensureSat() {
+  satLoad ??= fetch(`${import.meta.env.BASE_URL}data/hail-sat.json`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j: HailSat | null) => { if (j?.swaths?.length) SAT = { ...j, swaths: j.swaths.filter((s) => Object.values(s.files).every((f) => /^hail-sat\/[a-z0-9-]+\.png$/.test(f))) }; })
+    .catch(() => {});
+  return satLoad;
+}
+const satOf = (r: HailRow) => SAT?.swaths.find((s) => s.t === r[2] && s.lon === r[0] && s.lat === r[1]) ?? null;
+/** what the map shows from space: one swath's pictures, the slider's mix (0 before → 1 after) or the change picture; dropped once its panel closes */
+let satView: { s: SatSwath; mix: number; change: boolean; el: HTMLElement } | null = null;
+const satUrl = (f: string) => `${import.meta.env.BASE_URL}data/${f}`;
+const NDVI_RAMP = 'linear-gradient(90deg,#78604a,#8c6d46 25%,#d9c27a 45%,#8fc46a 65%,#1e7832)';
+const CHANGE_RAMP = 'linear-gradient(90deg,#b23222,#e08c5a 35%,#e1e1d7 50%,#8cc87a 65%,#1e7832)';
+/** export for the Data & sources view: the scenes behind From space, once read */
+export const hailSatInfo = () => SAT && { n: SAT.swaths.length, years: [...new Set(SAT.swaths.map((s) => Math.floor(s.t)))], credit: SAT.credit };
+
+function satSection(box: HTMLElement, s: SatSwath) {
+  const d = (a: { from: string; to: string }) => (a.from === a.to ? a.from : `${a.from} to ${a.to}`);
+  const ch = (v: number | null) => (v == null ? '–' : `${v > 0 ? '+' : ''}${v.toFixed(2)}`);
+  const wrap = box.appendChild(mk('div', 'hx-sat'));
+  wrap.innerHTML = `<h3>From space: vegetation before and after</h3>
+    <p>${esc(s.why)} Sentinel-2 saw it clear on ${esc(d(s.before))} (before) and ${esc(d(s.after))} (after).</p>
+    <div class="chips" style="margin:4px 0 6px"><button class="chip on" type="button" data-sat="show" style="--c:#8fc46a">On the map</button><button class="chip" type="button" data-sat="change" style="--c:#e08c5a">Change</button></div>
+    <input type="range" min="0" max="100" value="0" data-sat="mix" aria-label="Before to after" style="width:100%">
+    <div class="ramp-labels"><span>before · ${esc(s.before.to)}</span><span>after · ${esc(s.after.from)}</span></div>
+    <div class="ramp" data-sat="ramp" style="background:${NDVI_RAMP}"></div>
+    <div class="ramp-labels" data-sat="ramp-l"><span>bare (NDVI 0)</span><span>green (0.9)</span></div>
+    <div class="metric-grid" style="margin-top:8px"><div class="stat"><div class="v">${ch(s.change.inside)}</div><div class="l">mean NDVI change inside the corridor</div></div><div class="stat"><div class="v">${ch(s.change.around)}</div><div class="l">in the 10 km around it</div></div></div>
+    <p class="note"><b>Vegetation change, not damage</b>: clouds, harvest, haying and crops growing or ripening also change it, which is why the land around the corridor is shown too. NDVI compares red and near-infrared light (green, growing plants score high); pixels the scene classification marks as cloud, shadow, water or snow are left out and filled from the next clear day, at Sentinel-2’s 160 m overview, so straight seams are where pictures from different days meet. ${esc(SAT?.credit ?? 'Contains modified Copernicus Sentinel data')}.</p>`;
+  satView = { s, mix: 0, change: false, el: wrap };
+  const show = wrap.querySelector<HTMLButtonElement>('[data-sat="show"]')!, change = wrap.querySelector<HTMLButtonElement>('[data-sat="change"]')!;
+  const mix = wrap.querySelector<HTMLInputElement>('[data-sat="mix"]')!;
+  const sync = () => {
+    const v = satView?.el === wrap ? satView : null;
+    show.classList.toggle('on', !!v);
+    change.classList.toggle('on', !!v?.change);
+    mix.disabled = !v || v.change;
+    wrap.querySelector<HTMLElement>('[data-sat="ramp"]')!.style.background = v?.change ? CHANGE_RAMP : NDVI_RAMP;
+    wrap.querySelector<HTMLElement>('[data-sat="ramp-l"]')!.innerHTML = v?.change ? '<span>NDVI fell 0.5</span><span>no change</span><span>rose 0.5</span>' : '<span>bare (NDVI 0)</span><span>green (0.9)</span>';
+  };
+  show.addEventListener('click', () => { satView = satView?.el === wrap ? null : { s, mix: +mix.value / 100, change: false, el: wrap }; sync(); });
+  change.addEventListener('click', () => { if (satView?.el !== wrap) satView = { s, mix: +mix.value / 100, change: false, el: wrap }; satView.change = !satView.change; sync(); });
+  mix.addEventListener('input', () => { if (satView?.el === wrap) satView.mix = +mix.value / 100; });
+  sync();
+}
+
+/** The event panel's Under the storm section for a swath (filled once the files are in, so a late load still shows). */
 const exposureDetail = (r: HailRow) => (el: HTMLElement) => {
   const box = el.appendChild(mk('div'));
-  ensureExposure().then(() => {
-    const line = exposureLine(r), e = expOf(r);
+  Promise.all([ensureExposure(), ensureSat()]).then(() => {
+    const line = exposureLine(r), e = expOf(r), s = satOf(r);
     if (!line) return;
     box.innerHTML = `<h3>Under the storm</h3><p>${esc(line)}</p>${e && e.mapped > 0 ? `${classBar(e.km2)}<p class="note">${CORRIDOR_NOTE}</p>` : ''}`;
+    if (s) satSection(box, s);
   });
 };
 
@@ -177,6 +236,8 @@ export function placeHail(data: Data, m: { lon: number; lat: number }): PlaceHai
 export function hailLayer(data: Data): AtlasLayer {
   const color = '#c3b5ff';
   const H = data.hail;
+  // the two small files of the Under the storm chip, read once at start (the Data & sources view counts them too)
+  if (H?.rows?.length) { ensureExposure(); ensureSat(); }
   const rows: HailRow[] = H?.rows ?? [];
   const swaths = rows.filter(isSwath);
   const field = rows.filter((r) => !isSwath(r));
@@ -307,6 +368,14 @@ export function hailLayer(data: Data): AtlasLayer {
     unavailable: 'The hail records could not be downloaded when this copy of the data was built. Run <code>npm run data hail</code>, then reload.',
     build({ time, speed }) {
       ensureExposure();
+      if (satView && !satView.el.isConnected) satView = null; // its panel closed
+      const sat: Layer[] = [];
+      if (satView) {
+        const { s, mix, change } = satView;
+        const pic = (id: string, f: string, opacity: number) => new BitmapLayer({ id, image: satUrl(f), bounds: s.bounds, textureParameters: { minFilter: 'linear', magFilter: 'nearest' }, opacity, parameters: NO_DEPTH } as any);
+        if (change) sat.push(pic('hail-sat-change', s.files.change, 1));
+        else sat.push(pic('hail-sat-before', s.files.before, 1), ...(mix > 0 ? [pic('hail-sat-after', s.files.after, mix)] : []));
+      }
       const W = glowWindow(speed, 0.25);
       const lo = lowerBound(rows, time - W, (r) => r[2]);
       const hi = lowerBound(rows, time, (r) => r[2]);
@@ -340,6 +409,7 @@ export function hailLayer(data: Data): AtlasLayer {
           );
       }
       out.push(
+        ...sat,
         new PathLayer<HailRow>({
           id: 'hail-swaths',
           data: swaths,
