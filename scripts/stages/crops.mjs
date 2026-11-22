@@ -5,32 +5,36 @@ import { getPlaces, getProvince } from '../lib/places.mjs';
 // AAFC's Annual Crop Inventory: a 30 m map of crops and land cover, yearly since 2009, over the farm belt (it stops
 // around 55–56° N). Read like the drought monitor (exportImage, raw categories, Web Mercator), sampled at 500 m and
 // folded into 3 km cells (about 1.8 km on the ground) that each take their most common class.
+export const ACI_BASE = 'https://agriculture.canada.ca/imagery-images/rest/services/annual_crop_inventory';
+// classes, grouped: the inventory's codes (10 cloud, 20 water, 30 exposed, 34–35 built, 50 shrub, 60 burned, 80–85
+// wetland and peatland, 110 grassland, 120–199 agriculture, 200–230 forest); the hailcrop stage groups the same way
+export const CROP_GROUPS = ['cereals', 'canola', 'pulses', 'other crops', 'pasture and forage', 'grassland and shrub', 'forest', 'wetland', 'water', 'built-up', 'bare or burned'];
+const group = (v) => {
+  if (v === 20) return 8;
+  if (v === 34 || v === 35) return 9;
+  if (v === 30 || v === 60) return 10;
+  if (v === 50 || v === 110) return 5;
+  if (v === 80 || v === 85) return 7;
+  if (v >= 200 && v <= 230) return 6;
+  if (v === 122) return 4;
+  if (v === 153) return 1;
+  if (v >= 160 && v <= 174) return 2;
+  if (v >= 132 && v <= 147 && v !== 141) return 0;
+  if (v >= 120 && v <= 199) return 3;
+  return -1; // 0 not mapped, 10 cloud, anything unknown
+};
+/** an inventory code (0–255) → its group (index into CROP_GROUPS); −1 not mapped, cloud or unknown */
+export const CROP_LUT = new Int8Array(256).map((_, v) => group(v));
+
 export default async function crops() {
   const { clipFeature } = await getProvince();
   const places = await getPlaces();
-  const BASE = 'https://agriculture.canada.ca/imagery-images/rest/services/annual_crop_inventory';
+  const BASE = ACI_BASE;
   const day = new Date().toISOString().slice(0, 10);
   const list = await cachedJSON(`crops/services-${day}.json`, `${BASE}?f=json`);
   const years = (list.services ?? []).map((s) => +/\/(\d{4})$/.exec(s.name)?.[1]).filter((y) => y >= 2009).sort((a, b) => a - b);
   if (years.length < 10) throw new Error(`crop inventory lists only ${years.length} years`);
-  // classes, grouped: the inventory's codes (10 cloud, 20 water, 30 exposed, 34–35 built, 50 shrub, 60 burned, 80–85
-  // wetland and peatland, 110 grassland, 120–199 agriculture, 200–230 forest)
-  const CLASSES = ['cereals', 'canola', 'pulses', 'other crops', 'pasture and forage', 'grassland and shrub', 'forest', 'wetland', 'water', 'built-up', 'bare or burned'];
-  const group = (v) => {
-    if (v === 20) return 8;
-    if (v === 34 || v === 35) return 9;
-    if (v === 30 || v === 60) return 10;
-    if (v === 50 || v === 110) return 5;
-    if (v === 80 || v === 85) return 7;
-    if (v >= 200 && v <= 230) return 6;
-    if (v === 122) return 4;
-    if (v === 153) return 1;
-    if (v >= 160 && v <= 174) return 2;
-    if (v >= 132 && v <= 147 && v !== 141) return 0;
-    if (v >= 120 && v <= 199) return 3;
-    return -1; // 0 not mapped, 10 cloud, anything unknown
-  };
-  const LUT = new Int8Array(256).map((_, v) => group(v));
+  const CLASSES = CROP_GROUPS, LUT = CROP_LUT;
   // the grid: 3 km Web Mercator cells, each sampled 6 × 6 (500 m)
   const R = 6378137, PX = 3000, SUB = 6;
   const mx = (lon) => (R * lon * Math.PI) / 180, my = (lat) => R * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
