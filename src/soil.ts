@@ -6,6 +6,9 @@
 // themselves. A click on a polygon digs a pit: the soil's horizons drawn down from the surface, with texture, organic
 // carbon, pH and salt. The survey records no colour, so each horizon's is inferred from its great group and zone.
 import * as d3 from 'd3';
+// selection.transition() is added to d3's selections by d3-transition as a side effect, which the build drops when
+// only d3's named exports are used (d3 declares no side effects): import it for the pit's grow-down
+import 'd3-transition';
 import { BitmapLayer } from '@deck.gl/layers';
 import type { Layer, PickingInfo } from '@deck.gl/core';
 import type { Data, Soil, SoilHorizon, SoilType } from './data';
@@ -237,8 +240,8 @@ export function soilLayer(data: Data): AtlasLayer {
   const load = () => {
     if (loading || !S) return;
     loading = true;
-    Promise.all([import('@deck.gl/geo-layers'), import('pmtiles'), import('@loaders.gl/core'), import('@loaders.gl/mvt')])
-      .then(([g, pm, core, mvt]) => { lib = { MVTLayer: g.MVTLayer, archive: new pm.PMTiles(fileUrl), parse: core.parse, MVTLoader: mvt.MVTLoader }; })
+    import('./soil-tiles')
+      .then((t) => { lib = { MVTLayer: t.MVTLayer, archive: new t.PMTiles(fileUrl), parse: t.parse, MVTLoader: t.MVTLoader }; })
       .catch(() => { loading = false; }); // a network blip: asked again next frame
   };
   const fetchTile = async (url: string, { loadOptions, signal }: { loadOptions?: any; signal?: AbortSignal }) => {
