@@ -11,6 +11,7 @@ import { CRITERIA, TownMetrics, driveMin, getWork, migrate, rankTowns, saveWeigh
 import { placesWithin, startCommute, commuteMetric } from './commute';
 import { CROPS_COLOR, cropsBar, cropsText, placeCrops } from './crops';
 import { droughtNow, droughtStrip } from './drought';
+import { yieldsRows } from './yields';
 import { metric, na, link, tripV, tripSub } from './report-kit';
 import { rightNow } from './now';
 import { dailyNeeds } from './needs';
@@ -92,6 +93,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.light && t.light ? lightRows(t.light, data) : ''}
     ${data.drought && t.drought ? `<div class="dm-cap">Drought Monitor, every month since ${data.drought.months[0].slice(0, 4)}</div>${droughtStrip(data, key)}<div class="tr-falls" style="margin-top:8px">${link('drought', '🌾 Drought on the map')}</div>` : ''}
     ${(() => { const pc = data.crops ? placeCrops(data, key) : null; return pc ? `<h3>The land around it</h3><div class="metric-grid">${metric('What grows here', CROPS_COLOR, `${pc.crop}%`, cropsText(pc))}</div>${cropsBar(pc)}<p class="note" style="margin-top:6px">Annual Crop Inventory: each ~2 km square counts as its most common class, so small fields and sloughs vanish.</p><div class="tr-falls" style="margin-top:8px">${link('crops', '🌱 What grows here on the map')}</div>` : ''; })()}
+    ${data.yields ? yieldsRows(data, key) : ''}
     ${t.climate?.trend != null ? `<div class="callout" style="--c:#f25f5c">The nearest long-term station (${esc(t.climate.name)}) has warmed <b>${fmt.signed(t.climate.trend, 2)} °C per decade</b> since 1950.</div>` : ''}
     ${t.river ? `<div class="callout" style="--c:#4cc9f0"><b>${esc(t.river.name)}</b> (${t.river.dist.toFixed(0)} km away) reached 1.5× its normal peak in ${Math.round(t.river.floodShare * 100)}% of years; its record was ${t.river.record.ratio.toFixed(1)}× in ${t.river.record.year}.</div>` : ''}
     ${t.pop ? '<h3>Population</h3><div id="tr-pop"></div>' : ''}

@@ -36,7 +36,7 @@ const MUNI_WHEN_FOCUSED = new Set(['hospitals', 'justice', 'camping', 'needs', '
 const LAYER_GROUPS: { name: string; ids: string[] }[] = [
   { name: 'Base map', ids: ['province'] },
   { name: 'Justice & safety', ids: ['crime', 'justice', 'treaties'] },
-  { name: 'History on the timeline', ids: ['fires', 'smoke', 'tornadoes', 'hail', 'drought', 'crops', 'rivers', 'climate'] },
+  { name: 'History on the timeline', ids: ['fires', 'smoke', 'tornadoes', 'hail', 'drought', 'crops', 'yields', 'rivers', 'climate'] },
   { name: 'Places & living', ids: ['population', 'housing', 'jobs', 'needs', 'schools', 'internet', 'camping', 'commute', 'normals', 'light'] },
   { name: 'Health', ids: ['hospitals', 'doctors'] },
   { name: 'Settling in', ids: ['community', 'newcomer', 'childcare', 'transit'] },
