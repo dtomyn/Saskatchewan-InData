@@ -53,6 +53,8 @@ export interface AtlasLayer {
   icon: string;
   color: string;
   range: [number, number];
+  /** Where the timeline opens when this layer takes it (Voting opens on its latest election, not at the start of its range). */
+  opensAt?: number;
   monthly?: boolean;
   /**
    * Doesn't change over time (hospitals, hazard zones, 30-year normals). When focused, the timeline

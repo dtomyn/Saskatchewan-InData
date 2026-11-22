@@ -11,6 +11,7 @@ import { Data, Muni, Subdivision, fmt } from './data';
 import { esc } from './html';
 import { TownMetrics, townMetrics } from './metrics';
 import { csdReport } from './subdivisions';
+import { votingRows } from './voting';
 
 const viewMemo = new WeakMap<Data, Data>();
 const merge = <T>(towns: Record<string, T> | undefined, small: Record<string, T> | undefined) => ({ ...(towns ?? {}), ...(small ?? {}) });
@@ -128,6 +129,7 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
       ${t.river ? row('River gauge', esc(t.river.name), `${Math.round(t.river.dist)} km away`) : absent('River gauge', 'no gauge within 25 km')}
       ${t.treaty ? row('Treaty', esc(t.treaty), 'the numbered treaty area it is in') : absent('Treaty', 'outside the numbered treaty areas drawn')}
     </div>
+    ${votingRows(data, key, true)}
     <h3>Worked out for the ${big} places only</h3>
     <p class="note">Drive times by road, closure scenarios, camping, airports and transit, Workday Reach, CMHC market rents and vacancy, property tax, crops, industrial neighbours, drinking water advisories, newcomer services and climate projections. The public routing server the atlas uses cannot take several hundred more places, so distances here are straight lines and the Town Finder leaves small communities out of its drive-time criteria.</p>
     ${nearest.length ? `<div class="tr-falls" style="margin-top:8px">${nearest.map((x) => `<button class="tr-fall" data-town="${esc(x.x.key)}" type="button">${esc(x.x.name)}, ~${Math.round(x.d)} km: full report ›</button>`).join('')}</div>` : ''}

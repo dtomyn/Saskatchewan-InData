@@ -21,6 +21,7 @@ import { waterRows } from './water';
 import { lightRows } from './light';
 import { radonRows } from './radon';
 import { communityRows } from './community';
+import { votingRows } from './voting';
 import { doctorsRows } from './doctors';
 import { childcareRows } from './childcare';
 import { newcomerRows } from './newcomer';
@@ -68,6 +69,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.schools && t.schools ? schoolsRows(t) : ''}
     ${data.internet && t.internet ? internetRows(t.internet) : ''}
     ${data.community && t.community ? communityRows(t.community, data.community.slackKm) : ''}
+    ${votingRows(data, key)}
     ${data.doctors && t.doctors ? doctorsRows(t.doctors, data.doctors.slackKm) : ''}
     ${data.newcomer && t.newcomer ? newcomerRows(t.newcomer) : ''}
     ${data.transit && t.transit ? transitRows(t.transit, data) : ''}
