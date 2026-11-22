@@ -164,6 +164,48 @@ export const ALL_SOURCES: Source[] = [
     rings: (d) => Object.fromEntries((d.crops?.years ?? []).map((y, i) => [y, { v: Math.max(0.15, Math.min(1, d.crops!.share[i][1] / 20)), label: `${d.crops!.share[i][1].toFixed(0)}% canola, ${d.crops!.share[i][0].toFixed(0)}% cereals` }])),
   },
   {
+    id: 'yields', key: 'yields', name: 'Crop yields', color: '#e9c46a', group: 'Climate',
+    owner: 'Agriculture and Agri-Food Canada', title: 'Canadian Crop Yields: reported yields by census division, and the Canadian Crop Yield Forecaster', url: 'https://open.canada.ca/data/en/dataset/9253a01b-f1d9-4b67-ba98-857667827c7b',
+    endpoint: 'agriculture.canada.ca/atlas/data_donnees/canadianCropYield/data_donnees/csv/actual/historical_actual_crop_yield_by_CAR.csv · …/csv/forecast/crop_yield_forecast_by_CAR.csv', licence: OGL_CA,
+    gives: 'Each census division’s reported yield of spring and durum wheat, canola, barley, oats, peas, lentils and flax every year since 1987 (Statistics Canada’s figures), and the model’s 10th–90th percentile range for the next harvest.',
+    read: (d) => {
+      const Y = d.yields;
+      if (!Y) return null;
+      const n = sum(Object.values(Y.v).flatMap((rows) => rows.map((r) => (r ?? []).filter((v) => v != null).length)));
+      return { n, what: `${fmt.int(n)} division-years for ${Y.crops.length} crops, ${Y.years[0]}–${Y.years.at(-1)}${Y.forecast.year > Y.years.at(-1)! ? `, and the ${Y.forecast.year} forecast` : ''}` };
+    },
+    rings: (d) => {
+      const Y = d.yields;
+      if (!Y) return {};
+      const rows = Y.v.sw ?? Object.values(Y.v)[0] ?? [];
+      const out: Record<number, Ring> = Object.fromEntries(Y.years.flatMap((y, k) => {
+        const xs = rows.flatMap((r) => (r?.[k] != null ? [r[k]!] : []));
+        if (!xs.length) return [];
+        const m = d3.median(xs)!;
+        return [[y, { v: Math.max(0.12, Math.min(1, m / 55)), label: `spring wheat ${m.toFixed(1)} bu/ac in the middle census division (${xs.length} reporting)` }]];
+      }));
+      if (Y.forecast.year > Y.years.at(-1)!) out[Y.forecast.year] = { v: 0.45, proj: true, label: `model forecast for ${Y.forecast.year} (not a record)` };
+      return out;
+    },
+  },
+  {
+    id: 'yields-province', key: 'yields', name: 'A century of harvest', color: '#d9b25a', group: 'Climate',
+    owner: 'Statistics Canada', title: 'Tables 32-10-0359-01 (principal field crops, by province, since 1908) and 32-10-0002-01 (by Small Area Data Region, since 1976)', url: 'https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035901',
+    endpoint: 'www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/32100359 and /32100002', licence: 'Statistics Canada Open Licence',
+    gives: 'Saskatchewan’s own average yield of each crop every year since 1908, and its 20 crop districts from 1976 to 2016: separate series, charted beside the census-division map and never joined to it. From 2017 the small-area table also checks AAFC’s division figures.',
+    read: (d) => {
+      const P = d.yields?.province;
+      if (!P) return null;
+      const n = sum(Object.values(P.v).map((xs) => xs.filter((v) => v != null).length));
+      return { n, what: `${fmt.int(n)} province-years, ${P.years[0]}–${P.years.at(-1)}; ${d.yields!.districts.n} crop districts, ${d.yields!.districts.years[0]}–${d.yields!.districts.years.at(-1)}` };
+    },
+    rings: (d) => {
+      const P = d.yields?.province;
+      const xs = P?.v.sw ?? [];
+      return Object.fromEntries((P?.years ?? []).flatMap((y, k) => (xs[k] != null ? [[y, { v: Math.max(0.08, Math.min(1, xs[k]! / 55)), label: `spring wheat ${xs[k]!.toFixed(1)} bu/ac across Saskatchewan${y >= P!.provisionalFrom ? ' (early estimate)' : ''}` }]] : [])));
+    },
+  },
+  {
     id: 'rivers', key: 'rivers', name: 'River floods', color: '#4cc9f0', group: 'Hazards',
     owner: 'Environment and Climate Change Canada', title: 'HYDAT national water data archive: annual peak flows', url: 'https://api.weather.gc.ca/collections/hydrometric-annual-peaks',
     endpoint: 'api.weather.gc.ca/collections/hydrometric-annual-peaks', licence: OGL_CA,
@@ -489,6 +531,7 @@ export const BARK: BarkSource[] = [
   { name: 'Place names', key: 'places', owner: 'Natural Resources Canada', title: 'Canadian Geographical Names Database (geonames API)', url: 'https://natural-resources.canada.ca/earth-sciences/geography/geographical-names-board-canada', licence: OGL_CA, gives: 'Where each of the atlas’s places is. The list of names itself is typed into scripts/places.mjs.', read: (d) => `${d.munis.length} places located` },
   { name: 'Census subdivisions', key: 'subdivisions', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census subdivisions, with Census Profile 2021 population and dwellings', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'Every city, town, village, rural municipality and reserve: the province-wide census tint on Home costs, Jobs & income and Who lives here, and the census report for places beyond the atlas’s own.', read: (d) => (d.subdivisions ? `${d.subdivisions.csds.length} subdivisions` : 'not built') },
   { name: 'Census tracts', key: 'tracts', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census tracts, with Census Profile 2021 by census tract', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'The neighbourhood map at the top of the Regina and Saskatoon Town Reports: home value, income, renters, shelter costs, immigrants and Indigenous identity by tract.', read: (d) => (d.tracts ? `${d.tracts.tracts.filter((t) => !t.out).length} tracts inside the two cities` : 'not built') },
+  { name: 'Census divisions', key: 'yields', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census divisions', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'The 18 census divisions Crop yields is mapped by, and the division each place’s Town Report reads its harvest from.', read: (d) => (d.yields ? `${d.yields.cds.length} divisions` : 'not built') },
   { name: 'Roads', key: 'hospitals', owner: 'OpenStreetMap contributors · OSRM', title: 'OSRM demo router on OpenStreetMap roads', url: 'https://www.openstreetmap.org/copyright', licence: 'ODbL', gives: 'The road routes and free-flow drive times to the nearest hospital, courthouse, police station, campground and school.' },
   { name: 'Basemap', owner: 'CARTO · OpenStreetMap contributors', title: 'Dark Matter vector basemap', url: 'https://carto.com/attributions', licence: 'ODbL / CARTO terms', gives: 'The dark map, place names and roads under every layer.' },
   { name: 'Terrain', owner: 'Mapzen · AWS Open Data', title: 'Terrain Tiles (terrarium)', url: 'https://registry.opendata.aws/terrain-tiles/', licence: 'Open, with attribution', gives: 'The shaded relief: the Cypress Hills, the Missouri Coteau, the river valleys and the Shield; and the 3D terrain button, raised in close-ups past zoom 12.' },
@@ -506,6 +549,7 @@ export const DERIVED = [
   ['Tornado track ends', 'for Northern Tornadoes Project events are estimated here from the start point, track length and direction of motion it publishes; mapped end points from Environment Canada are used as they are.'],
   ['Hail', 'swath sizes are the radar’s Maximum Expected Size of Hail (MESH), an estimate, not a measured stone; the 2022 swaths have none. A swath stored in pieces (one per bend) is joined back into one track, and only the part inside the query box around Saskatchewan is kept, so a long Alberta or Manitoba swath may look shorter here. A research-database storm whose point was off the map is placed at the atlas town it is named after (inferred), and sizes the database gives in centimetres are converted. A place’s count is every swath or storm passing within 50 km of its centre.'],
   ['Drought', 'the Canadian Drought Monitor is a consensus map drawn from many indicators, not a measurement. It is read here on a 10 km grid in the map service’s own Web Mercator projection, so edges are blocky and a few kilometres off; a place takes the category of the cell its centre is in, so a town near an edge can read one step off. Province shares are of its land and lakes, cells weighted by their true area. Until early 2004 the maps covered only the agricultural south.'],
+  ['Crop yields against their trend', 'the colour of a census division’s column is worked out here: its reported yield against the median of its own eleven years around it (five either side, at least five reported), so a division that always grows less is not painted as failing and the long rise in yields does not paint every early year poor. The “middle division” is the median of the divisions reporting a crop that year, not a provincial average (Statistics Canada’s provincial figure is charted separately). AAFC’s forecast range for the middle division is the median of the divisions’ 10th and 90th percentiles, a sketch for the timeline, not a provincial forecast. Missing and suppressed figures are left out, never counted as zero.'],
   ['Hospitals', 'are the ODHF rows whose type or name says hospital; health centres and clinics are shown but not counted as the nearest hospital.'],
   ['Clinics', 'are the ODHF’s Saskatchewan Health Authority clinics and primary health care centres (hospitals, imaging, labs, public-health, mental-health and specialist sites left out), joined with OpenStreetMap’s medical clinics, doctors’ offices and nurses; a site in both counts once. ODHF sites with no point are put at their town’s centre. Neither list has most private practices, so a place with no clinic mapped but a hospital in town counts the hospital as its clinic (inferred). “In town” is counted as in Daily needs, whose clinic count is OpenStreetMap only. A clinic is not a doctor taking new patients, and the health authority’s temporary service disruptions are web notices, not data, so they are not shown.'],
   ['Childcare', 'the ministry’s list gives each facility a type (centre, family or group family child care home); a listing with none is counted as a centre when its name reads like an organisation and as a home when it reads like a person’s name (inferred). Family child care homes are people’s homes, so only a count per community is kept, at a point rounded to about 2 km; “in town” is counted at the home’s own point during the build, then dropped. The list has no licensed capacity, so spaces are not shown, and a licensed facility may have no space open.'],

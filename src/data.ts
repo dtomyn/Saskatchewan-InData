@@ -302,6 +302,29 @@ export type Crops = {
   towns: Record<string, (number[] | null)[]>;
 };
 
+/**
+ * Crop yields (the `yields` stage), three published series kept apart: AAFC's reported yields by census division
+ * (`v[crop][division]`, a value a year of `years`, null missing; the map's series) and its forecast for the next
+ * harvest (`forecast`: per crop the latest month's [10th, 50th, 90th percentile] per division; a model range);
+ * Statistics Canada's Saskatchewan yield since 1908 (`province`; from `provisionalFrom` an early estimate); and its 20
+ * crop districts to 2016 (`districts`, no boundaries). Yields as published: bu/ac, lb/ac for lentils. `towns[key]` is
+ * the index of the place's census division.
+ */
+export type YieldCrop = { id: string; name: string; unit: string };
+export type Yields = {
+  source: string; sourceUrl: string; actualUrl: string; forecastUrl: string; licence: string; licenceUrl: string;
+  provinceSource: string; provinceUrl: string; districtSource: string; districtUrl: string; statcanLicence: string; statcanLicenceUrl: string; boundarySource: string;
+  crops: YieldCrop[];
+  cds: { uid: string; name: string; c: [number, number]; polys: [number, number][][][] }[];
+  years: number[];
+  v: Record<string, ((number | null)[] | null)[]>;
+  forecast: { year: number; crops: Record<string, { month: number; months: number[]; v: ([number, number, number] | null)[] }> };
+  province: { years: number[]; v: Record<string, (number | null)[]>; provisionalFrom: number };
+  districts: { years: number[]; n: number; v: Record<string, (number | null)[][]> };
+  check: { cells: number; same: number; onlyOne: number };
+  towns: Record<string, number | null>;
+};
+
 /** A generating station mapped in OpenStreetMap: name, operator, fuel, MW where tagged. */
 export type PowerPlant = { n: string | null; o: string | null; s: 'coal' | 'gas' | 'hydro' | 'wind' | 'solar' | 'heat' | 'other'; mw: number | null; lon: number; lat: number };
 /** The power grid as mapped in OpenStreetMap: lines by voltage class (230, 138, 72 kV, null not tagged), substations
@@ -503,6 +526,8 @@ export type Data = {
   smoke: Smoke | null;
   drought: Drought | null;
   crops: Crops | null;
+  /** crop yields by census division and for the province, or null */
+  yields: Yields | null;
   power: Power | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;
   projections: Projections | null;
@@ -593,6 +618,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
+  const yieldsP = load<Yields>('yields');
   const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest, groundwater] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
@@ -686,6 +712,7 @@ export async function loadAll(): Promise<Data> {
     light: light && Object.keys(light.towns ?? {}).length ? light : null,
     transit: transit?.airports?.length ? transit : null,
     crops: crops?.years?.length && crops.maps?.length === crops.years.length ? crops : null,
+    yields: await (async () => { const y = await yieldsP; return y?.years?.length && y.cds?.length && y.crops?.length ? y : null; })(),
     power: power?.lines?.length ? power : null,
     now: {
       rivers: nRivers?.asOf && Array.isArray(nRivers.rows) ? nRivers : null,

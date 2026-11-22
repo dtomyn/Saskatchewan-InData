@@ -162,5 +162,9 @@
   "groundwater": {
     "ok": true,
     "updated": "2026-11-22T01:51:38.210Z"
+  },
+  "yields": {
+    "ok": true,
+    "updated": "2026-11-22T01:45:16.156Z"
   }
 }
