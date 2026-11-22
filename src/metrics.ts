@@ -19,6 +19,7 @@ import { PlaceRadon, placeRadon } from './radon';
 import { PlaceGroundwater, placeGroundwater } from './groundwater';
 import { PlaceLight, placeLight } from './light';
 import { PlaceTransit, placeTransit } from './transit';
+import { PlaceSoil, placeSoil } from './soil';
 
 /** A climate-normal value borrowed from the nearest station that reports it. */
 export type NormalPick = { v: number; name: string; dist: number };
@@ -79,6 +80,7 @@ export type TownMetrics = {
   radon: PlaceRadon | null; // share of tested homes at or above 200 Bq/m³ in the place's 2007 health region and its own postal areas (Health Canada survey, 2009–2011)
   light: PlaceLight | null; // daylight on Dec 21 / Mar 20 / Jun 21 and civil twilight (computed from latitude), geomagnetic latitude and aurora band (IGRF-14 dipole, NOAA SWPC Kp rule), drive to the nearest campground in a RASC dark-sky preserve
   transit: PlaceTransit | null; // drive to the nearest airport with scheduled flights (OurAirports; OSRM), VIA and intercity bus stops in town (OpenStreetMap), city buses (GTFS; OpenStreetMap)
+  soil: PlaceSoil | null; // soil zone at the centre, the land within 10 km by capability class for agriculture and its class 1–3 share, the survey polygon at the centre (AAFC detailed soil survey; Thematic Soil Maps; Prairie Soil Zones)
   schools: PlaceSchools | null; // nearest elementary, high, French and post-secondary by road; schools in town (Ministry of Education)
 };
 
@@ -288,6 +290,7 @@ export function townMetrics(data: Data): TownMetrics[] {
       groundwater: placeGroundwater(data, m.key),
       light: placeLight(data, m.key),
       transit: placeTransit(data, m.key),
+      soil: placeSoil(data, m.key),
       fires25km, burnedHa50km, tornadoes50km, treaty, climate, river, feels,
       smoke: placeSmoke(data, m),
       hail: placeHail(data, m),
@@ -348,6 +351,7 @@ export const CRITERIA: Criterion[] = [
   { id: 'childcare', drive: true, label: 'Childcare nearby', hint: 'Shorter drive to the nearest licensed child care centre (Ministry of Education list). Licensed is not the same as a space being open: waitlists are common', value: (t) => mins(t.childcare?.c), higherIsBetter: false, defaultWeight: 0 },
   { id: 'industry', label: 'Fewer industrial neighbours', hint: 'Fewer oil and gas wells (active, suspended or abandoned) and oil and gas facilities within 5 km of the town limits, industrial sites reporting to the National Pollutant Release Inventory within 5 km, licensed pipelines within 2 km and producing mines within 25 km, one count each. Neutral: these are also where many of the jobs are', value: (t) => t.industry?.score ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'wells', label: 'Shallower wells', hint: 'Shallower typical water well within 10 km of the town limits: the median depth drilled of the wells people draw from, as their drillers logged it (Water Security Agency; a place needs 10 wells). A shallower hole is cheaper to drill, not a promise of water, its quality or how much it yields; a deeper well can be the better one. For an acreage or farm off the town water system', value: (t) => t.groundwater?.b?.[0] ?? null, higherIsBetter: false, defaultWeight: 0 },
+  { id: 'farmland', label: 'Good farmland', hint: 'More of the land within 10 km of the town centre in capability classes 1–3 for agriculture, good for annual crops without irrigation (the province’s 1:100,000 soil survey, as AAFC’s Thematic Soil Maps rate it; places beyond the surveyed farm belt are left out). A survey’s rating of the land, not a soil test', value: (t) => t.soil?.good ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'radon', label: 'Lower radon', hint: 'Fewer of the tested homes in the place’s health region at or above Canada’s radon guideline, 200 Bq/m³ (Health Canada survey, 2009–2011; 2007 health regions, so neighbouring places tie). A regional odds, not a property’s: every home should get a long-term test', value: (t) => t.radon?.region.pct ?? null, higherIsBetter: false, defaultWeight: 0 },
   { id: 'winterday', label: 'Longer winter days', hint: 'More hours from sunrise to sunset on December 21, the shortest day (computed from latitude: the farther south, the longer; under an hour and a half between the far north and the border)', value: (t) => t.light?.d[0] ?? null, higherIsBetter: true, defaultWeight: 0 },
   { id: 'airport', drive: true, label: 'Near an airport', hint: 'Shorter drive to the nearest airport with scheduled passenger flights (OurAirports’ flag; Regina and Saskatoon have the most routes, the smaller ones a few flights a day or week)', value: (t) => mins(t.transit?.air), higherIsBetter: false, defaultWeight: 0 },

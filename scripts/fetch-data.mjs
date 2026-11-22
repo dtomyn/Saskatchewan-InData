@@ -28,7 +28,7 @@ const LIVE_STAGES = [...NOW_STAGES, ...ON_REQUEST];
 /** Run order: a stage comes after the stages whose output it reads (CLAUDE.md lists who reads what). */
 const ORDER = [
   'province', 'places', 'subdivisions', 'tracts',
-  'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'buildings', 'climate', 'smoke', 'drought', 'crops', 'yields', 'hailcrop', 'hailsat', 'normals', 'projections', 'twins',
+  'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'buildings', 'climate', 'smoke', 'drought', 'crops', 'yields', 'hailcrop', 'hailsat', 'soil', 'normals', 'projections', 'twins',
   'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools',
   'internet', 'community', 'voting', 'newcomer', 'doctors', 'childcare', 'industry', 'groundwater', 'power', 'water', 'radon', 'light',
   'transit', 'commute',

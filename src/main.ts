@@ -40,7 +40,7 @@ const LAYER_GROUPS: { name: string; ids: string[] }[] = [
   { name: 'Places & living', ids: ['population', 'housing', 'jobs', 'needs', 'schools', 'internet', 'camping', 'commute', 'normals', 'light'] },
   { name: 'Health', ids: ['hospitals', 'doctors'] },
   { name: 'Settling in', ids: ['community', 'voting', 'newcomer', 'childcare', 'transit'] },
-  { name: 'Around the property', ids: ['industry', 'water', 'radon', 'groundwater'] },
+  { name: 'Around the property', ids: ['industry', 'water', 'radon', 'groundwater', 'soil'] },
 ];
 
 type Mode = 'layer' | 'town' | 'finder' | 'event';
