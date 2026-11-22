@@ -8,6 +8,7 @@ import { firesLayer } from './fires';
 import { tornadoLayer } from './tornado';
 import { hailLayer } from './hail';
 import { riversLayer } from './rivers';
+import { watershedsLayer } from './watersheds';
 import { climateLayer } from './climate';
 import { smokeLayer } from './smoke';
 import { droughtLayer } from './drought';
@@ -66,5 +67,5 @@ function provinceLayer(data: Data): AtlasLayer {
 }
 
 export function buildLayers(data: Data): AtlasLayer[] {
-  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), hailLayer(data), riversLayer(data), climateLayer(data), smokeLayer(data), droughtLayer(data), cropsLayer(data), normalsLayer(data), lightLayer(data), populationLayer(data), housingLayer(data), jobsLayer(data), needsLayer(data), schoolsLayer(data), internetLayer(data), communityLayer(data), newcomerLayer(data), transitLayer(data), childcareLayer(data), industryLayer(data), waterLayer(data), radonLayer(data), hospitalsLayer(data), doctorsLayer(data), campingLayer(data), commuteLayer(data)];
+  return [provinceLayer(data), crimeLayer(data), justiceLayer(data), treatiesLayer(data), firesLayer(data), tornadoLayer(data), hailLayer(data), riversLayer(data), watershedsLayer(data), climateLayer(data), smokeLayer(data), droughtLayer(data), cropsLayer(data), normalsLayer(data), lightLayer(data), populationLayer(data), housingLayer(data), jobsLayer(data), needsLayer(data), schoolsLayer(data), internetLayer(data), communityLayer(data), newcomerLayer(data), transitLayer(data), childcareLayer(data), industryLayer(data), waterLayer(data), radonLayer(data), hospitalsLayer(data), doctorsLayer(data), campingLayer(data), commuteLayer(data)];
 }

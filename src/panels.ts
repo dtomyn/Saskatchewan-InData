@@ -3,6 +3,7 @@ import { Data, fmt } from './data';
 import { lineChart } from './charts';
 import { townProjectionRow } from './projections';
 import { openTwin, twinRow } from './twins';
+import { watershedRow } from './watersheds';
 import { smallView } from './small';
 import { cityTractsHTML, drawCityTracts } from './tracts';
 import { esc } from './html';
@@ -88,6 +89,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     </div>
     ${townProjectionRow(data, key)}
     ${twinRow(data, key)}
+    ${watershedRow(data, key)}
     ${feelsRow(t, data)}
     ${data.light && t.light ? lightRows(t.light, data) : ''}
     ${data.drought && t.drought ? `<div class="dm-cap">Drought Monitor, every month since ${data.drought.months[0].slice(0, 4)}</div>${droughtStrip(data, key)}<div class="tr-falls" style="margin-top:8px">${link('drought', '🌾 Drought on the map')}</div>` : ''}

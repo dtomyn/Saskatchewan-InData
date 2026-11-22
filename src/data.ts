@@ -481,6 +481,7 @@ export type Data = {
   projections: Projections | null;
   twins: Twins | null;
   floods: Floods | null;
+  watersheds: Watersheds | null;
   buildings: Buildings | null;
   population: { munis: Record<string, PopSeries>; source: string } | null;
   crime: Crime | null;
@@ -520,6 +521,35 @@ export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; pla
 export type BuildingArea = { name: string; box: [number, number, number, number]; n: number; way: number; ext: number; prot: number; h: number };
 export type Buildings = { source: string; sourceUrl: string; licence: string; heights: string; flood: string; asOf: string; file: string; bytes: number; minzoom: number; maxzoom: number; storey: number; z12Min: number; bounds: [number, number, number, number]; areas: BuildingArea[] };
 export type Floods = { source: string; sourceUrl: string; licence: string; returnPeriod: number; asOf: string; zones: FloodZone[] };
+/**
+ * A gauge of AAFC's Watersheds Project (the `watersheds` stage). `sb`, `b`, `o`: its sub-basin, major basin and drainage
+ * system (indices into `subs`, `basins`, `systems`); `g`, `e`: its total gross and effective drainage area (km²); `d` the
+ * gauges its water reaches next (effective links, the main one first), `gl` those its gross area reaches only in a wet
+ * year; `p` the river course to `d[0]` where Natural Earth has it (flat lon, lat). A chain's last gauge: `sea` on the
+ * coast, `x` a lake with no outlet in a median year, `c` [reach, point] where the drop carries on down `rivers`.
+ */
+export type WsStation = { id: string; n: string; lon: number; lat: number; sb: number; b: number; o: number; g: number; e: number; d: number[]; gl?: number[]; p?: number[]; c?: [number, number]; x?: 1; sea?: 1 };
+export type WsPlace = { sb: number; b: number; o: number; st: number; nc?: 1 };
+export type Watersheds = {
+  source: string; sourceUrl: string; licence: string; riverSource: string; riverUrl: string; riverLicence: string; asOf: string;
+  systems: string[];
+  basins: { name: string; sys: number; polys: [number, number][][][] }[];
+  subs: { name: string; polys: [number, number][][][] }[];
+  /** sub-basins whose only way out is a gross-only link: closed in a median year */
+  closed: number[];
+  /** the land that drains nowhere in a median year, around the province (outlines over about 2 km²) */
+  nc: [number, number][][][];
+  /** the share of the province south of `top` that drains nowhere in a median year */
+  south: { share: number; km2: number; of: number; top: number };
+  /** `st`: run-length [value, count…] of each cell's gauge (index + 1, 0 none); `nc` of the non-contributing mask; rows south to north */
+  grid: { w: number; s: number; dx: number; dy: number; nx: number; ny: number; st: number[]; nc: number[] };
+  stations: WsStation[];
+  /** River floods gauge id → its index in `stations` */
+  gauges: Record<string, number>;
+  rivers: { names: string[]; reaches: { n: number; d: number; o?: number; p: number[] }[] };
+  towns: Record<string, WsPlace>;
+  small: Record<string, WsPlace>;
+};
 
 /** A projection's variable and scenario keys (ECCC CanDCS-U6): mean temperature, daily high, daily low, precipitation. */
 export type ProjVar = 'tg' | 'tx' | 'tn' | 'pr';
@@ -565,6 +595,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
+  const watershedsP = load<Watersheds>('watersheds');
   const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
@@ -631,6 +662,7 @@ export async function loadAll(): Promise<Data> {
     projections: projections && Object.keys(projections.towns ?? {}).length ? projections : null,
     twins: twins?.stations?.length && Object.keys(twins.towns ?? {}).length ? twins : null,
     floods: floods?.zones?.length ? floods : null,
+    watersheds: await watershedsP.then((w) => (w?.stations?.length && w.grid?.st?.length && w.basins?.length ? w : null)),
     buildings: buildings?.areas?.length ? buildings : null,
     population: population && Object.keys(population.munis ?? {}).length ? population : null,
     // crime is only useful if at least one place matched

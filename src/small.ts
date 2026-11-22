@@ -11,6 +11,7 @@ import { Data, Muni, Subdivision, fmt } from './data';
 import { esc } from './html';
 import { TownMetrics, townMetrics } from './metrics';
 import { csdReport } from './subdivisions';
+import { watershedSmallRow } from './watersheds';
 
 const viewMemo = new WeakMap<Data, Data>();
 const merge = <T>(towns: Record<string, T> | undefined, small: Record<string, T> | undefined) => ({ ...(towns ?? {}), ...(small ?? {}) });
@@ -126,6 +127,7 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
       ${t.light ? row('Shortest day', `${t.light.d[0].toFixed(1)} h`, `daylight on December 21 (computed) · aurora ${t.light.a}`) : absent('Shortest day', 'light data not built')}
       ${(() => { const au = auroraCell(data, m.lon, m.lat); return au ? row('Aurora overhead now', au.v ?? why('—'), au.sub) : ''; })()}
       ${t.river ? row('River gauge', esc(t.river.name), `${Math.round(t.river.dist)} km away`) : absent('River gauge', 'no gauge within 25 km')}
+      ${watershedSmallRow(data, key)}
       ${t.treaty ? row('Treaty', esc(t.treaty), 'the numbered treaty area it is in') : absent('Treaty', 'outside the numbered treaty areas drawn')}
     </div>
     <h3>Worked out for the ${big} places only</h3>

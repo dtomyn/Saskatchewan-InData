@@ -9,6 +9,7 @@
 - **☾ Light & dark**: June's daylight, the aurora bands, **Sky now** (night's edge and the aurora forecast) and the dark-sky preserves.
 - **⛺ Camping & rec**: parks and campgrounds; **Weekend Reach** lights the campfires within a drive of a place.
 - **What grows here** played over the farm belt, and **Treaties & reserves** for whose land it is.
+- **💧 Watersheds**: Follow a raindrop from any spot (a town too) to Hudson Bay, the Arctic Ocean or the Gulf of Mexico, with the kilometres and the rivers it passes; the prairie's land that drains nowhere in a median year shows how flat and full of sloughs the south is.
 - **3D cities**: Saskatoon and Regina's buildings past zoom 12, with the terrain button.
 - **Town Report** and **Town Finder** (the New to Saskatchewan preset) for where a newcomer might live.
 - The catch, each from its own layer: **Climate normals** (winter), **Wildfires** (Replay the season), **Tornadoes**, **River floods** (the flood extent in 3D), **Crime severity**, and Climate's **Climate twin** for the decades ahead.
@@ -30,6 +31,7 @@ Start under the sky: Light & dark, then Camping & rec from a city you might fly 
 ```js
 atlas.clearMap(); atlas.focus('light')   // then the Jun 21, Aurora and Sky now chips (Sky now needs ?film&now)
 atlas.clearMap(); atlas.focus('camping') // then Weekend Reach: 4 h, Light the campfires
+atlas.openTown('regina'); document.querySelector('[data-ws-drop]').click()   // Watersheds: a drop from Regina runs Qu'Appelle › Assiniboine › Red › Nelson › Hudson Bay, about 1,800 km
 atlas.map.flyTo({ center: [-106.662, 52.124], zoom: 14.6, pitch: 64 })   // Saskatoon's buildings in 3D
 await atlas.replaySeason()               // Wildfires' season replay from the daily record
 ```
