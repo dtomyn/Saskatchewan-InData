@@ -2,28 +2,32 @@
 
 **Who:** someone buying farmland or an acreage, a newcomer curious about the prairie, a student, anyone who has driven past a yellow field in July and wondered.
 
-**The question:** What grows around here, and how has it changed?
+**The question:** What grows around here, how has it changed, and what is the soil under it good for?
 
 ## What answers it
 
 - **🌱 What grows here** (History on the timeline, 2009 → 2025): Agriculture and Agri-Food Canada's Annual Crop Inventory each year over the farm belt, in ~2 km squares that each show their most common class: cereals, canola, pulses, other crops and fallow, pasture and forage, grassland and shrub, forest, wetland, water, built-up, bare or burned. The panel charts the main classes' shares by year; events mark the year with the most canola and, when it stands out, the year fields were too wet to seed.
-- **Town Report** The land around it: the share of the land within 25 km that was cropped in the latest inventory and the first, its three biggest classes and a bar of all of them.
+- **🟫 Soil** (Around the property, a soil survey): the province's 1:100,000 soil survey, polygon by polygon. At province scale the five soil zones sweep from Brown in the dry southwest through Dark Brown and Black to the Gray of the forest edge; chips colour it by soil (Chernozems by great group, other orders whole), farmland class (capability for agriculture, 1–7), surface texture or salinity. Zoom in and click any polygon to **dig a pit**: the soil's layers grow down from the surface with their depths, sand, silt and clay, organic carbon, pH and salt. The panel shows farmland class by zone and, set beside What grows here, how much of each class was cropped in the latest inventory.
+- **Town Report** The land around it: the share of the land within 25 km that was cropped in the latest inventory and the first, its three biggest classes and a bar of all of them; Soil: the zone at the centre, the share of the land within 10 km in classes 1–3 (the Finder's **Good farmland**, weight 0), the soil under (or nearest) the centre, and **Dig a pit here**.
 - **🔥 Wildfires** outlines show where the boreal north has burned; **🌾 Drought** shows the dry years the crops grew through.
 
 ## How
 
-Turn on What grows here and play the timeline, or set a year; hover a square for its class. Open a Town Report and scroll to The land around it.
+Turn on What grows here and play the timeline, or set a year; hover a square for its class. Open a Town Report and scroll to The land around it. Turn on Soil, switch the chips, zoom in past about 6.5 and click a polygon to dig.
 
 ## What it cannot tell you
 
 - Each ~2 km square is only its **most common class**: small fields, sloughs, shelterbelts and farmyards vanish.
 - It is a satellite classification, right for about nine fields in ten; a square can flip class from one year to the next without anything changing on the ground.
 - It covers the farm belt only (to about 55–56° N), and cloud leaves gaps. Nothing here says who owns or farms the land, what it yielded or what it is worth.
+- Soil is a **1:100,000 survey**: lines are good to about 50 m, and each polygon is a mix of soils; the colours and the pit show the largest (the pit's layers are the soil's typical profile, not a test of that field). **No source records soil colour**: the pit's colours are inferred from the horizon, great group and zone. The north beyond the farm belt was not surveyed at this scale.
 
 ## Check it
 
 ```js
 atlas.clearMap(); atlas.focus('crops'); atlas.setTime(2023.5)
 atlas.setTime(2010.5)   // fields too wet to seed
-atlas.openTown('weyburn')   // The land around it
+atlas.openTown('weyburn')   // The land around it, and Soil
+atlas.clearMap(); atlas.focus('soil')   // the zones; chips: Soils, Farmland class, Texture, Salinity
+atlas.map.flyTo({ center: [-104.9, 52.85], zoom: 9 })   // then click a polygon: Dig a pit
 ```
