@@ -3,6 +3,7 @@ import { Data, fmt } from './data';
 import { lineChart } from './charts';
 import { townProjectionRow } from './projections';
 import { openTwin, twinRow } from './twins';
+import { watershedRow } from './watersheds';
 import { smallView } from './small';
 import { cityTractsHTML, drawCityTracts } from './tracts';
 import { esc } from './html';
@@ -11,6 +12,7 @@ import { CRITERIA, TownMetrics, driveMin, getWork, migrate, rankTowns, saveWeigh
 import { placesWithin, startCommute, commuteMetric } from './commute';
 import { CROPS_COLOR, cropsBar, cropsText, placeCrops } from './crops';
 import { droughtNow, droughtStrip } from './drought';
+import { yieldsRows } from './yields';
 import { metric, na, link, tripV, tripSub } from './report-kit';
 import { rightNow } from './now';
 import { dailyNeeds } from './needs';
@@ -20,7 +22,10 @@ import { industryRows } from './industry';
 import { waterRows } from './water';
 import { lightRows } from './light';
 import { radonRows } from './radon';
+import { groundwaterRows } from './groundwater';
+import { soilRows } from './soil';
 import { communityRows } from './community';
+import { votingRows } from './voting';
 import { doctorsRows } from './doctors';
 import { childcareRows } from './childcare';
 import { newcomerRows } from './newcomer';
@@ -68,6 +73,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.schools && t.schools ? schoolsRows(t) : ''}
     ${data.internet && t.internet ? internetRows(t.internet) : ''}
     ${data.community && t.community ? communityRows(t.community, data.community.slackKm) : ''}
+    ${votingRows(data, key)}
     ${data.doctors && t.doctors ? doctorsRows(t.doctors, data.doctors.slackKm) : ''}
     ${data.newcomer && t.newcomer ? newcomerRows(t.newcomer) : ''}
     ${data.transit && t.transit ? transitRows(t.transit, data) : ''}
@@ -75,6 +81,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.industry && t.industry ? industryRows(t.industry, data, key) : ''}
     ${data.water && t.water ? waterRows(t.water, data) : ''}
     ${data.radon && t.radon ? radonRows(t.radon, data) : ''}
+    ${data.groundwater && t.groundwater ? groundwaterRows(t.groundwater, data) : ''}
     ${data.housing ? homeCosts(t) : ''}
     ${data.jobs ? jobsIncome(t) : ''}
     <h3>Hazards &amp; climate</h3>
@@ -88,10 +95,13 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     </div>
     ${townProjectionRow(data, key)}
     ${twinRow(data, key)}
+    ${watershedRow(data, key)}
     ${feelsRow(t, data)}
     ${data.light && t.light ? lightRows(t.light, data) : ''}
     ${data.drought && t.drought ? `<div class="dm-cap">Drought Monitor, every month since ${data.drought.months[0].slice(0, 4)}</div>${droughtStrip(data, key)}<div class="tr-falls" style="margin-top:8px">${link('drought', '🌾 Drought on the map')}</div>` : ''}
     ${(() => { const pc = data.crops ? placeCrops(data, key) : null; return pc ? `<h3>The land around it</h3><div class="metric-grid">${metric('What grows here', CROPS_COLOR, `${pc.crop}%`, cropsText(pc))}</div>${cropsBar(pc)}<p class="note" style="margin-top:6px">Annual Crop Inventory: each ~2 km square counts as its most common class, so small fields and sloughs vanish.</p><div class="tr-falls" style="margin-top:8px">${link('crops', '🌱 What grows here on the map')}</div>` : ''; })()}
+    ${data.yields ? yieldsRows(data, key) : ''}
+    ${data.soil && t.soil ? soilRows(t.soil, data, m) : ''}
     ${t.climate?.trend != null ? `<div class="callout" style="--c:#f25f5c">The nearest long-term station (${esc(t.climate.name)}) has warmed <b>${fmt.signed(t.climate.trend, 2)} °C per decade</b> since 1950.</div>` : ''}
     ${t.river ? `<div class="callout" style="--c:#4cc9f0"><b>${esc(t.river.name)}</b> (${t.river.dist.toFixed(0)} km away) reached 1.5× its normal peak in ${Math.round(t.river.floodShare * 100)}% of years; its record was ${t.river.record.ratio.toFixed(1)}× in ${t.river.record.year}.</div>` : ''}
     ${t.pop ? '<h3>Population</h3><div id="tr-pop"></div>' : ''}

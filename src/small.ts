@@ -11,6 +11,9 @@ import { Data, Muni, Subdivision, fmt } from './data';
 import { esc } from './html';
 import { TownMetrics, townMetrics } from './metrics';
 import { csdReport } from './subdivisions';
+import { votingRows } from './voting';
+import { soilLine } from './soil';
+import { watershedSmallRow } from './watersheds';
 
 const viewMemo = new WeakMap<Data, Data>();
 const merge = <T>(towns: Record<string, T> | undefined, small: Record<string, T> | undefined) => ({ ...(towns ?? {}), ...(small ?? {}) });
@@ -46,8 +49,10 @@ export function smallView(data: Data): Data {
     doctors: d.doctors ? { ...d.doctors, towns: merge(d.doctors.towns, d.doctors.small) } : d.doctors,
     childcare: d.childcare ? { ...d.childcare, towns: merge(d.childcare.towns, d.childcare.small) } : d.childcare,
     radon: d.radon ? { ...d.radon, towns: merge(d.radon.towns, d.radon.small) } : d.radon,
+    groundwater: d.groundwater ? { ...d.groundwater, towns: merge(d.groundwater.towns, d.groundwater.small) } : d.groundwater,
     light: d.light ? { ...d.light, towns: merge(d.light.towns, d.light.small) } : d.light,
     drought: d.drought ? { ...d.drought, towns: merge(d.drought.towns, d.drought.small) } : d.drought,
+    soil: d.soil ? { ...d.soil, towns: merge(d.soil.towns, d.soil.small) } : d.soil,
   };
   viewMemo.set(data, v);
   return v;
@@ -122,12 +127,16 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
       ${t.drought ? row('Drought', String(t.drought.d2), `months at severe drought or worse, ${t.drought.from}–${t.drought.to} (its 10 km map cell)`) : absent('Drought', 'drought data not built')}
       ${t.smoke ? row('Smoke days', t.smoke.avg.toFixed(1), `a year, borrowed from ${esc(t.smoke.name)} (${Math.round(t.smoke.dist)} km)`) : absent('Smoke days', 'no air-monitoring station within 150 km')}
       ${t.radon ? row('Radon', `${t.radon.region.pct.toFixed(0)}%`, `of tested homes at or above 200 Bq/m³ in its health region (${esc(t.radon.region.name)}); test your own home`) : absent('Radon', 'radon data not built')}
+      ${t.groundwater ? row('Water wells', t.groundwater.b ? `${t.groundwater.b[0]} ft` : why('—'), t.groundwater.b ? `typical depth of ${t.groundwater.bn} wells within ${data.groundwater!.wellKm} km${t.groundwater.l ? `, water at ${t.groundwater.l[0]} ft` : ''}, as logged when drilled (not today’s level)` : `${t.groundwater.nw} wells on record within ${data.groundwater!.wellKm} km: too few for a typical depth`) : absent('Water wells', 'groundwater data not built')}
+      ${t.soil ? (() => { const s = soilLine(t.soil, data); return row('Good farmland', s.v, s.sub); })() : ''}
       ${t.climate ? row('Mean temperature', `${t.climate.meanTemp.toFixed(1)} °C`, `1991 on, borrowed from ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)`) : absent('Mean temperature', 'no long-record station')}
       ${t.light ? row('Shortest day', `${t.light.d[0].toFixed(1)} h`, `daylight on December 21 (computed) · aurora ${t.light.a}`) : absent('Shortest day', 'light data not built')}
       ${(() => { const au = auroraCell(data, m.lon, m.lat); return au ? row('Aurora overhead now', au.v ?? why('—'), au.sub) : ''; })()}
       ${t.river ? row('River gauge', esc(t.river.name), `${Math.round(t.river.dist)} km away`) : absent('River gauge', 'no gauge within 25 km')}
+      ${watershedSmallRow(data, key)}
       ${t.treaty ? row('Treaty', esc(t.treaty), 'the numbered treaty area it is in') : absent('Treaty', 'outside the numbered treaty areas drawn')}
     </div>
+    ${votingRows(data, key, true)}
     <h3>Worked out for the ${big} places only</h3>
     <p class="note">Drive times by road, closure scenarios, camping, airports and transit, Workday Reach, CMHC market rents and vacancy, property tax, crops, industrial neighbours, drinking water advisories, newcomer services and climate projections. The public routing server the atlas uses cannot take several hundred more places, so distances here are straight lines and the Town Finder leaves small communities out of its drive-time criteria.</p>
     ${nearest.length ? `<div class="tr-falls" style="margin-top:8px">${nearest.map((x) => `<button class="tr-fall" data-town="${esc(x.x.key)}" type="button">${esc(x.x.name)}, ~${Math.round(x.d)} km: full report ›</button>`).join('')}</div>` : ''}

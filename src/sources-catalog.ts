@@ -4,6 +4,7 @@ import * as d3 from 'd3';
 import { Data, fmt } from './data';
 import { provinceAnomalies } from './metrics';
 import { ago, skTime } from './now';
+import { hailSatInfo } from './hail';
 
 export type Ring = { v: number; label: string; proj?: boolean };
 export type Source = {
@@ -141,6 +142,14 @@ export const ALL_SOURCES: Source[] = [
     },
   },
   {
+    id: 'hailsat', key: 'hailsat', name: 'Hail from space', color: '#8fc46a', group: 'Hazards',
+    owner: 'European Space Agency (Copernicus) · Element 84 Earth Search on AWS', title: 'Sentinel-2 L2A surface reflectance, Cloud-Optimized GeoTIFFs: red, near infrared and scene classification', url: 'https://registry.opendata.aws/sentinel-2-l2a-cogs/',
+    endpoint: 'earth-search.aws.element84.com/v1/search (STAC, collection sentinel-2-l2a) · sentinel-cogs.s3.us-west-2.amazonaws.com, the 160 m overview read by range', licence: 'Copernicus Sentinel data terms (free and open); Contains modified Copernicus Sentinel data',
+    gives: 'Hail’s From space pictures: the vegetation index (NDVI) on the clearest days before and after a few big radar swaths, and the change between them. Vegetation change, not damage.',
+    read: () => { const s = hailSatInfo(); return s && { n: s.n, what: `before and after ${s.n} hail swath${s.n === 1 ? '' : 's'} (${s.credit})` }; },
+    rings: () => Object.fromEntries((hailSatInfo()?.years ?? []).map((y) => [y, { v: 0.3, label: 'Sentinel-2 before and after a hail swath' }])),
+  },
+  {
     id: 'drought', key: 'drought', name: 'Drought', color: '#e0a43a', group: 'Hazards',
     owner: 'Agriculture and Agri-Food Canada', title: 'Canadian Drought Monitor: monthly drought areas (D0–D4)', url: 'https://open.canada.ca/data/en/dataset/292646cd-619f-4200-afb1-8b2c52f984a2',
     endpoint: 'agriculture.canada.ca/imagery-images/rest/services/canadian_drought_monitor/ImageServer · exportImage, one month at a time, as raw categories on a 10 km grid', licence: OGL_CA,
@@ -164,6 +173,56 @@ export const ALL_SOURCES: Source[] = [
     rings: (d) => Object.fromEntries((d.crops?.years ?? []).map((y, i) => [y, { v: Math.max(0.15, Math.min(1, d.crops!.share[i][1] / 20)), label: `${d.crops!.share[i][1].toFixed(0)}% canola, ${d.crops!.share[i][0].toFixed(0)}% cereals` }])),
   },
   {
+    id: 'yields', key: 'yields', name: 'Crop yields', color: '#e9c46a', group: 'Climate',
+    owner: 'Agriculture and Agri-Food Canada', title: 'Canadian Crop Yields: reported yields by census division, and the Canadian Crop Yield Forecaster', url: 'https://open.canada.ca/data/en/dataset/9253a01b-f1d9-4b67-ba98-857667827c7b',
+    endpoint: 'agriculture.canada.ca/atlas/data_donnees/canadianCropYield/data_donnees/csv/actual/historical_actual_crop_yield_by_CAR.csv · …/csv/forecast/crop_yield_forecast_by_CAR.csv', licence: OGL_CA,
+    gives: 'Each census division’s reported yield of spring and durum wheat, canola, barley, oats, peas, lentils and flax every year since 1987 (Statistics Canada’s figures), and the model’s 10th–90th percentile range for the next harvest.',
+    read: (d) => {
+      const Y = d.yields;
+      if (!Y) return null;
+      const n = sum(Object.values(Y.v).flatMap((rows) => rows.map((r) => (r ?? []).filter((v) => v != null).length)));
+      return { n, what: `${fmt.int(n)} division-years for ${Y.crops.length} crops, ${Y.years[0]}–${Y.years.at(-1)}${Y.forecast.year > Y.years.at(-1)! ? `, and the ${Y.forecast.year} forecast` : ''}` };
+    },
+    rings: (d) => {
+      const Y = d.yields;
+      if (!Y) return {};
+      const rows = Y.v.sw ?? Object.values(Y.v)[0] ?? [];
+      const out: Record<number, Ring> = Object.fromEntries(Y.years.flatMap((y, k) => {
+        const xs = rows.flatMap((r) => (r?.[k] != null ? [r[k]!] : []));
+        if (!xs.length) return [];
+        const m = d3.median(xs)!;
+        return [[y, { v: Math.max(0.12, Math.min(1, m / 55)), label: `spring wheat ${m.toFixed(1)} bu/ac in the middle census division (${xs.length} reporting)` }]];
+      }));
+      if (Y.forecast.year > Y.years.at(-1)!) out[Y.forecast.year] = { v: 0.45, proj: true, label: `model forecast for ${Y.forecast.year} (not a record)` };
+      return out;
+    },
+  },
+  {
+    id: 'yields-province', key: 'yields', name: 'A century of harvest', color: '#d9b25a', group: 'Climate',
+    owner: 'Statistics Canada', title: 'Tables 32-10-0359-01 (principal field crops, by province, since 1908) and 32-10-0002-01 (by Small Area Data Region, since 1976)', url: 'https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035901',
+    endpoint: 'www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadCSV/32100359 and /32100002', licence: 'Statistics Canada Open Licence',
+    gives: 'Saskatchewan’s own average yield of each crop every year since 1908, and its 20 crop districts from 1976 to 2016: separate series, charted beside the census-division map and never joined to it. From 2017 the small-area table also checks AAFC’s division figures.',
+    read: (d) => {
+      const P = d.yields?.province;
+      if (!P) return null;
+      const n = sum(Object.values(P.v).map((xs) => xs.filter((v) => v != null).length));
+      return { n, what: `${fmt.int(n)} province-years, ${P.years[0]}–${P.years.at(-1)}; ${d.yields!.districts.n} crop districts, ${d.yields!.districts.years[0]}–${d.yields!.districts.years.at(-1)}` };
+    },
+    rings: (d) => {
+      const P = d.yields?.province;
+      const xs = P?.v.sw ?? [];
+      return Object.fromEntries((P?.years ?? []).flatMap((y, k) => (xs[k] != null ? [[y, { v: Math.max(0.08, Math.min(1, xs[k]! / 55)), label: `spring wheat ${xs[k]!.toFixed(1)} bu/ac across Saskatchewan${y >= P!.provisionalFrom ? ' (early estimate)' : ''}` }]] : [])));
+    },
+  },
+  {
+    id: 'soil', key: 'soil', name: 'Soil', color: '#c08a52', group: 'Climate',
+    owner: 'Agriculture and Agri-Food Canada', title: 'Saskatchewan Detailed Soil Survey (SKSIDv4, 1:100,000: polygons, components, soil names and layers); Thematic Soil Maps of Saskatchewan (capability for agriculture, slope, water erosion); Prairie Soil Zones of Canada', url: 'https://open.canada.ca/data/en/dataset/3734623c-25c5-4e69-936d-26f764a2807f',
+    endpoint: 'agriculture.canada.ca/atlas/data_donnees/detailedSoilSurvey … sk_dtl_soil.gpkg and csv/sk_dtl_soil_sol/ · services.arcgis.com … Thematic_soil_maps_of_Saskatchewan/FeatureServer/0 · agriculture.canada.ca … soilOfCanadaDerived … wc_soil_zone.geojson', licence: OGL_CA,
+    gives: 'What the soil is across the farm belt, polygon by polygon: its name, order and great group, drainage, parent material and layers (texture, organic carbon, pH, salt), the land’s capability for agriculture, its salinity, and the five prairie soil zones.',
+    read: (d) => d.soil && { n: d.soil.prov.polys, what: `${fmt.int(d.soil.prov.polys)} survey polygons over ${fmt.int(d.soil.prov.km2)} km², ${fmt.int(d.soil.types.length)} soils with their layers` },
+    rings: (d) => (d.soil ? { 2018: { v: 1, label: `soil survey, SKSIDv4 (compiled 2018)` } } : {}),
+  },
+  {
     id: 'rivers', key: 'rivers', name: 'River floods', color: '#4cc9f0', group: 'Hazards',
     owner: 'Environment and Climate Change Canada', title: 'HYDAT national water data archive: annual peak flows', url: 'https://api.weather.gc.ca/collections/hydrometric-annual-peaks',
     endpoint: 'api.weather.gc.ca/collections/hydrometric-annual-peaks', licence: OGL_CA,
@@ -184,6 +243,22 @@ export const ALL_SOURCES: Source[] = [
     endpoint: 'services1.arcgis.com/7MBdlVpjqbfBhQer · 1_500yr_Flood/FeatureServer/2, Flood_Hazard_All/FeatureServer/33', licence: 'Government of Saskatchewan Standard Unrestricted Use Data Licence v2.0',
     gives: 'The land a 1:500-year flood would cover in the communities the agency has studied, as it modelled it, with the floodway and flood fringe where mapped. A published hazard map, not a forecast.',
     read: (d) => d.floods && { n: d.floods.zones.length, what: `${d.floods.zones.length} flood-hazard areas in ${new Set(d.floods.zones.map((z) => z.place)).size} communities` },
+    rings: () => ({}),
+  },
+  {
+    id: 'watersheds', key: 'watersheds', name: 'Watersheds', color: '#5fd3c6', group: 'Hazards',
+    owner: 'Agriculture and Agri-Food Canada', title: 'AAFC Watersheds Project 2013: drainage systems, major basins, PFRA sub-basins, gauges’ incremental gross and non-contributing drainage areas, and the gauging station network', url: 'https://open.canada.ca/data/en/dataset/38d86b01-05c5-4763-aea6-4f3c62bac2a9',
+    endpoint: 'agriculture.canada.ca/atlas/data_donnees/watersheds2013/data_donnees/geojson/ · zipped GeoJSON, streamed a feature at a time', licence: OGL_CA,
+    gives: 'Which sea each basin drains to, each gauge’s drainage area and the gauges downstream of it, and the land that drains nowhere in a median year: the Watersheds layer, its raindrop and the Town Report’s watershed row.',
+    read: (d) => d.watersheds && { n: d.watersheds.stations.length, what: `${fmt.int(d.watersheds.stations.length)} gauges and their drainage areas in ${d.watersheds.basins.length} major basins, ${fmt.int(d.watersheds.nc.length)} outlines of land that drains nowhere` },
+    rings: (d) => (d.watersheds ? { 2013: { v: 1, label: `AAFC Watersheds Project 2013: ${Math.round(d.watersheds.south.share * 100)}% of the south drains nowhere in a median year` } } : {}),
+  },
+  {
+    id: 'watersheds', key: 'watersheds', name: 'Rivers to the sea', color: '#8cd7ff', group: 'Hazards',
+    owner: 'Natural Earth', title: '1:10m rivers and lake centerlines, the North America supplement, lakes and coastline (v5.1.2)', url: 'https://www.naturalearthdata.com/downloads/10m-physical-vectors/',
+    endpoint: 'raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ · ne_10m_rivers_lake_centerlines, ne_10m_rivers_north_america, ne_10m_lakes, ne_10m_lakes_north_america, ne_10m_coastline', licence: 'Public domain',
+    gives: 'The river lines a raindrop follows between gauges and on to Hudson Bay, the Arctic Ocean or the Gulf of Mexico.',
+    read: (d) => d.watersheds && { n: d.watersheds.rivers.reaches.length, what: `${fmt.int(d.watersheds.rivers.reaches.length)} river reaches from Saskatchewan to the sea` },
     rings: () => ({}),
   },
   {
@@ -322,6 +397,14 @@ export const ALL_SOURCES: Source[] = [
     rings: (d) => (d.community ? { 2021: { v: 1, label: `Census 2021: who lives in ${Object.keys(d.community.towns).length} places` }, [NOW]: { v: 0.7, label: `${fmt.int(d.community.sites.length)} places of worship as mapped on ${d.community.asOf}` } } : {}),
   },
   {
+    id: 'voting', key: 'voting', name: 'Voting', color: '#e3c98f', group: 'People & places',
+    owner: 'Elections Canada · Library of Parliament', title: 'Official Voting Results, poll-by-poll results (raw data), general elections 2011–2025; Electoral Boundary Files (polling divisions, advance polling districts, federal electoral districts); History of the Federal Electoral Ridings, 1867–2010', url: 'https://www.elections.ca/content.aspx?section=res&dir=rep/off&document=index&lang=e',
+    endpoint: 'elections.ca/res/rep/off/<election>/data_donnees/pollresults_resultatsbureauCanada.zip · ftp.maps.canada.ca/pub/elections_elections (2015–2021 shapefiles) · maps-cartes.services.geo.ca … ELECTIONS/FED_Elect2025_en/MapServer (2025, as KMZ) · open.canada.ca … hfer_e.csv', licence: OGL_CA,
+    gives: 'Every candidate’s votes at every poll in Saskatchewan’s federal elections since 2015, with electors and rejected ballots, the polls’ boundaries, each riding’s result since 2011, and every riding winner, seat and party vote back to 1908.',
+    read: (d) => d.voting && { n: d.voting.elections.reduce((a, e) => a + e.ridings.length, 0) + d.voting.history.length, what: `${d.voting.elections.length} elections from Elections Canada (${d.voting.elections.filter((e) => e.level === 'poll').length} poll by poll), ${d.voting.history.length} general elections in the riding history` },
+    rings: (d) => Object.fromEntries((d.voting?.history ?? []).map((h) => [Math.floor(h.t), { v: 0.35 + 0.65 * Math.min(1, h.n / 21), label: `${h.date}: ${h.n} Saskatchewan ridings${d.voting?.elections.some((e) => e.date === h.date && e.level === 'poll') ? ', poll by poll' : ''}` }])),
+  },
+  {
     id: 'newcomer', key: 'newcomer', name: 'Newcomer services', color: '#4fd1c5', group: 'People & places',
     owner: 'Immigration, Refugees and Citizenship Canada · Government of Saskatchewan · OpenStreetMap contributors', title: 'Find free newcomer services near you (IRCC-funded settlement and language offices); Find immigration services near you (provincial settlement services, typed from the web page); Service Canada offices and SGI motor licence issuers as mapped in OSM', url: 'https://ircc.canada.ca/english/newcomers/services/index.asp',
     endpoint: 'ircc.canada.ca/js/tools/services/services-info.js · saskatchewan.ca (typed into scripts/fetch-data.mjs) · overpass-api.de/api/interpreter · router.project-osrm.org', licence: 'Government of Canada and Government of Saskatchewan web content (reproduction permitted, non-commercial); OSM ODbL',
@@ -392,6 +475,22 @@ export const ALL_SOURCES: Source[] = [
     gives: 'The share of tested homes at or above Canada’s radon guideline (200 Bq/m³) in each 2007 health region and postal area, and for each place. A regional odds: only a long-term test tells for a house.',
     read: (d) => d.radon && { n: d.radon.prov.n, what: `${fmt.int(d.radon.prov.n)} homes tested in ${d.radon.regions.length} health regions and ${d.radon.fsas.length} postal areas` },
     rings: (d) => (d.radon ? { 2010: { v: 1, label: `homes tested ${d.radon.years}` } } : {}),
+  },
+  {
+    id: 'groundwater', key: 'groundwater', name: 'Groundwater', color: '#26c6da', group: 'People & places',
+    owner: 'Water Security Agency', title: 'Water Wells (Public): the Water Well Driller’s Reports database (bore depth, static water level, flowing head, well and water use, date completed)', url: 'https://gis.wsask.ca/Html5Viewer/index.html?viewer=WaterWells.WellsViewer/',
+    endpoint: 'gis.wsask.ca/arcgiswa/rest/services/Public/Water_Wells/FeatureServer/4 (10,000 a page; no owner or driller field is requested)', licence: 'Government of Saskatchewan Standard Unrestricted Use Data Licence v2.0 (stated on the WSA’s Water Wells Web Map item; the feature service itself states none)',
+    gives: 'How many water wells drillers have logged near each place, how deep they went and where the water stood the day each was drilled, and what the water is for. Published as hexagons and per-place medians only, never single wells.',
+    read: (d) => d.groundwater && { n: d.groundwater.totals.n, what: `${fmt.int(d.groundwater.totals.n)} water wells and test holes (${fmt.int(d.groundwater.totals.nw)} withdrawal wells) in ${fmt.int(d.groundwater.hexes.length)} hexagons, drilled ${d.groundwater.totals.years[0]}–${d.groundwater.totals.years[1]}` },
+    rings: (d) => (d.groundwater ? Object.fromEntries(d.groundwater.totals.decades.flatMap(([y, n]) => Array.from({ length: 10 }, (_, i) => [y + i, { v: Math.min(1, 0.25 + n / Math.max(...d.groundwater!.totals.decades.map((x) => x[1]))), label: `${fmt.int(n)} wells logged in the ${y}s` }] as const).filter(([yy]) => yy <= NOW))) : {}),
+  },
+  {
+    id: 'groundwater', key: 'drift', name: 'Glacial drift thickness', color: '#c9a06a', group: 'People & places',
+    owner: 'Saskatchewan Geological Survey (Ministry of Energy and Resources)', title: 'Glacial Drift Thickness (surface to bedrock isopach, 1:1,000,000), Saskatchewan Mining and Petroleum GeoAtlas', url: 'https://geohub.saskatchewan.ca/datasets/494635e796064cdca35be8ea05c864de',
+    endpoint: 'gis.saskatchewan.ca/egis/rest/services/Economy/Regional_Datasets_and_Compilations/FeatureServer/9', licence: 'Government of Saskatchewan Standard Unrestricted Use Data Licence v2.0',
+    gives: 'How thick the sand, gravel and clay left by the glaciers is over the bedrock, in 50 m classes: Groundwater’s drift chip and the sheet under Below the surface.',
+    read: (d) => d.groundwater && { n: d.groundwater.drift.polys.length, what: `${d.groundwater.drift.polys.length} areas in ${d.groundwater.drift.classes.length} thickness classes` },
+    rings: (d) => (d.groundwater ? { [NOW]: { v: 0.6, label: `as published, read ${d.groundwater.asOf}` } } : {}),
   },
   {
     id: 'camping', key: 'camping', name: 'Camping & rec', color: '#59d18c', group: 'People & places',
@@ -473,6 +572,7 @@ export const BARK: BarkSource[] = [
   { name: 'Place names', key: 'places', owner: 'Natural Resources Canada', title: 'Canadian Geographical Names Database (geonames API)', url: 'https://natural-resources.canada.ca/earth-sciences/geography/geographical-names-board-canada', licence: OGL_CA, gives: 'Where each of the atlas’s places is. The list of names itself is typed into scripts/places.mjs.', read: (d) => `${d.munis.length} places located` },
   { name: 'Census subdivisions', key: 'subdivisions', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census subdivisions, with Census Profile 2021 population and dwellings', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'Every city, town, village, rural municipality and reserve: the province-wide census tint on Home costs, Jobs & income and Who lives here, and the census report for places beyond the atlas’s own.', read: (d) => (d.subdivisions ? `${d.subdivisions.csds.length} subdivisions` : 'not built') },
   { name: 'Census tracts', key: 'tracts', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census tracts, with Census Profile 2021 by census tract', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'The neighbourhood map at the top of the Regina and Saskatoon Town Reports: home value, income, renters, shelter costs, immigrants and Indigenous identity by tract.', read: (d) => (d.tracts ? `${d.tracts.tracts.filter((t) => !t.out).length} tracts inside the two cities` : 'not built') },
+  { name: 'Census divisions', key: 'yields', owner: 'Statistics Canada', title: '2021 Census cartographic boundary file: census divisions', url: 'https://www12.statcan.gc.ca/census-recensement/2021/geo/sip-pis/boundary-limites/index2021-eng.cfm', licence: 'Statistics Canada Open Licence', gives: 'The 18 census divisions Crop yields is mapped by, and the division each place’s Town Report reads its harvest from.', read: (d) => (d.yields ? `${d.yields.cds.length} divisions` : 'not built') },
   { name: 'Roads', key: 'hospitals', owner: 'OpenStreetMap contributors · OSRM', title: 'OSRM demo router on OpenStreetMap roads', url: 'https://www.openstreetmap.org/copyright', licence: 'ODbL', gives: 'The road routes and free-flow drive times to the nearest hospital, courthouse, police station, campground and school.' },
   { name: 'Basemap', owner: 'CARTO · OpenStreetMap contributors', title: 'Dark Matter vector basemap', url: 'https://carto.com/attributions', licence: 'ODbL / CARTO terms', gives: 'The dark map, place names and roads under every layer.' },
   { name: 'Terrain', owner: 'Mapzen · AWS Open Data', title: 'Terrain Tiles (terrarium)', url: 'https://registry.opendata.aws/terrain-tiles/', licence: 'Open, with attribution', gives: 'The shaded relief: the Cypress Hills, the Missouri Coteau, the river valleys and the Shield; and the 3D terrain button, raised in close-ups past zoom 12.' },
@@ -482,13 +582,21 @@ export const DERIVED = [
   ['Provincial warming', 'the climate anomaly is the average of every station’s difference from its own 1961–90 baseline.'],
   ['Climate twins', 'the Climate layer’s arcs and the Town Report’s twin row are worked out here, with nothing new downloaded: a place’s observed climate normals (borrowed from its nearest station with both numbers) plus the models’ projected change since the normals’ period, matched to the Saskatchewan station whose normals today are nearest on annual mean temperature and total precipitation, each counted by its spread across the stations. The projections are changes from 1971–2000, so the part of the change already made by the normals’ period is estimated on a straight line to the 2021–2050 median. A nearest station too far off is no twin, and a place projected warmer than every station reads “warmer than anywhere in Saskatchewan today”. Two numbers are not a climate, let alone a town: it is a model range, never a forecast.'],
   ['Buildings in the flood extent', 'River floods’ count of buildings touching the mapped 1:500-year extent is worked out here: a machine-drawn footprint counts when any part of it meets one of the Water Security Agency’s outlines (the floodway first, then the rest of the extent, then land only behind dikes). It is not a count of buildings that will flood: floor heights, basements and defences are not in the data, and a community with no flood map is unmapped, not safe. Heights come from OpenStreetMap where tagged (a storey count taken as 3 m a storey); every other building is drawn one nominal storey high.'],
+  ['Groundwater hexagons', 'the Groundwater layer’s hexagons and each place’s wells are worked out here from the Water Security Agency’s well records: each well is dropped into a ~4 km hexagon (and counted for every place whose town limits are within 10 km), and the typical depths are medians of the withdrawal wells, the ones people draw water from, with a level logged as 0 and no flowing head left out as not recorded. Only these counts, medians and histograms are published, never a well. Below the surface stretches the depths several hundred times so they show, and stacks two medians (depth to water, depth drilled) that come from overlapping but different sets of wells: a picture of what drillers found, not a cross-section.'],
+  ['Soil', 'each soil polygon’s capability for agriculture comes from AAFC’s Thematic Soil Maps of Saskatchewan, whose polygons are the survey’s own under other ids: each is matched to a survey polygon by its centroid and area. A polygon takes its soil zone from the point inside it on AAFC’s generalised zone map, and is drawn by its largest soil (map units are mixes). At province scale each 3 km square shows its most common class. A place’s good farmland is the class 1–3 share of the rated land within 10 km of its centre, sampled every 500 m. The pit’s colours are inferred from each horizon, the great group and the zone: no source records soil colour. Classes are set beside the Annual Crop Inventory by the polygon under each ~2 km crop square’s centre.'],
+  ['Land that drains nowhere', 'the Watersheds layer’s share of the province south of 54° N is worked out here: AAFC’s non-contributing areas (land that would not send runoff to a stream in a flood with a two-year return period) and the province outline are burnt into a 0.01° grid, each cell weighted by its true area; AAFC’s own areas for the gauges there give nearly the same share. The outlines drawn leave out patches under about 2 km², which still count.'],
+  ['Raindrop paths', 'Watersheds’ drop is worked out here: it runs from where it lands to the gauge at the outlet of that spot’s drainage area (on a grid of about 3 km), then down AAFC’s gauge network along its effective links, along Natural Earth’s river line when both gauges sit within 4 km of one and its course between them is not much longer than the straight line, otherwise in a straight step. Where the network stops short of the sea, the drop carries on down Natural Earth’s rivers (joined across lakes, never across a continental divide, a step to much less drainage area counted as uphill) but only along a river whose sea is the one AAFC gives. It ends in a lake when AAFC’s network gives that lake no outlet in a median year, and stays put on land that drains nowhere. The kilometres are the map’s lines, shorter than the rivers’ windings.'],
   ['Fire scars', 'are circles with the same area as each fire’s reported size, centred where it started; they are not the fire’s real shape.'],
   ['Season replay edges', 'the dashed edges in Wildfires’ season replay are worked out here from the daily record’s satellite hotspots: each hotspot is dropped on a grid of about 2 km, a cell keeps the day it first lit, and an edge is drawn around patches of six cells or more. They show where heat has been seen so far, not a mapped perimeter and not a burned area.'],
   ['Crime by place', 'uses each place’s own police service; northern villages with no municipal series use their rural RCMP detachment, which covers a wider area, and the report says so.'],
   ['Police in town', 'OpenStreetMap misses many police buildings here, so a place Statistics Canada lists with its own municipal police service (a city force or a municipal RCMP detachment) counts as having police in town when none is mapped within 6 km of its centre.'],
   ['Tornado track ends', 'for Northern Tornadoes Project events are estimated here from the start point, track length and direction of motion it publishes; mapped end points from Environment Canada are used as they are.'],
   ['Hail', 'swath sizes are the radar’s Maximum Expected Size of Hail (MESH), an estimate, not a measured stone; the 2022 swaths have none. A swath stored in pieces (one per bend) is joined back into one track, and only the part inside the query box around Saskatchewan is kept, so a long Alberta or Manitoba swath may look shorter here. A research-database storm whose point was off the map is placed at the atlas town it is named after (inferred), and sizes the database gives in centimetres are converted. A place’s count is every swath or storm passing within 50 km of its centre.'],
+  ['Hail exposure', 'Hail’s Under the storm chip is worked out here: each radar swath (a centre line and a widest width) becomes a corridor as wide as the swath at its widest all along its centre line, cut square at the ends, so it is an upper bound; the same year’s Annual Crop Inventory is read inside it every ~120 m (200 m Web Mercator pixels, each one 30 m inventory pixel), in Saskatchewan only, and counted by class. Swaths with no width (all of 2022’s) get no corridor. It is exposure, the crops under a swath that season, never damage or loss: no open data says which fields the hail hit or what it cost. A season’s total counts land under two swaths once.'],
+  ['Hail from space', 'the before and after pictures of a few big swaths are worked out here from Sentinel-2: NDVI, (near infrared − red) ÷ (near infrared + red) in surface reflectance, at the scenes’ 160 m overview, keeping only pixels the scene classification calls vegetation or bare soil and taking each from the clear scene nearest the storm (up to 20 days either side); the change is after minus before, shown for the corridor and 10 km around it so the change outside the swath can be compared. Vegetation change, not damage: harvest, haying, ripening and growth change it too.'],
+  ['Hail in dollars', 'there is no open loss data by storm, so the biggest storms’ figures are typed into the timeline by hand from the insurers’ own publications (read on 2026-11-21), each with its link: Municipal Hail’s annual reports (its own crop-hail claims, not SCIC’s or the private insurers’) and the Insurance Bureau of Canada’s news releases (CatIQ’s estimates of insured damage to homes, cars and businesses).'],
   ['Drought', 'the Canadian Drought Monitor is a consensus map drawn from many indicators, not a measurement. It is read here on a 10 km grid in the map service’s own Web Mercator projection, so edges are blocky and a few kilometres off; a place takes the category of the cell its centre is in, so a town near an edge can read one step off. Province shares are of its land and lakes, cells weighted by their true area. Until early 2004 the maps covered only the agricultural south.'],
+  ['Crop yields against their trend', 'the colour of a census division’s column is worked out here: its reported yield against the median of its own eleven years around it (five either side, at least five reported), so a division that always grows less is not painted as failing and the long rise in yields does not paint every early year poor. The “middle division” is the median of the divisions reporting a crop that year, not a provincial average (Statistics Canada’s provincial figure is charted separately). AAFC’s forecast range for the middle division is the median of the divisions’ 10th and 90th percentiles, a sketch for the timeline, not a provincial forecast. Missing and suppressed figures are left out, never counted as zero.'],
   ['Hospitals', 'are the ODHF rows whose type or name says hospital; health centres and clinics are shown but not counted as the nearest hospital.'],
   ['Clinics', 'are the ODHF’s Saskatchewan Health Authority clinics and primary health care centres (hospitals, imaging, labs, public-health, mental-health and specialist sites left out), joined with OpenStreetMap’s medical clinics, doctors’ offices and nurses; a site in both counts once. ODHF sites with no point are put at their town’s centre. Neither list has most private practices, so a place with no clinic mapped but a hospital in town counts the hospital as its clinic (inferred). “In town” is counted as in Daily needs, whose clinic count is OpenStreetMap only. A clinic is not a doctor taking new patients, and the health authority’s temporary service disruptions are web notices, not data, so they are not shown.'],
   ['Childcare', 'the ministry’s list gives each facility a type (centre, family or group family child care home); a listing with none is counted as a centre when its name reads like an organisation and as a home when it reads like a person’s name (inferred). Family child care homes are people’s homes, so only a count per community is kept, at a point rounded to about 2 km; “in town” is counted at the home’s own point during the build, then dropped. The list has no licensed capacity, so spaces are not shown, and a licensed facility may have no space open.'],
@@ -497,6 +605,8 @@ export const DERIVED = [
   ['School grades', 'the ministry’s list states grades only for band schools; a provincial school is elementary or high by its name, and a school whose name says neither counts as K-12 when no high school is within 10 km. The ministry’s map layer misplaces many rural schools and misses others: a listed school takes the position of the same-named OpenStreetMap school within 30 km, and OpenStreetMap schools it lacks inside the atlas’s towns are added, sector not stated. Drives count public, separate, Fransaskois and those OpenStreetMap schools only.'],
   ['Internet in town', 'ISED’s pseudo-households (points along roads carrying the 2021 census households near them) are weighted by households and counted for a place when they lie inside its 2021 census subdivision. The tiers are what providers say they offer, not measured speeds; fixed wireless counts towards 50/10, satellite does not, and mobile coverage is LTE or better (5G is not singled out in the open data).'],
   ['Who lives here', 'counts are Statistics Canada’s, randomly rounded to a multiple of 5, so a share built on a rounded 0 is shown as “—” (none, a handful or not published) rather than 0%. Figures are for the place’s own census subdivision: First Nation reserves next to a town are their own subdivisions and not in its Indigenous identity share. The Finder’s Diverse community is the immigrant share alone.'],
+  ['Vote dots', 'Voting’s dots are placed by the atlas: one per 5 votes (a random share of them farther out, one per 10 or 20), each at a random point inside the poll where it was cast, from a fixed seed so they fall in the same places every visit. A dot is not a voter’s home. Advance votes have no poll of their own, so each is put in one of its advance district’s polls, chosen in proportion to the electors on each poll’s list; special ballots have no place and are not drawn. Polls whose results Elections Canada combined are drawn as one.'],
+  ['Votes by place', 'a place’s votes are those of the polls whose area centre lies inside its town limits (or, when none does, of the poll that holds its centre, which reaches beyond it), at the latest election. Its advance votes are added only when every advance district those polls belong to lies 90% or more (by electors) inside it; otherwise turnout is election day only and says so. Turnout is ballots cast, rejected ones included, over electors on the lists.'],
   ['Getting around', 'scheduled service is OurAirports’ flag, not a timetable. Trains and intercity buses are what OpenStreetMap volunteers have mapped: intercity bus coverage is partial and coach lines change often. City buses come from GTFS feeds; Moose Jaw’s has expired and Prince Albert’s is the Mobility Database’s last copy, and neither states a licence. The “without a car” score counts what is mapped, not how often it runs.'],
   ['Newcomer services', 'settlement offices are IRCC’s own list; the province’s list of settlement services (the Regional Newcomer Gateways) is published only as a web page, so it is typed into the build script with the date it was read, and an organisation IRCC does not list is placed at its town’s centre. Service Canada offices and SGI motor licence issuers are as mapped in OpenStreetMap, which has only some of SGI’s nearly 400 issuers; insurance brokers count as issuers (most are, but it is inferred), so the nearest issuer may be closer than shown.'],
   ['Market rent by place','CMHC surveys a whole census metropolitan area or agglomeration; its average rent and vacancy rate are shown only on the place it is named after (Saskatoon’s covers Warman and Martensville too), and Lloydminster’s vacancy rate covers both sides of the border.'],

@@ -36,11 +36,11 @@ const MUNI_WHEN_FOCUSED = new Set(['hospitals', 'justice', 'camping', 'needs', '
 const LAYER_GROUPS: { name: string; ids: string[] }[] = [
   { name: 'Base map', ids: ['province'] },
   { name: 'Justice & safety', ids: ['crime', 'justice', 'treaties'] },
-  { name: 'History on the timeline', ids: ['fires', 'smoke', 'tornadoes', 'hail', 'drought', 'crops', 'rivers', 'climate'] },
+  { name: 'History on the timeline', ids: ['fires', 'smoke', 'tornadoes', 'hail', 'drought', 'crops', 'yields', 'rivers', 'climate'] },
   { name: 'Places & living', ids: ['population', 'housing', 'jobs', 'needs', 'schools', 'internet', 'camping', 'commute', 'normals', 'light'] },
   { name: 'Health', ids: ['hospitals', 'doctors'] },
-  { name: 'Settling in', ids: ['community', 'newcomer', 'childcare', 'transit'] },
-  { name: 'Around the property', ids: ['industry', 'water', 'radon'] },
+  { name: 'Settling in', ids: ['community', 'voting', 'newcomer', 'childcare', 'transit'] },
+  { name: 'Around the property', ids: ['industry', 'water', 'radon', 'groundwater', 'soil'] },
 ];
 
 type Mode = 'layer' | 'town' | 'finder' | 'event';
@@ -675,6 +675,7 @@ function focus(id: string, keepPanel = false) {
       const [a, b] = l.range;
       // a layer with a live reading opens at Now; the others keep the time if it is inside their range
       if (l.now) state.time = b;
+      else if (l.opensAt != null) state.time = l.opensAt;
       else if (state.time < a || state.time > b) state.time = a;
     }
     if (state.mode !== 'finder' && !keepPanel) { state.mode = 'layer'; state.selected = null; }

@@ -302,6 +302,29 @@ export type Crops = {
   towns: Record<string, (number[] | null)[]>;
 };
 
+/**
+ * Crop yields (the `yields` stage), three published series kept apart: AAFC's reported yields by census division
+ * (`v[crop][division]`, a value a year of `years`, null missing; the map's series) and its forecast for the next
+ * harvest (`forecast`: per crop the latest month's [10th, 50th, 90th percentile] per division; a model range);
+ * Statistics Canada's Saskatchewan yield since 1908 (`province`; from `provisionalFrom` an early estimate); and its 20
+ * crop districts to 2016 (`districts`, no boundaries). Yields as published: bu/ac, lb/ac for lentils. `towns[key]` is
+ * the index of the place's census division.
+ */
+export type YieldCrop = { id: string; name: string; unit: string };
+export type Yields = {
+  source: string; sourceUrl: string; actualUrl: string; forecastUrl: string; licence: string; licenceUrl: string;
+  provinceSource: string; provinceUrl: string; districtSource: string; districtUrl: string; statcanLicence: string; statcanLicenceUrl: string; boundarySource: string;
+  crops: YieldCrop[];
+  cds: { uid: string; name: string; c: [number, number]; polys: [number, number][][][] }[];
+  years: number[];
+  v: Record<string, ((number | null)[] | null)[]>;
+  forecast: { year: number; crops: Record<string, { month: number; months: number[]; v: ([number, number, number] | null)[] }> };
+  province: { years: number[]; v: Record<string, (number | null)[]>; provisionalFrom: number };
+  districts: { years: number[]; n: number; v: Record<string, (number | null)[][]> };
+  check: { cells: number; same: number; onlyOne: number };
+  towns: Record<string, number | null>;
+};
+
 /** A generating station mapped in OpenStreetMap: name, operator, fuel, MW where tagged. */
 export type PowerPlant = { n: string | null; o: string | null; s: 'coal' | 'gas' | 'hydro' | 'wind' | 'solar' | 'heat' | 'other'; mw: number | null; lon: number; lat: number };
 /** The power grid as mapped in OpenStreetMap: lines by voltage class (230, 138, 72 kV, null not tagged), substations
@@ -322,6 +345,33 @@ export type Industry = {
   hexes: WellHex[]; pipes: IndustryLine[]; owners: string[]; fed: IndustryLine[]; npri: NpriSite[]; mines: Mine[];
   /** per place, from its town limits: wells within wellKm by class (`w`), facilities (`f`), live provincial pipelines within pipeKm (`pl`, `sour` of them sour gas), federal lines (`fed`, indexing `fed`), the nearest NPRI facility (`np`, indexing `npri`) and how many within npriKm (`n5`), the nearest producing mine within mineKm (`mn`) */
   towns: Record<string, { w: [number, number, number]; f: number; pl: number; sour: number; fed: number[]; np: { i: number; km: number } | null; n5: number; mn: { i: number; km: number } | null }>;
+};
+
+/** A ~4 km hexagon of water wells (the `groundwater` stage): [lon, lat, water wells and test holes, withdrawal wells,
+ * their median bore depth (ft), how many have a water level, their median depth to water (ft), flowing wells, the most
+ * common water use (index into `uses`)]. A median of fewer than `minN` wells is null. Aggregates only: no well rows. */
+export type GwHex = [number, number, number, number, number | null, number, number | null, number, number | null];
+/** One place's water wells within `wellKm` of its town limits: counts, bore depth and depth to water ([median, 25th,
+ * 75th percentile] ft of withdrawal wells, null under `minPlace`), flowing wells, the most common use (`u`) and every
+ * use's count (`us`), a histogram of bore depths in `binFt` bins (the last is that and deeper), the median and latest
+ * year drilled (`y`), and the glacial drift class at its centre (`d`, indexing `drift.classes`). */
+export type GwPlace = {
+  n: number; nw: number; b: [number, number, number] | null; bn: number; l: [number, number, number] | null; ln: number;
+  fl: number; u: number | null; us: number[]; h: number[] | null; y: [number, number] | null; d: number | null;
+};
+export type Groundwater = {
+  source: string; licence: string; licenceNote: string; licenceUrl: string; wellsUrl: string; driftUrl: string; asOf: string;
+  wellKm: number; hexKm: number; minN: number; minPlace: number; binFt: number; fallbackKm: number;
+  uses: string[]; kinds: string[];
+  totals: {
+    reports: number; n: number; nw: number; notWater: number; flow: number; dec: number;
+    b: [number, number, number]; bn: number; l: [number, number, number]; ln: number;
+    uses: number[]; kinds: number[]; h: number[]; years: [number, number]; decades: [number, number][];
+  };
+  hexes: GwHex[];
+  /** glacial drift thickness (surface to bedrock), by class [from, to] m (to null: and thicker) */
+  drift: { classes: [number, number | null][]; polys: { c: number; p: [number, number][][][] }[] };
+  towns: Record<string, GwPlace>; /** the tier-2 communities */ small?: Record<string, GwPlace>;
 };
 
 /** A drinking water advisory in effect. `src`: Water Security Agency / Ministry of Environment (`wsa`), Saskatchewan
@@ -476,11 +526,15 @@ export type Data = {
   smoke: Smoke | null;
   drought: Drought | null;
   crops: Crops | null;
+  /** crop yields by census division and for the province, or null */
+  yields: Yields | null;
+  soil: Soil | null;
   power: Power | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;
   projections: Projections | null;
   twins: Twins | null;
   floods: Floods | null;
+  watersheds: Watersheds | null;
   buildings: Buildings | null;
   population: { munis: Record<string, PopSeries>; source: string } | null;
   crime: Crime | null;
@@ -500,10 +554,13 @@ export type Data = {
   doctors: Doctors | null;
   childcare: Childcare | null;
   industry: Industry | null;
+  groundwater: Groundwater | null;
   water: Water | null;
   radon: Radon | null;
   light: Light | null;
   transit: Transit | null;
+  /** federal voting: ridings 1908–2025 and the latest result in each place's polls (the poll map loads on first use, `loadVotingPolls`) */
+  voting: Voting | null;
   /** live readings; all null when public/data/now/ is absent, or with ?film (unless ?now is also given) */
   now: Now;
   manifest: Record<string, { ok: boolean; updated?: string; lastError?: string }>;
@@ -515,11 +572,71 @@ export type Data = {
  * `protected`: land behind dikes. Polygons are rings of [lon, lat].
  */
 export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; place: string; water?: string | null; year?: number | null; program?: string | null; pdf?: string | null; polys: [number, number][][][] };
+/** A soil (the `soil` stage): series name, kind (M mineral, O organic), order, great group and subgroup codes, drainage,
+ * modes of deposition, parent material texture and chemistry, root-restricting layer, whether it is
+ * the native (uncultivated) profile, and its horizons: [label, top, bottom (cm), sand, silt, clay (%), organic carbon (%),
+ * pH (CaCl₂), EC (dS/m), CaCO₃ equivalent (%)], null where the survey has no value. */
+export type SoilHorizon = [string, number, number, number | null, number | null, number | null, number | null, number | null, number | null, number | null];
+export type SoilType = { n: string; k: string | null; o: string | null; g: string | null; sg: string | null; d: string | null; m: string[]; pt: string | null; pc: string | null; r: string | null; n0: boolean; h: SoilHorizon[] };
+/** A place's soil: the zone at its centre (index into `zones`, null outside them), the share of the land within
+ * `radiusKm` the survey covers (`sv`, %), by capability class 1–7 then organic (`cap`, % of the surveyed land), the
+ * class 1–3 share of the rated land (`good`) and the most common class (`dom`); `i` the survey polygon to dig: at its
+ * centre, or `nk` km away when the centre is mapped as urban land or water. */
+export type SoilPlace = { z: number | null; sv: number; cap?: number[]; good?: number; dom?: number; i?: number; nk?: number };
+export type SoilGrid = { x0: number; y1: number; px: number; w: number; h: number; bounds: number[] };
+export type Soil = {
+  source: string; sourceUrl: string; capSource: string; capUrl: string; zoneSource: string; zoneUrl: string; licence: string; licenceUrl: string; asOf: string;
+  file: string; bytes: number; minzoom: number; maxzoom: number; bounds: [number, number, number, number]; radiusKm: number;
+  zones: string[]; caps: string[]; slopes: string[]; erosion: string[]; saltExtent: string[]; saltDegree: string[]; saltWhere: string[];
+  textures: [string, string][]; orders: Record<string, string>; groups: Record<string, string>; subgroups: Record<string, string>; drainage: Record<string, string>;
+  deposits: Record<string, string>; pmTex: Record<string, string>; pmChem: Record<string, string>; restrict: Record<string, string>;
+  types: SoilType[];
+  /** per map unit, its components [soil, percent, surface texture], largest first */
+  units: [number, number, number][][];
+  soilClasses: string[]; texGroups: string[]; unitClass: string; unitTex: string;
+  /** per polygon (a tile feature's `i`), base 36: see the stage */
+  cols: Record<'u' | 'c' | 'z' | 's' | 'd' | 'w' | 'p' | 'e' | 'n', string>;
+  grid: SoilGrid & { maps: Record<'soil' | 'cap' | 'tex' | 'salt', string> };
+  zoneGrid: SoilGrid & { map: string };
+  prov: { km2: number; polys: number; zone: number[]; cap: number[]; salt: number[]; zoneCap: number[][]; zoneKm2: number[]; order: Record<string, number>; texture: number[] };
+  /** What grows here by capability class (index 0 not rated, 1–7, 8 organic): cropped, pasture and forage, grassland and shrub, other (%) */
+  crops: { year: number; byCap: (number[] | null)[] } | null;
+  towns: Record<string, SoilPlace>; small?: Record<string, SoilPlace>;
+};
 /** 3D cities (the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
  *  count touching the WSA's mapped 1:500-year extent (`way` the floodway, `ext` the rest, `prot` only behind dikes) and with a height (`h`). */
 export type BuildingArea = { name: string; box: [number, number, number, number]; n: number; way: number; ext: number; prot: number; h: number };
 export type Buildings = { source: string; sourceUrl: string; licence: string; heights: string; flood: string; asOf: string; file: string; bytes: number; minzoom: number; maxzoom: number; storey: number; z12Min: number; bounds: [number, number, number, number]; areas: BuildingArea[] };
 export type Floods = { source: string; sourceUrl: string; licence: string; returnPeriod: number; asOf: string; zones: FloodZone[] };
+/**
+ * A gauge of AAFC's Watersheds Project (the `watersheds` stage). `sb`, `b`, `o`: its sub-basin, major basin and drainage
+ * system (indices into `subs`, `basins`, `systems`); `g`, `e`: its total gross and effective drainage area (km²); `d` the
+ * gauges its water reaches next (effective links, the main one first), `gl` those its gross area reaches only in a wet
+ * year; `p` the river course to `d[0]` where Natural Earth has it (flat lon, lat). A chain's last gauge: `sea` on the
+ * coast, `x` a lake with no outlet in a median year, `c` [reach, point] where the drop carries on down `rivers`.
+ */
+export type WsStation = { id: string; n: string; lon: number; lat: number; sb: number; b: number; o: number; g: number; e: number; d: number[]; gl?: number[]; p?: number[]; c?: [number, number]; x?: 1; sea?: 1 };
+export type WsPlace = { sb: number; b: number; o: number; st: number; nc?: 1 };
+export type Watersheds = {
+  source: string; sourceUrl: string; licence: string; riverSource: string; riverUrl: string; riverLicence: string; asOf: string;
+  systems: string[];
+  basins: { name: string; sys: number; polys: [number, number][][][] }[];
+  subs: { name: string; polys: [number, number][][][] }[];
+  /** sub-basins whose only way out is a gross-only link: closed in a median year */
+  closed: number[];
+  /** the land that drains nowhere in a median year, around the province (outlines over about 2 km²) */
+  nc: [number, number][][][];
+  /** the share of the province south of `top` that drains nowhere in a median year */
+  south: { share: number; km2: number; of: number; top: number };
+  /** `st`: run-length [value, count…] of each cell's gauge (index + 1, 0 none); `nc` of the non-contributing mask; rows south to north */
+  grid: { w: number; s: number; dx: number; dy: number; nx: number; ny: number; st: number[]; nc: number[] };
+  stations: WsStation[];
+  /** River floods gauge id → its index in `stations` */
+  gauges: Record<string, number>;
+  rivers: { names: string[]; reaches: { n: number; d: number; o?: number; p: number[] }[] };
+  towns: Record<string, WsPlace>;
+  small: Record<string, WsPlace>;
+};
 
 /** A projection's variable and scenario keys (ECCC CanDCS-U6): mean temperature, daily high, daily low, precipitation. */
 export type ProjVar = 'tg' | 'tx' | 'tn' | 'pr';
@@ -552,6 +669,43 @@ export type Projections = {
   towns: Record<string, Record<ProjVar, Record<ProjScen, ProjWindow[]>>>;
 };
 
+/**
+ * Federal voting (the `voting` stage): Elections Canada's official results, 2011–2025, and the Library of Parliament's
+ * riding history before them. A candidate is [name, party key, votes, elected 1/0, incumbent 1/0]. Per riding: electors
+ * on the lists (`el`), rejected ballots, and the ballots cast on election day (`ed`), at advance polls (`adv`) and by
+ * special ballot (`sr`), rejected ones included.
+ */
+export type VotingRiding = { id: string; name: string; el: number; rej: number; ed: number; adv: number; sr: number; c: [string, string, number, number, number][] };
+export type VotingElection = { year: number; date: string; t: number; ge: number; order: string; level: 'poll' | 'riding'; url: string; ridings: VotingRiding[] };
+/** One general election province-wide: ridings, seats and votes by party, acclamations, each riding's winner [riding, name, party, % of valid votes]. */
+export type VotingHistory = { date: string; t: number; n: number; seats: Record<string, number>; votes: Record<string, number>; total: number; accl: number; r: [string, string, string, number | null][] };
+/**
+ * A place's polls at the latest election (`y`): its ridings [id, share of its electors], polls counted (`n`, `held`),
+ * electors, rejected ballots, valid votes by party; `adv` the advance ballots added when every advance district its polls
+ * are in lies inside it; `c` when no poll lies inside its limits and the poll holding its centre stands in.
+ */
+export type VotingPlace = { y: number; r: [string, number][]; n: number; held: number; el: number; rej: number; v: Record<string, number>; adv?: number; c?: 1 };
+export type Voting = {
+  source: string; sourceUrl: string; boundarySource: string; historySource: string; historyUrl: string; licence: string; licenceUrl: string; asOf: string;
+  parties: Record<string, string>; elections: VotingElection[]; history: VotingHistory[];
+  towns: Record<string, VotingPlace>; small: Record<string, VotingPlace>;
+};
+/**
+ * One poll (polling division, merged ones included): [riding index, number, name, advance district, electors, rejected
+ * ballots, votes per riding candidate (null: no poll held), geometry]. Geometry is polygons of rings written as integer
+ * steps of 1/q degree ([x0, y0, dx, dy, …]), or one [x, y] point for a poll too small to draw (a mobile poll's building).
+ */
+export type VotingPoll = [number, string, string, number | null, number, number, number[] | null, number[][][] | [number, number] | null];
+/** An advance poll: [riding index, number, name, electors, rejected ballots, votes per riding candidate]. */
+export type VotingAdvance = [number, number, string, number, number, number[]];
+export type VotingPolls = { q: number; outlines: Record<string, Record<string, number[][][]>>; years: Record<string, { order: string; u: VotingPoll[]; a: VotingAdvance[] }> };
+let votingPolls: Promise<VotingPolls | null> | null = null;
+/** The poll map (voting-polls.json, ~1.6 MB), fetched once on first use; a failed fetch is asked again later. */
+export function loadVotingPolls(): Promise<VotingPolls | null> {
+  if (!votingPolls) votingPolls = load<VotingPolls>('voting-polls').then((p) => { if (!p?.years) { setTimeout(() => (votingPolls = null), 30_000); return null; } return p; });
+  return votingPolls;
+}
+
 const base = import.meta.env.BASE_URL;
 
 async function load<T>(name: string): Promise<T | null> {
@@ -565,7 +719,10 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
+  const yieldsP = load<Yields>('yields');
+  const votingP = load<Voting>('voting');
+  const watershedsP = load<Watersheds>('watersheds');
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, soil, power, subdivisions, tracts, manifest, groundwater] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -603,10 +760,12 @@ export async function loadAll(): Promise<Data> {
     load<Light>('light'),
     load<Transit>('transit'),
     load<Crops>('crops'),
+    load<Soil>('soil'),
     load<Power>('power'),
     load<Subdivisions>('subdivisions'),
     load<Tracts>('tracts'),
     load<Data['manifest']>('manifest'),
+    load<Groundwater>('groundwater'),
   ]);
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
   const q = new URLSearchParams(location.search);
@@ -631,6 +790,7 @@ export async function loadAll(): Promise<Data> {
     projections: projections && Object.keys(projections.towns ?? {}).length ? projections : null,
     twins: twins?.stations?.length && Object.keys(twins.towns ?? {}).length ? twins : null,
     floods: floods?.zones?.length ? floods : null,
+    watersheds: await watershedsP.then((w) => (w?.stations?.length && w.grid?.st?.length && w.basins?.length ? w : null)),
     buildings: buildings?.areas?.length ? buildings : null,
     population: population && Object.keys(population.munis ?? {}).length ? population : null,
     // crime is only useful if at least one place matched
@@ -651,12 +811,16 @@ export async function loadAll(): Promise<Data> {
     doctors: doctors?.sites?.length ? doctors : null,
     childcare: childcare?.centres?.length ? childcare : null,
     industry: industry?.hexes?.length ? industry : null,
+    groundwater: groundwater?.hexes?.length ? groundwater : null,
     water: water?.sites ? water : null,
     radon: radon?.regions?.length ? radon : null,
     light: light && Object.keys(light.towns ?? {}).length ? light : null,
     transit: transit?.airports?.length ? transit : null,
     crops: crops?.years?.length && crops.maps?.length === crops.years.length ? crops : null,
+    yields: await (async () => { const y = await yieldsP; return y?.years?.length && y.cds?.length && y.crops?.length ? y : null; })(),
+    soil: soil?.types?.length && soil.cols?.c?.length && soil.cols.u.length === soil.cols.c.length * 3 ? soil : null,
     power: power?.lines?.length ? power : null,
+    voting: await votingP.then((v) => (v?.elections?.length && v.history?.length ? v : null)),
     now: {
       rivers: nRivers?.asOf && Array.isArray(nRivers.rows) ? nRivers : null,
       fires: nFires?.asOf && Array.isArray(nFires.hotspots) ? nFires : null,
