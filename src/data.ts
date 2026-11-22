@@ -476,6 +476,7 @@ export type Data = {
   smoke: Smoke | null;
   drought: Drought | null;
   crops: Crops | null;
+  soil: Soil | null;
   power: Power | null;
   normals: { stations: NormalsStation[]; source: string; period: string } | null;
   projections: Projections | null;
@@ -515,6 +516,37 @@ export type Data = {
  * `protected`: land behind dikes. Polygons are rings of [lon, lat].
  */
 export type FloodZone = { kind: '500' | 'floodway' | 'fringe' | 'protected'; place: string; water?: string | null; year?: number | null; program?: string | null; pdf?: string | null; polys: [number, number][][][] };
+/** A soil (the `soil` stage): series name, kind (M mineral, O organic), order, great group and subgroup codes, drainage,
+ * modes of deposition, parent material texture and chemistry, root-restricting layer, whether it is
+ * the native (uncultivated) profile, and its horizons: [label, top, bottom (cm), sand, silt, clay (%), organic carbon (%),
+ * pH (CaCl₂), EC (dS/m), CaCO₃ equivalent (%)], null where the survey has no value. */
+export type SoilHorizon = [string, number, number, number | null, number | null, number | null, number | null, number | null, number | null, number | null];
+export type SoilType = { n: string; k: string | null; o: string | null; g: string | null; sg: string | null; d: string | null; m: string[]; pt: string | null; pc: string | null; r: string | null; n0: boolean; h: SoilHorizon[] };
+/** A place's soil: the zone at its centre (index into `zones`, null outside them), the share of the land within
+ * `radiusKm` the survey covers (`sv`, %), by capability class 1–7 then organic (`cap`, % of the surveyed land), the
+ * class 1–3 share of the rated land (`good`) and the most common class (`dom`); `i` the survey polygon to dig: at its
+ * centre, or `nk` km away when the centre is mapped as urban land or water. */
+export type SoilPlace = { z: number | null; sv: number; cap?: number[]; good?: number; dom?: number; i?: number; nk?: number };
+export type SoilGrid = { x0: number; y1: number; px: number; w: number; h: number; bounds: number[] };
+export type Soil = {
+  source: string; sourceUrl: string; capSource: string; capUrl: string; zoneSource: string; zoneUrl: string; licence: string; licenceUrl: string; asOf: string;
+  file: string; bytes: number; minzoom: number; maxzoom: number; bounds: [number, number, number, number]; radiusKm: number;
+  zones: string[]; caps: string[]; slopes: string[]; erosion: string[]; saltExtent: string[]; saltDegree: string[]; saltWhere: string[];
+  textures: [string, string][]; orders: Record<string, string>; groups: Record<string, string>; subgroups: Record<string, string>; drainage: Record<string, string>;
+  deposits: Record<string, string>; pmTex: Record<string, string>; pmChem: Record<string, string>; restrict: Record<string, string>;
+  types: SoilType[];
+  /** per map unit, its components [soil, percent, surface texture], largest first */
+  units: [number, number, number][][];
+  soilClasses: string[]; texGroups: string[]; unitClass: string; unitTex: string;
+  /** per polygon (a tile feature's `i`), base 36: see the stage */
+  cols: Record<'u' | 'c' | 'z' | 's' | 'd' | 'w' | 'p' | 'e' | 'n', string>;
+  grid: SoilGrid & { maps: Record<'soil' | 'cap' | 'tex' | 'salt', string> };
+  zoneGrid: SoilGrid & { map: string };
+  prov: { km2: number; polys: number; zone: number[]; cap: number[]; salt: number[]; zoneCap: number[][]; zoneKm2: number[]; order: Record<string, number>; texture: number[] };
+  /** What grows here by capability class (index 0 not rated, 1–7, 8 organic): cropped, pasture and forage, grassland and shrub, other (%) */
+  crops: { year: number; byCap: (number[] | null)[] } | null;
+  towns: Record<string, SoilPlace>; small?: Record<string, SoilPlace>;
+};
 /** 3D cities (the `buildings` stage): footprints in a PMTiles file read past zoom 12, and per area the
  *  count touching the WSA's mapped 1:500-year extent (`way` the floodway, `ext` the rest, `prot` only behind dikes) and with a height (`h`). */
 export type BuildingArea = { name: string; box: [number, number, number, number]; n: number; way: number; ext: number; prot: number; h: number };
@@ -565,7 +597,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, soil, power, subdivisions, tracts, manifest] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -603,6 +635,7 @@ export async function loadAll(): Promise<Data> {
     load<Light>('light'),
     load<Transit>('transit'),
     load<Crops>('crops'),
+    load<Soil>('soil'),
     load<Power>('power'),
     load<Subdivisions>('subdivisions'),
     load<Tracts>('tracts'),
@@ -656,6 +689,7 @@ export async function loadAll(): Promise<Data> {
     light: light && Object.keys(light.towns ?? {}).length ? light : null,
     transit: transit?.airports?.length ? transit : null,
     crops: crops?.years?.length && crops.maps?.length === crops.years.length ? crops : null,
+    soil: soil?.types?.length && soil.cols?.c?.length && soil.cols.u.length === soil.cols.c.length * 3 ? soil : null,
     power: power?.lines?.length ? power : null,
     now: {
       rivers: nRivers?.asOf && Array.isArray(nRivers.rows) ? nRivers : null,

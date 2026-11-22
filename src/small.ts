@@ -11,6 +11,7 @@ import { Data, Muni, Subdivision, fmt } from './data';
 import { esc } from './html';
 import { TownMetrics, townMetrics } from './metrics';
 import { csdReport } from './subdivisions';
+import { soilLine } from './soil';
 
 const viewMemo = new WeakMap<Data, Data>();
 const merge = <T>(towns: Record<string, T> | undefined, small: Record<string, T> | undefined) => ({ ...(towns ?? {}), ...(small ?? {}) });
@@ -48,6 +49,7 @@ export function smallView(data: Data): Data {
     radon: d.radon ? { ...d.radon, towns: merge(d.radon.towns, d.radon.small) } : d.radon,
     light: d.light ? { ...d.light, towns: merge(d.light.towns, d.light.small) } : d.light,
     drought: d.drought ? { ...d.drought, towns: merge(d.drought.towns, d.drought.small) } : d.drought,
+    soil: d.soil ? { ...d.soil, towns: merge(d.soil.towns, d.soil.small) } : d.soil,
   };
   viewMemo.set(data, v);
   return v;
@@ -122,6 +124,7 @@ export function renderSmallReport(el: HTMLElement, data: Data, key: string, opts
       ${t.drought ? row('Drought', String(t.drought.d2), `months at severe drought or worse, ${t.drought.from}–${t.drought.to} (its 10 km map cell)`) : absent('Drought', 'drought data not built')}
       ${t.smoke ? row('Smoke days', t.smoke.avg.toFixed(1), `a year, borrowed from ${esc(t.smoke.name)} (${Math.round(t.smoke.dist)} km)`) : absent('Smoke days', 'no air-monitoring station within 150 km')}
       ${t.radon ? row('Radon', `${t.radon.region.pct.toFixed(0)}%`, `of tested homes at or above 200 Bq/m³ in its health region (${esc(t.radon.region.name)}); test your own home`) : absent('Radon', 'radon data not built')}
+      ${t.soil ? (() => { const s = soilLine(t.soil, data); return row('Good farmland', s.v, s.sub); })() : ''}
       ${t.climate ? row('Mean temperature', `${t.climate.meanTemp.toFixed(1)} °C`, `1991 on, borrowed from ${esc(t.climate.name)} (${Math.round(t.climate.dist)} km)`) : absent('Mean temperature', 'no long-record station')}
       ${t.light ? row('Shortest day', `${t.light.d[0].toFixed(1)} h`, `daylight on December 21 (computed) · aurora ${t.light.a}`) : absent('Shortest day', 'light data not built')}
       ${(() => { const au = auroraCell(data, m.lon, m.lat); return au ? row('Aurora overhead now', au.v ?? why('—'), au.sub) : ''; })()}
