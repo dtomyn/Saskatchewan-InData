@@ -20,6 +20,7 @@ import { industryRows } from './industry';
 import { waterRows } from './water';
 import { lightRows } from './light';
 import { radonRows } from './radon';
+import { groundwaterRows } from './groundwater';
 import { communityRows } from './community';
 import { doctorsRows } from './doctors';
 import { childcareRows } from './childcare';
@@ -75,6 +76,7 @@ export function renderTownReport(el: HTMLElement, data: Data, key: string, opts:
     ${data.industry && t.industry ? industryRows(t.industry, data, key) : ''}
     ${data.water && t.water ? waterRows(t.water, data) : ''}
     ${data.radon && t.radon ? radonRows(t.radon, data) : ''}
+    ${data.groundwater && t.groundwater ? groundwaterRows(t.groundwater, data) : ''}
     ${data.housing ? homeCosts(t) : ''}
     ${data.jobs ? jobsIncome(t) : ''}
     <h3>Hazards &amp; climate</h3>

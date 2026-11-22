@@ -324,6 +324,33 @@ export type Industry = {
   towns: Record<string, { w: [number, number, number]; f: number; pl: number; sour: number; fed: number[]; np: { i: number; km: number } | null; n5: number; mn: { i: number; km: number } | null }>;
 };
 
+/** A ~4 km hexagon of water wells (the `groundwater` stage): [lon, lat, water wells and test holes, withdrawal wells,
+ * their median bore depth (ft), how many have a water level, their median depth to water (ft), flowing wells, the most
+ * common water use (index into `uses`)]. A median of fewer than `minN` wells is null. Aggregates only: no well rows. */
+export type GwHex = [number, number, number, number, number | null, number, number | null, number, number | null];
+/** One place's water wells within `wellKm` of its town limits: counts, bore depth and depth to water ([median, 25th,
+ * 75th percentile] ft of withdrawal wells, null under `minPlace`), flowing wells, the most common use (`u`) and every
+ * use's count (`us`), a histogram of bore depths in `binFt` bins (the last is that and deeper), the median and latest
+ * year drilled (`y`), and the glacial drift class at its centre (`d`, indexing `drift.classes`). */
+export type GwPlace = {
+  n: number; nw: number; b: [number, number, number] | null; bn: number; l: [number, number, number] | null; ln: number;
+  fl: number; u: number | null; us: number[]; h: number[] | null; y: [number, number] | null; d: number | null;
+};
+export type Groundwater = {
+  source: string; licence: string; licenceNote: string; licenceUrl: string; wellsUrl: string; driftUrl: string; asOf: string;
+  wellKm: number; hexKm: number; minN: number; minPlace: number; binFt: number; fallbackKm: number;
+  uses: string[]; kinds: string[];
+  totals: {
+    reports: number; n: number; nw: number; notWater: number; flow: number; dec: number;
+    b: [number, number, number]; bn: number; l: [number, number, number]; ln: number;
+    uses: number[]; kinds: number[]; h: number[]; years: [number, number]; decades: [number, number][];
+  };
+  hexes: GwHex[];
+  /** glacial drift thickness (surface to bedrock), by class [from, to] m (to null: and thicker) */
+  drift: { classes: [number, number | null][]; polys: { c: number; p: [number, number][][][] }[] };
+  towns: Record<string, GwPlace>; /** the tier-2 communities */ small?: Record<string, GwPlace>;
+};
+
 /** A drinking water advisory in effect. `src`: Water Security Agency / Ministry of Environment (`wsa`), Saskatchewan
  * Health Authority (`sha`) or Indigenous Services Canada (`isc`, `lt` = long-term). `k`: precautionary advisory,
  * boil water order or advisory, do not consume (or use). `loc` says how it was placed: its own name is a place
@@ -500,6 +527,7 @@ export type Data = {
   doctors: Doctors | null;
   childcare: Childcare | null;
   industry: Industry | null;
+  groundwater: Groundwater | null;
   water: Water | null;
   radon: Radon | null;
   light: Light | null;
@@ -565,7 +593,7 @@ async function load<T>(name: string): Promise<T | null> {
 }
 
 export async function loadAll(): Promise<Data> {
-  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest] = await Promise.all([
+  const [outline, munis, fires, tornadoes, hail, rivers, floods, buildings, climate, smoke, drought, normals, projections, twins, population, crime, hospitals, justice, treaties, camping, housing, tax, jobs, needs, commute, schools, internet, community, newcomer, doctors, childcare, industry, water, radon, light, transit, crops, power, subdivisions, tracts, manifest, groundwater] = await Promise.all([
     load<GeoJSON.Feature>('province'),
     load<Muni[]>('municipalities'),
     load<Data['fires']>('fires'),
@@ -607,6 +635,7 @@ export async function loadAll(): Promise<Data> {
     load<Subdivisions>('subdivisions'),
     load<Tracts>('tracts'),
     load<Data['manifest']>('manifest'),
+    load<Groundwater>('groundwater'),
   ]);
   // the explainer film stays repeatable: it never loads live readings unless asked to (?film&now)
   const q = new URLSearchParams(location.search);
@@ -651,6 +680,7 @@ export async function loadAll(): Promise<Data> {
     doctors: doctors?.sites?.length ? doctors : null,
     childcare: childcare?.centres?.length ? childcare : null,
     industry: industry?.hexes?.length ? industry : null,
+    groundwater: groundwater?.hexes?.length ? groundwater : null,
     water: water?.sites ? water : null,
     radon: radon?.regions?.length ? radon : null,
     light: light && Object.keys(light.towns ?? {}).length ? light : null,
