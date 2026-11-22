@@ -431,6 +431,8 @@ export function hailLayer(data: Data): AtlasLayer {
           getPosition: (r) => [r[0], r[1]],
           getRadius: radius,
           radiusMinPixels: 2.5,
+          // under the storm, the dots step back to markers so the crops under the corridors read
+          radiusMaxPixels: underOn ? 7 : Number.MAX_SAFE_INTEGER,
           getFillColor: (r) => rgb(sizeColor(r[3]), isSwath(r) ? 170 : 235),
           stroked: true,
           // storms in the research database get a white rim
@@ -444,7 +446,7 @@ export function hailLayer(data: Data): AtlasLayer {
           parameters: NO_DEPTH,
         } as any),
       );
-      if (live.length) {
+      if (live.length && !underOn) {
         const fade = (r: HailRow) => 1 - (time - r[2]) / W;
         out.push(
           // the swath lights up along its length, then settles back to the faint line
