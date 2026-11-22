@@ -30,7 +30,7 @@ const ORDER = [
   'province', 'places', 'subdivisions', 'tracts',
   'fires', 'tornadoes', 'hail', 'rivers', 'floods', 'buildings', 'climate', 'smoke', 'drought', 'crops', 'normals', 'projections', 'twins',
   'population', 'crime', 'housing', 'tax', 'jobs', 'needs', 'treaties', 'justice', 'hospitals', 'camping', 'schools',
-  'internet', 'community', 'newcomer', 'doctors', 'childcare', 'industry', 'power', 'water', 'radon', 'light',
+  'internet', 'community', 'voting', 'newcomer', 'doctors', 'childcare', 'industry', 'power', 'water', 'radon', 'light',
   'transit', 'commute',
   ...NOW_STAGES, ...ON_REQUEST,
 ];
